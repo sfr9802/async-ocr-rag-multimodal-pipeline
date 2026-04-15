@@ -1,0 +1,27 @@
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+httpx==0.27.2
+redis==5.0.8
+pydantic==2.9.2
+pydantic-settings==2.5.2
+python-multipart==0.0.10
+
+# RAG capability dependencies (phase 2).
+# faiss-cpu is imported as `faiss` at runtime. sentence-transformers pulls
+# torch/transformers transitively — these are already satisfied in the
+# miniconda environment the worker runs in, so pip won't re-download them
+# unless you install the worker into a fresh venv.
+faiss-cpu==1.11.0
+sentence-transformers==5.1.0
+psycopg2-binary==2.9.9
+numpy>=1.26,<3
+
+# OCR capability dependencies (phase 2).
+# pytesseract is a thin Python wrapper around the Tesseract CLI — you MUST
+# also install the tesseract binary separately (see docs/local-run.md).
+# PyMuPDF (imported as `fitz`) handles PDF page iteration + rasterization
+# in-process so we don't need poppler/pdf2image. Pillow is already pulled
+# transitively by sentence-transformers but pinned here for clarity.
+pytesseract==0.3.13
+pymupdf==1.24.10
+Pillow>=10,<12

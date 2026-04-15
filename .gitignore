@@ -1,0 +1,38 @@
+# ---- OS / editors ----
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.iml
+*.swp
+
+# ---- Java / Maven ----
+core-api/target/
+core-api/.mvn/wrapper/maven-wrapper.jar
+core-api/build/
+core-api/out/
+core-api/**/*.class
+core-api/logs/
+core-api/HELP.md
+
+# ---- Python ----
+ai-worker/.venv/
+ai-worker/venv/
+ai-worker/__pycache__/
+ai-worker/**/__pycache__/
+ai-worker/**/*.pyc
+ai-worker/.pytest_cache/
+ai-worker/.mypy_cache/
+ai-worker/*.egg-info/
+
+# ---- Local runtime state ----
+data/
+!data/.gitkeep
+local-storage/
+!local-storage/.gitkeep
+*.log
+
+# ---- Docker volumes (if bound locally) ----
+infra/postgres/data/
+infra/redis/data/
+infra/minio/data/

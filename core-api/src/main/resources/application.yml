@@ -1,0 +1,73 @@
+spring:
+  application:
+    name: core-api
+
+  # Default = Mode A: reuse an existing postgres container on :5432 with a
+  # dedicated aipipeline database and user. If you run the bundled postgres
+  # (Mode B) instead, override SPRING_DATASOURCE_URL or use the
+  # `independent` profile below.
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/aipipeline}
+    username: ${SPRING_DATASOURCE_USERNAME:aipipeline}
+    password: ${SPRING_DATASOURCE_PASSWORD:aipipeline_pw}
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: false
+        jdbc:
+          time_zone: UTC
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+
+  data:
+    redis:
+      host: ${SPRING_DATA_REDIS_HOST:localhost}
+      port: ${SPRING_DATA_REDIS_PORT:6379}
+
+server:
+  port: ${SERVER_PORT:8080}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+aipipeline:
+  storage:
+    backend: local
+    local:
+      # Runs from core-api/ directory; resolves to the shared {repo}/local-storage
+      # folder, which the worker also points at by default.
+      root-dir: ${AIPIPELINE_STORAGE_LOCAL_ROOT_DIR:${user.dir}/../local-storage}
+    signed-url:
+      ttl-seconds: 600
+  queue:
+    backend: redis
+    redis:
+      pending-key: ${AIPIPELINE_QUEUE_PENDING_KEY:aipipeline:jobs:pending}
+      inflight-key: ${AIPIPELINE_QUEUE_INFLIGHT_KEY:aipipeline:jobs:inflight}
+  worker:
+    callback-base-url: ${AIPIPELINE_WORKER_CALLBACK_BASE_URL:http://localhost:8080}
+  claim:
+    lease-seconds: 900
+
+---
+# Mode B activation profile: connects to the bundled postgres on host port 5433.
+#   mvn spring-boot:run -Dspring-boot.run.profiles=independent
+spring:
+  config:
+    activate:
+      on-profile: independent
+  datasource:
+    url: jdbc:postgresql://localhost:5433/aipipeline
+    username: aipipeline
+    password: aipipeline_pw

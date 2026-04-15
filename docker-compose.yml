@@ -1,0 +1,81 @@
+# Infra-only local development stack.
+#
+# Two execution modes:
+#
+#   Mode A (default) — REUSE an existing postgres container on host :5432
+#                      (e.g. the RIA ria-postgres container). Only redis is
+#                      started by this compose file.
+#
+#     docker compose up -d redis
+#
+#     Prerequisite: you've already created an isolated `aipipeline` database
+#     and user inside your existing postgres. See docs/local-run.md for the
+#     bootstrap SQL.
+#
+#   Mode B — INDEPENDENT infra. This compose owns both postgres and redis,
+#            and postgres listens on host :5433 to avoid colliding with any
+#            other postgres you already run on :5432.
+#
+#     docker compose --profile independent up -d
+#
+# Neither mode starts core-api or ai-worker — those stay as local processes
+# in phase 1 so debugging stays cheap.
+#
+# Container names are prefixed with `aipipeline-` to avoid collision with
+# other dev stacks on the same host.
+
+services:
+
+  redis:
+    image: redis:latest
+    container_name: aipipeline-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - aipipeline-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  postgres:
+    image: postgres:18
+    container_name: aipipeline-postgres
+    restart: unless-stopped
+    profiles: ["independent"]          # opt-in: only Mode B uses this
+    environment:
+      POSTGRES_USER: aipipeline
+      POSTGRES_PASSWORD: aipipeline_pw
+      POSTGRES_DB: aipipeline
+    ports:
+      - "5433:5432"                    # host 5433 → container 5432
+    volumes:
+      - aipipeline-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aipipeline -d aipipeline"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    container_name: aipipeline-minio
+    restart: unless-stopped
+    profiles: ["minio"]                # opt-in; phase 2 storage backend
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: aipipeline
+      MINIO_ROOT_PASSWORD: aipipeline_secret
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - aipipeline-minio-data:/data
+
+volumes:
+  aipipeline-redis-data:
+  aipipeline-postgres-data:
+  aipipeline-minio-data:

@@ -1,0 +1,250 @@
+"""Postgres DAO for the ragmeta schema.
+
+Kept deliberately procedural — psycopg2 + hand-written SQL. SQLAlchemy
+would add layers we don't need at phase-2 scale, and we want the RAG data
+path to have zero overlap with the Spring side's JPA stack.
+
+The schema (ragmeta.documents / ragmeta.chunks / ragmeta.index_builds) is
+created by the core-api's Flyway migration V2. This module only reads and
+writes rows; it never creates tables.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+from contextlib import contextmanager
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from typing import Iterable, List, Optional
+
+import psycopg2
+import psycopg2.extras
+
+log = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class DocumentRow:
+    doc_id: str
+    title: Optional[str]
+    source: Optional[str]
+    category: Optional[str]
+    metadata: Optional[dict]
+
+
+@dataclass(frozen=True)
+class ChunkRow:
+    chunk_id: str
+    doc_id: str
+    section: Optional[str]
+    chunk_order: int
+    text: str
+    token_count: Optional[int]
+    faiss_row_id: int
+    index_version: str
+    extra: Optional[dict] = None
+
+
+@dataclass(frozen=True)
+class ChunkLookupResult:
+    chunk_id: str
+    doc_id: str
+    section: str
+    text: str
+    faiss_row_id: int
+
+
+class RagMetadataStore:
+    """Connection factory + DAO for ragmeta.*."""
+
+    def __init__(self, dsn: str) -> None:
+        self._dsn = dsn
+
+    # ------------------------------------------------------------------
+    # connection management
+    # ------------------------------------------------------------------
+
+    def ping(self) -> None:
+        """Fail fast at startup if the DB is unreachable or the schema is missing."""
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute("SELECT 1 FROM information_schema.schemata WHERE schema_name = 'ragmeta'")
+            if cur.fetchone() is None:
+                raise RuntimeError(
+                    "ragmeta schema is missing. Has the core-api Flyway V2 migration run?"
+                )
+
+    @contextmanager
+    def _connect(self):
+        conn = psycopg2.connect(self._dsn)
+        try:
+            yield conn
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+    # ------------------------------------------------------------------
+    # writes
+    # ------------------------------------------------------------------
+
+    def replace_all(
+        self,
+        *,
+        documents: List[DocumentRow],
+        chunks: List[ChunkRow],
+        index_version: str,
+        embedding_model: str,
+        embedding_dim: int,
+        faiss_index_path: str,
+        notes: Optional[str] = None,
+    ) -> None:
+        """Atomically replace the ragmeta contents with a fresh build.
+
+        The contract is: after this call, the DB holds EXACTLY the rows
+        from this build. Older documents/chunks from previous builds are
+        removed so there is no ambiguity about which version is live.
+        `index_builds` keeps history across versions.
+        """
+        now = datetime.now(tz=timezone.utc).replace(tzinfo=None)
+        with self._connect() as conn, conn.cursor() as cur:
+            # Wipe previous live data (history survives in index_builds).
+            cur.execute("DELETE FROM ragmeta.chunks")
+            cur.execute("DELETE FROM ragmeta.documents")
+
+            if documents:
+                psycopg2.extras.execute_values(
+                    cur,
+                    """
+                    INSERT INTO ragmeta.documents
+                      (doc_id, title, source, category, metadata_json, created_at, updated_at)
+                    VALUES %s
+                    """,
+                    [
+                        (
+                            d.doc_id,
+                            d.title,
+                            d.source,
+                            d.category,
+                            json.dumps(d.metadata) if d.metadata is not None else None,
+                            now,
+                            now,
+                        )
+                        for d in documents
+                    ],
+                )
+
+            if chunks:
+                psycopg2.extras.execute_values(
+                    cur,
+                    """
+                    INSERT INTO ragmeta.chunks
+                      (chunk_id, doc_id, section, chunk_order, text,
+                       token_count, faiss_row_id, index_version, extra_json, created_at)
+                    VALUES %s
+                    """,
+                    [
+                        (
+                            c.chunk_id,
+                            c.doc_id,
+                            c.section,
+                            c.chunk_order,
+                            c.text,
+                            c.token_count,
+                            c.faiss_row_id,
+                            c.index_version,
+                            json.dumps(c.extra) if c.extra is not None else None,
+                            now,
+                        )
+                        for c in chunks
+                    ],
+                )
+
+            cur.execute(
+                """
+                INSERT INTO ragmeta.index_builds
+                  (index_version, embedding_model, embedding_dim,
+                   chunk_count, document_count, faiss_index_path, notes, built_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (index_version) DO UPDATE SET
+                  embedding_model = EXCLUDED.embedding_model,
+                  embedding_dim = EXCLUDED.embedding_dim,
+                  chunk_count = EXCLUDED.chunk_count,
+                  document_count = EXCLUDED.document_count,
+                  faiss_index_path = EXCLUDED.faiss_index_path,
+                  notes = EXCLUDED.notes,
+                  built_at = EXCLUDED.built_at
+                """,
+                (
+                    index_version,
+                    embedding_model,
+                    embedding_dim,
+                    len(chunks),
+                    len(documents),
+                    faiss_index_path,
+                    notes,
+                    now,
+                ),
+            )
+        log.info(
+            "ragmeta replaced: %d documents, %d chunks, version=%s",
+            len(documents), len(chunks), index_version,
+        )
+
+    # ------------------------------------------------------------------
+    # reads
+    # ------------------------------------------------------------------
+
+    def lookup_chunks_by_faiss_rows(
+        self, index_version: str, faiss_row_ids: Iterable[int]
+    ) -> List[ChunkLookupResult]:
+        ids = list(faiss_row_ids)
+        if not ids:
+            return []
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT chunk_id, doc_id, section, text, faiss_row_id
+                  FROM ragmeta.chunks
+                 WHERE index_version = %s
+                   AND faiss_row_id = ANY(%s)
+                """,
+                (index_version, ids),
+            )
+            rows = cur.fetchall()
+        by_row = {r[4]: ChunkLookupResult(
+            chunk_id=r[0], doc_id=r[1], section=r[2] or "", text=r[3], faiss_row_id=r[4]
+        ) for r in rows}
+        # Preserve the FAISS ranking order of the input ids.
+        return [by_row[i] for i in ids if i in by_row]
+
+    def stats(self) -> dict:
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM ragmeta.documents")
+            docs = int(cur.fetchone()[0])
+            cur.execute("SELECT COUNT(*) FROM ragmeta.chunks")
+            chunks = int(cur.fetchone()[0])
+            cur.execute(
+                """
+                SELECT index_version, embedding_model, embedding_dim, chunk_count, built_at
+                  FROM ragmeta.index_builds
+                 ORDER BY built_at DESC LIMIT 1
+                """
+            )
+            latest = cur.fetchone()
+        return {
+            "documents": docs,
+            "chunks": chunks,
+            "latest_build": (
+                {
+                    "index_version": latest[0],
+                    "embedding_model": latest[1],
+                    "embedding_dim": latest[2],
+                    "chunk_count": latest[3],
+                    "built_at": latest[4].isoformat() if latest[4] else None,
+                }
+                if latest else None
+            ),
+        }
