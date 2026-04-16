@@ -215,7 +215,7 @@ def check_schemas(dsn: str) -> CheckResult:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT 1 FROM information_schema.tables
+                SELECT table_name FROM information_schema.tables
                  WHERE table_schema = current_schema()
                    AND table_name IN ('job', 'artifact')
                 """
@@ -336,7 +336,7 @@ def check_build_json(index_dir: Path) -> CheckResult:
         return CheckResult(
             name="build_json",
             status=FAIL,
-            summary=f"build.json is not valid JSON: {ex.msg}",
+            summary=f"build.json is not valid JSON: {ex}",
             details={"path": str(build_file)},
             remediation=(
                 "Delete build.json + faiss.index and rebuild with "
@@ -411,7 +411,7 @@ def check_runtime_model_match(
             name="runtime_model_match",
             status=FAIL,
             summary="build.json is unreadable.",
-            details={"error": ex.msg},
+            details={"error": str(ex)},
             remediation=(
                 "Rebuild: `python -m scripts.build_rag_index --fixture`."
             ),

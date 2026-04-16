@@ -75,7 +75,7 @@ def build_fusion(
     *,
     user_question: Optional[str],
     ocr_text: str,
-    vision: Optional[VisionDescriptionResult],
+    vision_pages: Optional[List[VisionDescriptionResult]] = None,
     max_query_chars: int = DEFAULT_MAX_QUERY_CHARS,
     max_ocr_preview_chars: int = DEFAULT_MAX_OCR_PREVIEW_CHARS,
     short_query_words: int = DEFAULT_SHORT_QUERY_WORDS,
@@ -83,7 +83,7 @@ def build_fusion(
     """Build a retrieval query + fused context from question + OCR + vision.
 
     The function is intentionally short and deterministic: given the
-    same `(user_question, ocr_text, vision)` tuple it produces
+    same `(user_question, ocr_text, vision_pages)` tuple it produces
     byte-identical output, so the MULTIMODAL_TRACE artifact can be
     diffed in tests and in ops.
 
@@ -93,21 +93,27 @@ def build_fusion(
          words) and OCR text is available, a small OCR keyword suffix
          is appended so retrieval has something to anchor on.
       2. Else, fall back to an OCR text head (first `max_query_chars`).
-      3. Else, fall back to the vision caption.
+      3. Else, fall back to the first vision caption.
       4. Else, use a neutral default query and record a warning.
 
     The `fused_context` block is always emitted with the same three
     sections — even when a section is empty it is still present with
     an explicit "(empty)" marker, so downstream consumers can do
     deterministic parsing.
+
+    The visual description section renders page-wise bullet entries
+    when multiple vision results are present.
     """
 
     sources: List[str] = []
     warnings: List[str] = []
 
+    pages = vision_pages or []
+
     question_clean = (user_question or "").strip()
     ocr_clean = (ocr_text or "").strip()
-    vision_caption = vision.caption.strip() if vision and vision.caption else ""
+    # Use the first page caption for retrieval query fallback.
+    vision_caption = pages[0].caption.strip() if pages and pages[0].caption else ""
 
     # ------------------------------------------------------------------
     # 1. Decide retrieval_query
@@ -172,12 +178,14 @@ def build_fusion(
     context_lines.append("")
 
     context_lines.append("### Visual description")
-    if vision and vision_caption:
-        context_lines.append(vision_caption)
-        if vision.details:
-            context_lines.append("")
-            for detail in vision.details:
-                context_lines.append(f"- {detail}")
+    if pages:
+        for vr in pages:
+            cap = (vr.caption or "").strip()
+            if not cap:
+                continue
+            context_lines.append(f"- **Page {vr.page_number}:** {cap}")
+            for detail in vr.details:
+                context_lines.append(f"  - {detail}")
         if "vision_description" not in sources:
             sources.append("vision_description")
     else:

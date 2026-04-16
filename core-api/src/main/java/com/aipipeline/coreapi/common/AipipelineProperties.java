@@ -17,9 +17,17 @@ public record AipipelineProperties(
     public record Storage(
             String backend,
             Local local,
+            S3 s3,
             SignedUrl signedUrl
     ) {
         public record Local(String rootDir) {}
+        public record S3(
+                String endpoint,
+                String region,
+                String bucket,
+                String accessKey,
+                String secretKey
+        ) {}
         public record SignedUrl(long ttlSeconds) {}
     }
 

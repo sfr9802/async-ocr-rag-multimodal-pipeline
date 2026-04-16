@@ -1,0 +1,12 @@
+# Korean RAG eval dataset — targets the kr_sample.jsonl fixture.
+# Schema identical to rag_sample.jsonl.
+{"query": "비밀번호 정책에서 최소 길이와 변경 주기는?", "expected_doc_ids": ["kr-002"], "expected_keywords": ["12자", "90일"], "notes": "보안 정책 FAQ — 비밀번호 규칙"}
+{"query": "PostgreSQL에서 시계열 데이터에 적합한 인덱스 종류는?", "expected_doc_ids": ["kr-003"], "expected_keywords": ["BRIN", "시계열"], "notes": "성능 튜닝 가이드 — 인덱스 유형"}
+{"query": "Redis 캐시에서 Cache-Aside 패턴은 어떻게 동작하나요?", "expected_doc_ids": ["kr-005"], "expected_keywords": ["캐시", "미스", "데이터베이스"], "notes": "캐싱 전략 가이드"}
+{"query": "데이터베이스 장애 시 자동 페일오버 소요 시간은?", "expected_doc_ids": ["kr-006"], "expected_keywords": ["1분", "페일오버", "PgBouncer"], "notes": "장애 대응 런북"}
+{"query": "REST API URL 경로에 사용하는 네이밍 컨벤션은?", "expected_doc_ids": ["kr-007"], "expected_keywords": ["kebab-case", "복수형"], "notes": "API 설계 표준"}
+{"query": "쿠버네티스 Pod가 CrashLoopBackOff 상태일 때 어떻게 진단하나요?", "expected_doc_ids": ["kr-008"], "expected_keywords": ["kubectl", "logs", "CrashLoopBackOff"], "notes": "K8s 트러블슈팅"}
+{"query": "데이터 파이프라인 오류율이 몇 퍼센트를 넘으면 PagerDuty 경보가 발생하나요?", "expected_doc_ids": ["kr-009"], "expected_keywords": ["1%", "PagerDuty"], "notes": "모니터링 대시보드 가이드"}
+{"query": "Git 브랜치 네이밍 컨벤션과 머지 방식은?", "expected_doc_ids": ["kr-010"], "expected_keywords": ["Squash", "Conventional Commits"], "notes": "브랜치 전략 가이드"}
+{"query": "신입 개발자 온보딩에서 코드 리뷰 규칙은?", "expected_doc_ids": ["kr-004"], "expected_keywords": ["리뷰어", "24시간", "PR"], "notes": "온보딩 체크리스트"}
+{"query": "클라우드 네이티브에서 12-Factor App 원칙이란?", "expected_doc_ids": ["kr-001"], "expected_keywords": ["12-Factor", "환경 변수", "이식성"], "notes": "클라우드 네이티브 아키텍처"}

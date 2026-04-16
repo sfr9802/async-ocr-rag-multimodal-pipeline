@@ -37,9 +37,16 @@ def run() -> int:
     core_api = CoreApiClient(
         base_url=settings.core_api_base_url,
         timeout_seconds=settings.core_api_request_timeout_seconds,
+        internal_secret=settings.internal_secret,
     )
     registry = build_default_registry(settings)
-    resolver = StorageResolver(local_root=settings.local_storage_root)
+    resolver = StorageResolver(
+        local_root=settings.local_storage_root,
+        s3_endpoint=settings.s3_endpoint,
+        s3_region=settings.s3_region,
+        s3_access_key=settings.s3_access_key,
+        s3_secret_key=settings.s3_secret_key,
+    )
     runner = TaskRunner(
         core_api=core_api,
         registry=registry,

@@ -302,7 +302,9 @@ def _make_capability(
     retriever_results: Optional[List[RetrievedChunk]] = None,
     generator: Optional[GenerationProvider] = None,
     config: Optional[MultimodalCapabilityConfig] = None,
-    pdf_rasterizer: Optional[Callable[[bytes, int], Optional[bytes]]] = None,
+    pdf_pages_rasterizer: Optional[
+        Callable[[bytes, int, int], List[tuple]]
+    ] = None,
 ) -> MultimodalCapability:
     retriever = FakeRetriever(
         results=retriever_results
@@ -334,7 +336,7 @@ def _make_capability(
         retriever=retriever,
         generator=generator or CapturingGenerator(),
         config=config or _default_config(),
-        pdf_rasterizer=pdf_rasterizer,
+        pdf_pages_rasterizer=pdf_pages_rasterizer,
     )
 
 
@@ -403,14 +405,17 @@ def test_image_happy_path_emits_four_artifacts_and_fuses_ocr_plus_vision():
     ocr_text = _find_output(result, "OCR_TEXT").content.decode("utf-8")
     assert ocr_text == "Invoice total $129.95 due 2026-04-15"
 
-    # VISION_RESULT envelope is populated (available=true).
+    # VISION_RESULT envelope is populated (available=true, pages[] schema).
     vision_body = json.loads(_find_output(result, "VISION_RESULT").content)
     assert vision_body["available"] is True
-    assert vision_body["provider"] == "fake-vision-1.0"
-    assert "portrait light-toned" in vision_body["caption"]
     assert vision_body["kind"] == "image"
     assert vision_body["mimeType"] == "image/png"
-    assert vision_body["pageNumber"] == 1
+    assert vision_body["pageCount"] == 1
+    assert len(vision_body["pages"]) == 1
+    page0 = vision_body["pages"][0]
+    assert page0["provider"] == "fake-vision-1.0"
+    assert "portrait light-toned" in page0["caption"]
+    assert page0["pageNumber"] == 1
 
     # RETRIEVAL_RESULT matches the RAG schema — same field names, same
     # structure. Downstream consumers can treat it identically.
@@ -439,7 +444,7 @@ def test_image_happy_path_emits_four_artifacts_and_fuses_ocr_plus_vision():
     # Both the OCR text and the vision caption made it into the synthetic chunk.
     synthetic_text = gen_call["chunks"][0].text
     assert "Invoice total $129.95" in synthetic_text
-    assert "portrait light-toned" in synthetic_text
+    assert "portrait light-toned" in synthetic_text  # page-wise bullet
     assert "what is the total amount?" in synthetic_text
     # The retrieved chunks follow in order after the synthetic one.
     assert gen_call["chunks"][1].doc_id == "doc-anime-cats"
@@ -474,14 +479,18 @@ def test_pdf_happy_path_rasterizes_page_one_and_aggregates_ocr_pages():
         result=_sample_vision_result("A landscape document scan with heavy text density.")
     )
     stub_rasterizer_calls: List[dict] = []
-    def _stub_rasterizer(pdf_bytes: bytes, dpi: int) -> Optional[bytes]:
-        stub_rasterizer_calls.append({"len": len(pdf_bytes), "dpi": dpi})
-        return b"\x89PNG\r\n\x1a\nFAKE"
+    def _stub_rasterizer(
+        pdf_bytes: bytes, dpi: int, max_pages: int
+    ) -> List[tuple]:
+        stub_rasterizer_calls.append(
+            {"len": len(pdf_bytes), "dpi": dpi, "max_pages": max_pages}
+        )
+        return [(1, b"\x89PNG\r\n\x1a\nFAKE")]
 
     cap = _make_capability(
         ocr=ocr,
         vision=vision,
-        pdf_rasterizer=_stub_rasterizer,
+        pdf_pages_rasterizer=_stub_rasterizer,
     )
 
     result = cap.run(
@@ -499,9 +508,10 @@ def test_pdf_happy_path_rasterizes_page_one_and_aggregates_ocr_pages():
     assert "Page two body text." in ocr_text
     assert ocr_text.index("Page one") < ocr_text.index("Page two")
 
-    # PDF rasterizer was called exactly once and at the configured DPI.
+    # PDF rasterizer was called exactly once with the configured DPI and max_pages.
     assert len(stub_rasterizer_calls) == 1
     assert stub_rasterizer_calls[0]["dpi"] == 150
+    assert stub_rasterizer_calls[0]["max_pages"] == 3
 
     # Vision stage was called with the rasterized PNG bytes, not the raw PDF.
     assert len(vision.calls) == 1
@@ -511,10 +521,154 @@ def test_pdf_happy_path_rasterizes_page_one_and_aggregates_ocr_pages():
     retr_body = json.loads(_find_output(result, "RETRIEVAL_RESULT").content)
     assert retr_body["hitCount"] == 2
 
-    # VISION_RESULT reports the pdf kind.
+    # VISION_RESULT reports the pdf kind with pages[] schema.
     vision_body = json.loads(_find_output(result, "VISION_RESULT").content)
     assert vision_body["kind"] == "pdf"
     assert vision_body["available"] is True
+    assert vision_body["pageCount"] == 1
+    assert vision_body["pages"][0]["pageNumber"] == 1
+
+
+# ---------------------------------------------------------------------------
+# 2b. Happy path — multi-page PDF vision.
+# ---------------------------------------------------------------------------
+
+
+def test_pdf_multi_page_vision_describes_each_rasterized_page():
+    """Multi-page rasterizer returns 3 pages; the vision provider is
+    called once per page. VISION_RESULT contains all three page entries
+    and the fused context carries page-wise bullets."""
+    ocr = FakeOcrProvider(
+        pdf_result=OcrDocumentResult(
+            pages=[
+                OcrPageResult(page_number=1, text="Page one.", avg_confidence=90.0),
+                OcrPageResult(page_number=2, text="Page two.", avg_confidence=85.0),
+                OcrPageResult(page_number=3, text="Page three.", avg_confidence=80.0),
+            ],
+            engine_name="fake-ocr-1.0",
+            warnings=[],
+        )
+    )
+    vision = FakeVisionProvider(
+        result=_sample_vision_result("Dense text layout with tables.")
+    )
+    rasterizer_calls: List[dict] = []
+
+    def _multi_page_rasterizer(
+        pdf_bytes: bytes, dpi: int, max_pages: int
+    ) -> List[tuple]:
+        rasterizer_calls.append(
+            {"len": len(pdf_bytes), "dpi": dpi, "max_pages": max_pages}
+        )
+        return [
+            (1, b"\x89PNG\r\n\x1a\nP1"),
+            (2, b"\x89PNG\r\n\x1a\nP2"),
+            (3, b"\x89PNG\r\n\x1a\nP3"),
+        ]
+
+    generator = CapturingGenerator()
+    cap = _make_capability(
+        ocr=ocr,
+        vision=vision,
+        generator=generator,
+        pdf_pages_rasterizer=_multi_page_rasterizer,
+    )
+
+    result = cap.run(
+        _make_job_input(
+            file_bytes=_pdf_bytes(),
+            content_type="application/pdf",
+            filename="multi.pdf",
+            question="what tables are in this document?",
+        )
+    )
+
+    # Rasterizer was called once.
+    assert len(rasterizer_calls) == 1
+    assert rasterizer_calls[0]["max_pages"] == 3
+
+    # Vision provider was called 3 times, once per page.
+    assert len(vision.calls) == 3
+    assert [c["page_number"] for c in vision.calls] == [1, 2, 3]
+    assert all(c["mime_type"] == "image/png" for c in vision.calls)
+
+    # VISION_RESULT has 3 page entries.
+    vision_body = json.loads(_find_output(result, "VISION_RESULT").content)
+    assert vision_body["available"] is True
+    assert vision_body["pageCount"] == 3
+    assert len(vision_body["pages"]) == 3
+    assert [p["pageNumber"] for p in vision_body["pages"]] == [1, 2, 3]
+
+    # Fused context carries page-wise visual bullets.
+    gen_call = generator.calls[0]
+    synthetic = gen_call["chunks"][0].text
+    assert "**Page 1:**" in synthetic
+    assert "**Page 2:**" in synthetic
+    assert "**Page 3:**" in synthetic
+    assert "Dense text layout" in synthetic
+
+
+def test_pdf_multi_page_partial_vision_failure_still_succeeds():
+    """If one page fails vision but others succeed, the pipeline
+    continues with the successful pages and records warnings."""
+    ocr = FakeOcrProvider(
+        pdf_result=OcrDocumentResult(
+            pages=[
+                OcrPageResult(page_number=1, text="Page one.", avg_confidence=90.0),
+                OcrPageResult(page_number=2, text="Page two.", avg_confidence=85.0),
+            ],
+            engine_name="fake-ocr-1.0",
+            warnings=[],
+        )
+    )
+
+    call_count = 0
+
+    class _FailOnPage2Vision(FakeVisionProvider):
+        """Succeeds on page 1, fails on page 2."""
+
+        def describe_image(self, image_bytes, *, mime_type=None, hint=None, page_number=1):
+            nonlocal call_count
+            call_count += 1
+            if page_number == 2:
+                raise VisionError("PAGE2_FAIL", "page 2 corrupt")
+            return super().describe_image(
+                image_bytes, mime_type=mime_type, hint=hint, page_number=page_number
+            )
+
+    vision = _FailOnPage2Vision(
+        result=_sample_vision_result("Good caption for page 1.")
+    )
+
+    def _rasterizer(pdf_bytes, dpi, max_pages):
+        return [(1, b"\x89PNG\r\n\x1a\nP1"), (2, b"\x89PNG\r\n\x1a\nP2")]
+
+    cap = _make_capability(
+        ocr=ocr,
+        vision=vision,
+        pdf_pages_rasterizer=_rasterizer,
+    )
+
+    result = cap.run(
+        _make_job_input(
+            file_bytes=_pdf_bytes(),
+            content_type="application/pdf",
+            filename="partial.pdf",
+        )
+    )
+
+    # Pipeline still produces all 4 artifacts.
+    assert [a.type for a in result.outputs] == [
+        "OCR_TEXT", "VISION_RESULT", "RETRIEVAL_RESULT", "FINAL_RESPONSE",
+    ]
+
+    # Only page 1 made it through vision.
+    vision_body = json.loads(_find_output(result, "VISION_RESULT").content)
+    assert vision_body["available"] is True
+    assert vision_body["pageCount"] == 1
+    assert vision_body["pages"][0]["pageNumber"] == 1
+    # Warning about page 2 failure is recorded.
+    assert any("page 2" in w and "PAGE2_FAIL" in w for w in vision_body["warnings"])
 
 
 # ---------------------------------------------------------------------------
@@ -552,11 +706,11 @@ def test_ocr_succeeds_vision_fails_pipeline_still_answers():
         "FINAL_RESPONSE",
     ]
 
-    # VISION_RESULT marks available=false and records the failure warning.
+    # VISION_RESULT marks available=false with empty pages and the failure warning.
     vision_body = json.loads(_find_output(result, "VISION_RESULT").content)
     assert vision_body["available"] is False
-    assert vision_body["provider"] is None
-    assert vision_body["caption"] is None
+    assert vision_body["pageCount"] == 0
+    assert vision_body["pages"] == []
     assert any("FAKE_VISION_DOWN" in w for w in vision_body["warnings"])
 
     # Fused synthetic chunk carries the OCR text but not a vision caption.
@@ -607,10 +761,11 @@ def test_ocr_empty_vision_succeeds_pipeline_still_answers():
     ocr_text = _find_output(result, "OCR_TEXT").content.decode("utf-8")
     assert ocr_text.strip() == ""
 
-    # VISION_RESULT is populated.
+    # VISION_RESULT is populated with pages[] schema.
     vision_body = json.loads(_find_output(result, "VISION_RESULT").content)
     assert vision_body["available"] is True
-    assert "neutral" in vision_body["caption"]
+    assert vision_body["pageCount"] == 1
+    assert "neutral" in vision_body["pages"][0]["caption"]
 
     # Retriever was called with a query derived from the vision caption
     # (since there's no OCR text and no user question).
@@ -773,6 +928,7 @@ def test_trace_artifact_emits_normalized_trace_v1_on_happy_path():
     assert _find_stage(trace_body, "ocr")["provider"] == "fake-ocr-1.0"
     assert _find_stage(trace_body, "ocr")["details"]["textLength"] > 0
     assert _find_stage(trace_body, "vision")["provider"] == "fake-vision-1.0"
+    assert _find_stage(trace_body, "vision")["details"]["pageCount"] == 1
     assert _find_stage(trace_body, "fusion")["details"]["sources"]
     assert (
         _find_stage(trace_body, "retrieve")["details"]["indexVersion"]
@@ -1042,12 +1198,12 @@ def test_fusion_builds_deterministic_query_and_context_with_all_signals():
     result_1 = build_fusion(
         user_question="what is the total?",
         ocr_text="INVOICE #42\nTotal: $99.00",
-        vision=vision,
+        vision_pages=[vision],
     )
     result_2 = build_fusion(
         user_question="what is the total?",
         ocr_text="INVOICE #42\nTotal: $99.00",
-        vision=vision,
+        vision_pages=[vision],
     )
     # Byte-for-byte deterministic.
     assert result_1.retrieval_query == result_2.retrieval_query
@@ -1075,7 +1231,7 @@ def test_fusion_builds_deterministic_query_and_context_with_all_signals():
 
 def test_fusion_handles_missing_signals_with_defaults():
     # No user question, no OCR, no vision → default retrieval query + warning.
-    result = build_fusion(user_question=None, ocr_text="", vision=None)
+    result = build_fusion(user_question=None, ocr_text="", vision_pages=[])
     assert result.retrieval_query == "describe the submitted document"
     assert result.sources == []
     assert result.warnings
@@ -1087,7 +1243,7 @@ def test_fusion_handles_missing_signals_with_defaults():
 
 def test_fusion_ocr_only_path_uses_ocr_head_as_query():
     long_ocr = "This is a long OCR paragraph " * 20
-    result = build_fusion(user_question=None, ocr_text=long_ocr, vision=None)
+    result = build_fusion(user_question=None, ocr_text=long_ocr, vision_pages=[])
     assert result.retrieval_query.startswith("This is a long OCR paragraph")
     assert "ocr_text" in result.sources
     # Query is capped at the default max_query_chars.

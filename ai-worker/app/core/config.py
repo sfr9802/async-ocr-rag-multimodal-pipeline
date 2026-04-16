@@ -28,6 +28,14 @@ class WorkerSettings(BaseSettings):
         description="Base URL for core-api, used for claim / callback / artifact upload.",
     )
     core_api_request_timeout_seconds: float = 15.0
+    internal_secret: Optional[str] = Field(
+        default=None,
+        description=(
+            "Shared secret sent as X-Internal-Secret header on /api/internal/* "
+            "calls. Must match AIPIPELINE_INTERNAL_SECRET on core-api. When "
+            "unset the header is omitted (core-api dev mode passes through)."
+        ),
+    )
 
     # --- redis queue ---
     redis_url: str = Field(
@@ -51,6 +59,25 @@ class WorkerSettings(BaseSettings):
             "Used in phase 1 to resolve local:// URIs for reading/writing "
             "artifact bytes without routing everything through HTTP."
         ),
+    )
+    s3_endpoint: Optional[str] = Field(
+        default=None,
+        description=(
+            "S3/MinIO endpoint URL for resolving s3:// storage URIs. "
+            "Required when core-api uses backend=s3. Example: http://localhost:9000"
+        ),
+    )
+    s3_region: str = Field(
+        default="us-east-1",
+        description="AWS region for S3. Use us-east-1 for MinIO.",
+    )
+    s3_access_key: Optional[str] = Field(
+        default=None,
+        description="S3/MinIO access key.",
+    )
+    s3_secret_key: Optional[str] = Field(
+        default=None,
+        description="S3/MinIO secret key.",
     )
 
     # --- processing ---
@@ -115,6 +142,37 @@ class WorkerSettings(BaseSettings):
         default="host=localhost port=5432 dbname=aipipeline user=aipipeline password=aipipeline_pw",
         description="libpq connection string for the ragmeta schema. Uses the same cluster as core-api.",
     )
+    rag_generator: str = Field(
+        default="extractive",
+        description=(
+            "Which GenerationProvider to use for RAG answers. Options: "
+            "'extractive' (deterministic set-intersection heuristic, no "
+            "API key needed), 'claude' (Claude LLM via Anthropic API — "
+            "requires anthropic_api_key). Default is 'extractive' for "
+            "CI/test compatibility."
+        ),
+    )
+    rag_claude_generation_model: str = Field(
+        default="claude-sonnet-4-6",
+        description=(
+            "Anthropic model id used by ClaudeGenerationProvider. "
+            "Only relevant when rag_generator='claude'."
+        ),
+    )
+    rag_generator_fallback_on_error: bool = Field(
+        default=True,
+        description=(
+            "When rag_generator='claude' and the API call fails, "
+            "fall back to the extractive generator instead of "
+            "propagating the error. Set to False for strict mode."
+        ),
+    )
+    rag_claude_timeout_seconds: float = Field(
+        default=60.0,
+        description=(
+            "HTTP timeout (seconds) for Claude Generation API calls."
+        ),
+    )
 
     # --- ocr capability (phase 2) ---
     ocr_enabled: bool = Field(
@@ -167,6 +225,17 @@ class WorkerSettings(BaseSettings):
         ),
     )
 
+    # --- anthropic api (shared by claude vision + claude generation) ---
+    anthropic_api_key: Optional[str] = Field(
+        default=None,
+        description=(
+            "Anthropic API key for Claude Vision and Claude Generation "
+            "providers. Required when multimodal_vision_provider='claude' "
+            "or rag_generator='claude'. SecretStr is avoided because "
+            "pydantic-settings env parsing is simpler with plain Optional[str]."
+        ),
+    )
+
     # --- multimodal capability (phase 2, v1) ---
     multimodal_enabled: bool = Field(
         default=True,
@@ -182,20 +251,44 @@ class WorkerSettings(BaseSettings):
     multimodal_vision_provider: str = Field(
         default="heuristic",
         description=(
-            "Which VisionDescriptionProvider to build. v1 ships only "
-            "'heuristic' — a deterministic Pillow-based fallback that "
-            "lets the multimodal pipeline be exercised end-to-end "
-            "without downloading a VLM. Future phases can add 'blip2', "
-            "'claude-vision', etc. and switch via this knob."
+            "Which VisionDescriptionProvider to build. Options: "
+            "'heuristic' (deterministic Pillow-based fallback, no API "
+            "key needed), 'claude' (Claude Vision via Anthropic API — "
+            "requires anthropic_api_key). Default is 'heuristic' for "
+            "CI/offline compatibility."
+        ),
+    )
+    multimodal_claude_vision_model: str = Field(
+        default="claude-sonnet-4-6",
+        description=(
+            "Anthropic model id used by ClaudeVisionProvider. Only "
+            "relevant when multimodal_vision_provider='claude'."
+        ),
+    )
+    multimodal_claude_timeout_seconds: float = Field(
+        default=30.0,
+        description=(
+            "HTTP timeout (seconds) for Claude Vision API calls. "
+            "Includes retries — total wall-clock may be up to "
+            "3x this value on transient failures."
+        ),
+    )
+    multimodal_max_vision_pages: int = Field(
+        default=3,
+        description=(
+            "Maximum number of PDF pages to send through the vision "
+            "provider. 0 or negative means all pages, but the effective "
+            "count is always capped by ocr_max_pages to prevent runaway "
+            "rasterization on huge documents."
         ),
     )
     multimodal_pdf_vision_dpi: int = Field(
         default=150,
         description=(
-            "DPI used to rasterize PDF page 1 for the vision provider. "
+            "DPI used to rasterize PDF pages for the vision provider. "
             "The OCR stage walks every page via PyMuPDF + Tesseract; "
-            "the vision stage only ever looks at page 1 in v1, so a "
-            "modest DPI is enough."
+            "the vision stage sends up to multimodal_max_vision_pages "
+            "pages through the vision provider."
         ),
     )
     multimodal_emit_trace: bool = Field(
@@ -213,6 +306,33 @@ class WorkerSettings(BaseSettings):
             "Fallback user question used when a MULTIMODAL job does "
             "NOT supply an INPUT_TEXT artifact. Leave empty to let the "
             "fusion helper choose a neutral default query on its own."
+        ),
+    )
+
+    # --- cross-modal retrieval (opt-in) ---
+    cross_modal_enabled: bool = Field(
+        default=False,
+        description=(
+            "When true, MULTIMODAL jobs use CLIP image retrieval "
+            "alongside text RAG, merged via Reciprocal Rank Fusion. "
+            "Requires a CLIP image index built by "
+            "build_rag_index.py --with-images. Off by default."
+        ),
+    )
+    cross_modal_clip_model: str = Field(
+        default="sentence-transformers/clip-ViT-B-32",
+        description=(
+            "sentence-transformers model id for CLIP image/text "
+            "embeddings. 512-dim. Changing this requires rebuilding "
+            "the image index."
+        ),
+    )
+    cross_modal_rrf_k: int = Field(
+        default=60,
+        description=(
+            "RRF constant k. Higher values flatten rank differences "
+            "across text and image result lists. Default 60 is the "
+            "standard value from Cormack et al."
         ),
     )
 

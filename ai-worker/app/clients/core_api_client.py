@@ -29,11 +29,20 @@ log = logging.getLogger(__name__)
 
 
 class CoreApiClient:
-    def __init__(self, base_url: str, timeout_seconds: float) -> None:
+    def __init__(
+        self,
+        base_url: str,
+        timeout_seconds: float,
+        internal_secret: Optional[str] = None,
+    ) -> None:
         self._base_url = base_url.rstrip("/")
+        headers = {}
+        if internal_secret:
+            headers["X-Internal-Secret"] = internal_secret
         self._client = httpx.Client(
             base_url=self._base_url,
             timeout=timeout_seconds,
+            headers=headers,
         )
 
     def close(self) -> None:

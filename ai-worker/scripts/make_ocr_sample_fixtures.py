@@ -39,6 +39,15 @@ _FIXTURES: List[Tuple[str, List[str], int]] = [
     ),
 ]
 
+# Korean fixtures — require a Korean-capable font (NanumGothic, Malgun
+# Gothic, or D2Coding). If no Korean font is found the script emits a
+# warning and skips these without failing the harness.
+_KR_FIXTURES: List[Tuple[str, List[str], int]] = [
+    ("kr_hello.png", ["안녕하세요 세계"], 48),
+    ("kr_notice.png", ["공지사항", "시스템 점검 안내"], 36),
+    ("kr_policy.png", ["비밀번호는 최소 12자 이상이어야 합니다"], 28),
+]
+
 
 def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
@@ -71,12 +80,34 @@ def main() -> int:
             font_size,
         )
 
+    # Korean fixtures — skip if no Korean font is available.
+    kr_font = _load_korean_font(ImageFont, 36)
+    if kr_font is not None:
+        log.info("Korean font found — generating Korean OCR fixtures")
+        for filename, lines, font_size in _KR_FIXTURES:
+            kr_font_sized = _load_korean_font(ImageFont, font_size)
+            _render(
+                Image,
+                ImageDraw,
+                ImageFont,
+                out_dir / filename,
+                lines,
+                font_size,
+                font_override=kr_font_sized,
+            )
+    else:
+        log.warning(
+            "No Korean font found on this system — skipping Korean OCR "
+            "fixtures. Korean OCR eval will not run until a Korean font "
+            "(NanumGothic, Malgun Gothic, or D2Coding) is installed."
+        )
+
     log.info("Done. Run `python -m eval.run_eval ocr --dataset eval/datasets/ocr_sample.jsonl`")
     return 0
 
 
-def _render(Image, ImageDraw, ImageFont, path: Path, lines, font_size: int) -> None:
-    font = _load_font(ImageFont, font_size)
+def _render(Image, ImageDraw, ImageFont, path: Path, lines, font_size: int, *, font_override=None) -> None:
+    font = font_override if font_override is not None else _load_font(ImageFont, font_size)
 
     # Measure each line and pad with generous margins so Tesseract's
     # segmenter has breathing room.
@@ -129,6 +160,36 @@ def _load_font(ImageFont, size: int):
         "OCR quality on the samples will still be fine."
     )
     return ImageFont.load_default()
+
+
+def _load_korean_font(ImageFont, size: int):
+    """Try Korean-capable TrueType fonts; return None if none found.
+
+    Searches common font paths on Windows, macOS, and Linux. Returns
+    None (instead of raising) so the caller can skip Korean fixtures
+    gracefully.
+    """
+    candidates = [
+        # Windows
+        r"C:\Windows\Fonts\malgun.ttf",      # Malgun Gothic
+        r"C:\Windows\Fonts\malgunbd.ttf",     # Malgun Gothic Bold
+        r"C:\Windows\Fonts\NanumGothic.ttf",
+        r"C:\Windows\Fonts\D2Coding.ttf",
+        # macOS
+        "/System/Library/Fonts/AppleSDGothicNeo.ttc",
+        "/Library/Fonts/NanumGothic.ttf",
+        # Linux
+        "/usr/share/fonts/truetype/nanum/NanumGothic.ttf",
+        "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/google-noto-cjk/NotoSansCJK-Regular.ttc",
+    ]
+    for candidate in candidates:
+        try:
+            return ImageFont.truetype(candidate, size=size)
+        except Exception:
+            continue
+    return None
 
 
 if __name__ == "__main__":

@@ -72,12 +72,13 @@ def build_default_registry(settings: WorkerSettings) -> CapabilityRegistry:
     if settings.rag_enabled:
         log.info(
             "RAG init: configured_model=%s query_prefix=%r passage_prefix=%r "
-            "index_dir=%s top_k=%d",
+            "index_dir=%s top_k=%d generator=%s",
             settings.rag_embedding_model,
             settings.rag_embedding_prefix_query,
             settings.rag_embedding_prefix_passage,
             settings.rag_index_dir,
             settings.rag_top_k,
+            settings.rag_generator,
         )
         try:
             registry.register(_build_rag_capability(settings))
@@ -135,13 +136,15 @@ def build_default_registry(settings: WorkerSettings) -> CapabilityRegistry:
             )
         else:
             log.info(
-                "MULTIMODAL init: vision_provider=%s pdf_vision_dpi=%d "
-                "emit_trace=%s default_question=%r (retrieval top-k "
-                "inherited from RAG=%d)",
+                "MULTIMODAL init: vision_provider=%s max_vision_pages=%d "
+                "pdf_vision_dpi=%d emit_trace=%s default_question=%r "
+                "generator=%s (retrieval top-k inherited from RAG=%d)",
                 settings.multimodal_vision_provider,
+                settings.multimodal_max_vision_pages,
                 settings.multimodal_pdf_vision_dpi,
                 settings.multimodal_emit_trace,
                 settings.multimodal_default_question,
+                settings.rag_generator,
                 settings.rag_top_k,
             )
             try:
@@ -214,6 +217,27 @@ def _build_multimodal_capability(settings: WorkerSettings) -> Capability:
     retriever, generator = _get_shared_retriever_bundle(settings)
     vision_provider = _build_vision_provider(settings)
 
+    # Resolve max_vision_pages: 0/negative → all pages, but always
+    # capped by ocr_max_pages so a huge PDF doesn't run away.
+    raw_max = settings.multimodal_max_vision_pages
+    safety_cap = settings.ocr_max_pages
+    if raw_max <= 0:
+        effective_max_vision_pages = safety_cap
+    else:
+        effective_max_vision_pages = min(raw_max, safety_cap)
+
+    cross_modal = None
+    if settings.cross_modal_enabled:
+        try:
+            cross_modal = _build_cross_modal_retriever(settings, retriever)
+            log.info("Cross-modal retriever ready (CLIP + RRF).")
+        except Exception as ex:
+            log.warning(
+                "Cross-modal retriever NOT available (%s: %s). "
+                "MULTIMODAL will use text-only retrieval.",
+                type(ex).__name__, ex,
+            )
+
     return MultimodalCapability(
         ocr_provider=ocr_provider,
         vision_provider=vision_provider,
@@ -221,9 +245,12 @@ def _build_multimodal_capability(settings: WorkerSettings) -> Capability:
         generator=generator,
         config=MultimodalCapabilityConfig(
             pdf_vision_dpi=settings.multimodal_pdf_vision_dpi,
+            max_vision_pages=effective_max_vision_pages,
             emit_trace=settings.multimodal_emit_trace,
             default_user_question=settings.multimodal_default_question,
+            use_cross_modal_retrieval=cross_modal is not None,
         ),
+        cross_modal_retriever=cross_modal,
     )
 
 
@@ -282,6 +309,8 @@ def _get_shared_retriever_bundle(settings: WorkerSettings):
         settings.rag_index_dir,
         settings.rag_top_k,
         settings.rag_db_dsn,
+        settings.rag_generator,
+        settings.rag_claude_generation_model,
     )
     cached = _shared_component_cache.get(key)
     if cached is not None:
@@ -314,26 +343,100 @@ def _get_shared_retriever_bundle(settings: WorkerSettings):
     # clean "not registered" warning.
     retriever.ensure_ready()
 
-    generator = ExtractiveGenerator()
+    generator_name = (settings.rag_generator or "extractive").strip().lower()
+    if generator_name == "claude":
+        if not settings.anthropic_api_key:
+            raise RuntimeError(
+                "ANTHROPIC_API_KEY missing — required when "
+                "rag_generator='claude'. Set "
+                "AIPIPELINE_WORKER_ANTHROPIC_API_KEY in the environment."
+            )
+        from app.capabilities.rag.claude_generation import ClaudeGenerationProvider
+
+        generator = ClaudeGenerationProvider(
+            api_key=settings.anthropic_api_key,
+            model=settings.rag_claude_generation_model,
+            timeout_seconds=settings.rag_claude_timeout_seconds,
+            fallback_on_error=settings.rag_generator_fallback_on_error,
+        )
+        log.info(
+            "RAG generator: claude-generation-v1 model=%s fallback=%s",
+            settings.rag_claude_generation_model,
+            settings.rag_generator_fallback_on_error,
+        )
+    else:
+        generator = ExtractiveGenerator()
+
     bundle = (retriever, generator)
     _shared_component_cache[key] = bundle
     return bundle
 
 
+def _build_cross_modal_retriever(settings: WorkerSettings, text_retriever):
+    """Build the CLIP image index + RRF cross-modal retriever.
+
+    Only called when ``settings.cross_modal_enabled`` is True. Failures
+    are caught by the caller and downgraded to a warning — MULTIMODAL
+    falls back to text-only retrieval.
+    """
+    from app.capabilities.rag.cross_modal_retriever import CrossModalRetriever
+    from app.capabilities.rag.image_embeddings import ClipImageEmbedder
+    from app.capabilities.rag.image_index import ImageFaissIndex
+    from app.capabilities.rag.image_metadata_store import ImageMetadataStore
+
+    cache_key = ("cross_modal", settings.cross_modal_clip_model, settings.rag_index_dir)
+    cached = _shared_component_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    embedder = ClipImageEmbedder(model_name=settings.cross_modal_clip_model)
+    image_index = ImageFaissIndex(Path(settings.rag_index_dir))
+    image_index.load()
+
+    image_meta = ImageMetadataStore(settings.rag_db_dsn)
+    image_meta.ping()
+
+    retriever = CrossModalRetriever(
+        text_retriever=text_retriever,
+        image_embedder=embedder,
+        image_index=image_index,
+        image_metadata=image_meta,
+        top_k=settings.rag_top_k,
+        rrf_k=settings.cross_modal_rrf_k,
+    )
+    _shared_component_cache[cache_key] = retriever
+    return retriever
+
+
 def _build_vision_provider(settings: WorkerSettings):
     """Build the vision description provider named by settings.
 
-    v1 ships only the 'heuristic' provider. Adding a real VLM later
-    is a single `elif` branch — the rest of the multimodal capability
-    stays put because the provider seam is already abstracted.
+    Supported values for multimodal_vision_provider:
+      - 'heuristic' (default): deterministic Pillow-based fallback
+      - 'claude': Claude Vision via Anthropic API (requires API key)
     """
-    from app.capabilities.multimodal.heuristic_vision import HeuristicVisionProvider
-
     provider_name = (settings.multimodal_vision_provider or "heuristic").strip().lower()
     if provider_name in ("", "heuristic", "pillow", "default"):
+        from app.capabilities.multimodal.heuristic_vision import HeuristicVisionProvider
+
         return HeuristicVisionProvider()
+
+    if provider_name == "claude":
+        if not settings.anthropic_api_key:
+            raise RuntimeError(
+                "ANTHROPIC_API_KEY missing — required when "
+                "multimodal_vision_provider='claude'. Set "
+                "AIPIPELINE_WORKER_ANTHROPIC_API_KEY in the environment."
+            )
+        from app.capabilities.multimodal.claude_vision import ClaudeVisionProvider
+
+        return ClaudeVisionProvider(
+            api_key=settings.anthropic_api_key,
+            model=settings.multimodal_claude_vision_model,
+            timeout_seconds=settings.multimodal_claude_timeout_seconds,
+        )
+
     raise RuntimeError(
         f"Unknown multimodal vision provider {provider_name!r}. "
-        "v1 supports 'heuristic' only — future phases can add 'blip2', "
-        "'claude-vision', etc."
+        "Supported: 'heuristic', 'claude'."
     )

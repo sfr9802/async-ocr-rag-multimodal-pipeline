@@ -41,6 +41,13 @@ from eval.harness.io_utils import (
     write_csv_report,
     write_json_report,
 )
+from eval.harness.multimodal_eval import (
+    MultimodalEvalRow,
+    MultimodalEvalSummary,
+    row_to_dict as mm_row_to_dict,
+    run_multimodal_eval,
+    summary_to_dict as mm_summary_to_dict,
+)
 from eval.harness.ocr_eval import (
     OcrEvalRow,
     OcrEvalSummary,
@@ -75,6 +82,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         return _run_rag_cli(args)
     if args.mode == "ocr":
         return _run_ocr_cli(args)
+    if args.mode == "multimodal":
+        return _run_multimodal_cli(args)
     parser.error(f"unknown mode: {args.mode}")
     return 2  # unreachable
 
@@ -121,6 +130,24 @@ def _build_parser() -> argparse.ArgumentParser:
                           "than skips.")
     ocr.add_argument("--no-csv", action="store_true",
                      help="Skip CSV output.")
+
+    # --- multimodal ---
+    mm = subs.add_parser("multimodal", help="Run the multimodal eval harness.")
+    mm.add_argument("--dataset", required=True, type=Path,
+                    help="Path to the multimodal eval JSONL dataset.")
+    mm.add_argument("--out-json", type=Path, default=None,
+                    help="Path for the JSON report.")
+    mm.add_argument("--out-csv", type=Path, default=None,
+                    help="Path for the CSV report.")
+    mm.add_argument("--no-csv", action="store_true",
+                    help="Skip CSV output.")
+    mm.add_argument("--require-ocr-only", action="store_true",
+                    help="Only evaluate rows where requires_ocr is true.")
+    mm.add_argument("--vision-provider", type=str, default=None,
+                    choices=["heuristic", "claude"],
+                    help="Override the vision provider for this run.")
+    mm.add_argument("--cross-modal", action="store_true",
+                    help="Enable CLIP cross-modal retrieval (text + image RRF).")
 
     return parser
 
@@ -375,6 +402,214 @@ def _print_ocr_summary(summary: OcrEvalSummary) -> None:
     print(f"  mean latency_ms  : {summary.mean_latency_ms:.1f}")
     print(f"  p50 latency_ms   : {summary.p50_latency_ms:.1f}")
     print(f"  engine           : {summary.engine_name}")
+    print()
+
+
+# ---------------------------------------------------------------------------
+# Multimodal CLI path.
+# ---------------------------------------------------------------------------
+
+
+def _run_multimodal_cli(args: argparse.Namespace) -> int:
+    try:
+        capability, settings = _build_multimodal_stack(args)
+    except Exception as ex:
+        log.error(
+            "Failed to build the multimodal eval stack (%s: %s). "
+            "Make sure the FAISS index is built, Tesseract is available, "
+            "and the configured embedding model matches the one in build.json.",
+            type(ex).__name__, ex,
+        )
+        return 2
+
+    dataset = load_jsonl(args.dataset)
+    dataset_dir = args.dataset.resolve().parent
+
+    summary, rows = run_multimodal_eval(
+        dataset,
+        capability=capability,
+        input_builder=_build_multimodal_input,
+        dataset_dir=dataset_dir,
+        dataset_path=str(args.dataset),
+        require_ocr_only=args.require_ocr_only,
+    )
+
+    _print_multimodal_summary(summary)
+
+    out_json = args.out_json or _default_report_path("multimodal", "json")
+    write_json_report(
+        out_json,
+        summary=mm_summary_to_dict(summary),
+        rows=[mm_row_to_dict(r) for r in rows],
+        metadata=_multimodal_metadata(
+            settings, cross_modal=getattr(args, "cross_modal", False)
+        ),
+    )
+    if not args.no_csv:
+        out_csv = args.out_csv or _default_report_path("multimodal", "csv")
+        write_csv_report(
+            out_csv,
+            [mm_row_to_dict(r) for r in rows],
+            columns=_multimodal_csv_columns(),
+        )
+    return 0
+
+
+def _build_multimodal_stack(args: argparse.Namespace):
+    """Build the full MULTIMODAL capability from worker settings."""
+    from app.capabilities.registry import (
+        _build_vision_provider,
+        _get_shared_ocr_provider,
+        _get_shared_retriever_bundle,
+    )
+    from app.capabilities.multimodal.capability import (
+        MultimodalCapability,
+        MultimodalCapabilityConfig,
+    )
+    from app.core.config import get_settings
+
+    settings = get_settings()
+
+    # Optional CLI override for vision provider.
+    if args.vision_provider:
+        settings.multimodal_vision_provider = args.vision_provider
+
+    ocr_provider = _get_shared_ocr_provider(settings)
+    retriever, generator = _get_shared_retriever_bundle(settings)
+    vision_provider = _build_vision_provider(settings)
+
+    # Optional CLI override for cross-modal retrieval.
+    cross_modal = None
+    use_cross_modal = getattr(args, "cross_modal", False)
+    if use_cross_modal:
+        try:
+            from app.capabilities.registry import _build_cross_modal_retriever
+            cross_modal = _build_cross_modal_retriever(settings, retriever)
+        except Exception as ex:
+            log.warning(
+                "Cross-modal retriever not available for eval (%s: %s). "
+                "Falling back to text-only.",
+                type(ex).__name__, ex,
+            )
+
+    capability = MultimodalCapability(
+        ocr_provider=ocr_provider,
+        vision_provider=vision_provider,
+        retriever=retriever,
+        generator=generator,
+        config=MultimodalCapabilityConfig(
+            pdf_vision_dpi=settings.multimodal_pdf_vision_dpi,
+            emit_trace=True,  # always emit trace for eval latency breakdowns
+            default_user_question=settings.multimodal_default_question,
+            use_cross_modal_retrieval=cross_modal is not None,
+        ),
+        cross_modal_retriever=cross_modal,
+    )
+    return capability, settings
+
+
+def _build_multimodal_input(
+    image_path: str,
+    image_bytes: bytes,
+    question: str,
+    filename: Optional[str],
+) -> Any:
+    """Build a CapabilityInput for the multimodal capability."""
+    from app.capabilities.base import CapabilityInput, CapabilityInputArtifact
+
+    artifacts = [
+        CapabilityInputArtifact(
+            artifact_id=f"eval-file-{hash(image_path) & 0xFFFFFFFF:08x}",
+            type="INPUT_FILE",
+            content=image_bytes,
+            content_type=_guess_mime_from_path(image_path),
+            filename=filename,
+        ),
+    ]
+    if question:
+        artifacts.append(
+            CapabilityInputArtifact(
+                artifact_id=f"eval-q-{hash(question) & 0xFFFFFFFF:08x}",
+                type="INPUT_TEXT",
+                content=question.encode("utf-8"),
+                content_type="text/plain",
+            )
+        )
+    return CapabilityInput(
+        job_id=f"eval-mm-{hash(image_path) & 0xFFFFFFFF:08x}",
+        capability="MULTIMODAL",
+        attempt_no=1,
+        inputs=artifacts,
+    )
+
+
+def _guess_mime_from_path(path: str) -> Optional[str]:
+    p = path.lower()
+    if p.endswith(".png"):
+        return "image/png"
+    if p.endswith((".jpg", ".jpeg")):
+        return "image/jpeg"
+    if p.endswith(".pdf"):
+        return "application/pdf"
+    return None
+
+
+def _multimodal_metadata(settings: Any, *, cross_modal: bool = False) -> Dict[str, Any]:
+    return {
+        "harness": "multimodal",
+        "vision_provider": settings.multimodal_vision_provider,
+        "embedding_model": settings.rag_embedding_model,
+        "rag_generator": settings.rag_generator,
+        "cross_modal": cross_modal,
+        "run_at": datetime.now().isoformat(timespec="seconds"),
+    }
+
+
+def _multimodal_csv_columns() -> List[str]:
+    return [
+        "image",
+        "question",
+        "expected_answer",
+        "expected_keywords",
+        "expected_labels",
+        "requires_ocr",
+        "language",
+        "answer",
+        "exact_match",
+        "substring_match",
+        "keyword_coverage",
+        "label_precision",
+        "label_recall",
+        "latency_ms",
+        "ocr_latency_ms",
+        "vision_latency_ms",
+        "rag_latency_ms",
+        "vision_provider",
+        "notes",
+        "error",
+        "skipped_reason",
+    ]
+
+
+def _print_multimodal_summary(summary: MultimodalEvalSummary) -> None:
+    print()
+    print(f"Multimodal eval — {summary.dataset_path}")
+    print(f"  rows in dataset     : {summary.row_count}")
+    print(f"  evaluated           : {summary.evaluated_rows}")
+    print(f"  skipped             : {summary.skipped_rows}")
+    print(f"  errors              : {summary.error_count}")
+    print(f"  mean exact_match    : {_fmt(summary.mean_exact_match)}")
+    print(f"  mean substring_match: {_fmt(summary.mean_substring_match)}")
+    print(f"  mean keyword_cov    : {_fmt(summary.mean_keyword_coverage)}")
+    print(f"  mean label_precision: {_fmt(summary.mean_label_precision)}")
+    print(f"  mean label_recall   : {_fmt(summary.mean_label_recall)}")
+    print(f"  mean latency_ms     : {summary.mean_latency_ms:.1f}")
+    print(f"  p50 latency_ms      : {summary.p50_latency_ms:.1f}")
+    print(f"  max latency_ms      : {summary.max_latency_ms:.1f}")
+    print(f"  mean ocr_ms         : {summary.mean_ocr_latency_ms:.1f}")
+    print(f"  mean vision_ms      : {summary.mean_vision_latency_ms:.1f}")
+    print(f"  mean rag_ms         : {summary.mean_rag_latency_ms:.1f}")
+    print(f"  vision_provider     : {summary.vision_provider}")
     print()
 
 

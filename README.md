@@ -2,6 +2,26 @@
 
 Asynchronous AI processing platform.
 
+## Benchmarks (measured on this branch)
+
+| Dataset            | Capability | hit@5 | MRR  | CER (OCR) | p50 latency |
+|--------------------|------------|-------|------|-----------|-------------|
+| anime (en, 8 docs) | RAG        | not measured | not measured | n/a       | not measured |
+| kr_sample (kr, 10) | RAG        | not measured | not measured | n/a       | not measured |
+| ocr_sample (en)    | OCR        | n/a   | n/a  | not measured | not measured |
+| ocr_sample (kr)    | OCR        | n/a   | n/a  | not measured | not measured |
+
+> Measured with claude-sonnet-4-6 vision + generation, bge-m3 embedder,
+> FAISS IndexFlatIP, Tesseract kor+eng.
+> Reproduce: `python -m eval.run_eval rag --dataset eval/datasets/rag_sample_kr.jsonl`
+>
+> **Note:** Benchmarks are marked "not measured" because this environment
+> does not have a running PostgreSQL ragmeta schema, FAISS index, or
+> Tesseract binary available to execute the eval harness. To produce real
+> numbers: build the index (`python -m scripts.build_rag_index --fixture both`),
+> ensure Tesseract is installed with `eng+kor` language packs, then run
+> `python -m eval.run_eval rag` and `python -m eval.run_eval ocr`.
+
 - **Phase 1**: async skeleton (job lifecycle, artifact model, claim/callback,
   Redis dispatch, local-filesystem storage, `MOCK` capability).
 - **Phase 1.1**: stabilized onto the target stack (Spring Boot 4.0.3, Java 21,
@@ -101,6 +121,53 @@ docker compose up -d redis                                                  # te
 python scripts/e2e_smoke.py                                                 # terminal 4
 ```
 
+### Internal endpoint authentication
+
+All `/api/internal/**` endpoints (claim, callback, artifact upload) are
+gated by a shared-secret header (`X-Internal-Secret`). Core-api and the
+worker use **different env-var names** but the actual secret value **must
+be identical**:
+
+| Service   | Env var                             |
+|-----------|-------------------------------------|
+| core-api  | `AIPIPELINE_INTERNAL_SECRET`        |
+| ai-worker | `AIPIPELINE_WORKER_INTERNAL_SECRET` |
+
+When neither is set, core-api runs in **dev pass-through mode** (a WARN
+is logged once at startup and all internal requests are accepted without
+a header). This keeps local development and CI friction-free.
+
+```bash
+# Production-style launch with auth enforced:
+export AIPIPELINE_INTERNAL_SECRET=change-me-in-production
+export AIPIPELINE_WORKER_INTERNAL_SECRET=change-me-in-production
+(cd core-api && mvn spring-boot:run)      # terminal 2
+(cd ai-worker && python -m app.main)      # terminal 3
+```
+
+### S3 / MinIO storage backend
+
+By default artifacts are stored on the local filesystem (`backend=local`).
+To use MinIO (S3-compatible) instead:
+
+```bash
+# 1. Start MinIO + auto-create the bucket
+docker compose --profile minio up -d minio minio-bootstrap
+
+# 2. Set env vars (or add to .env)
+export AIPIPELINE_STORAGE_BACKEND=s3
+export AIPIPELINE_STORAGE_S3_ENDPOINT=http://localhost:9000
+export AIPIPELINE_STORAGE_S3_BUCKET=aipipeline-artifacts
+export AIPIPELINE_WORKER_S3_ENDPOINT=http://localhost:9000
+export AIPIPELINE_WORKER_S3_ACCESS_KEY=aipipeline
+export AIPIPELINE_WORKER_S3_SECRET_KEY=aipipeline_secret
+
+# 3. Start core-api and worker as usual
+```
+
+The MinIO console is available at `http://localhost:9001` (user:
+`aipipeline`, password: `aipipeline_secret`).
+
 Expected smoke output:
 ```
 [1/4] submitting text job ...
@@ -108,6 +175,49 @@ Expected smoke output:
 [4/4] downloading output artifact content ...
      parsed JSON keys = ['jobId', 'capability', ...]
 OK - pipeline survived the round trip.
+```
+
+## One-command demo
+
+A richer demo script that uploads a sample PDF, runs the full
+MULTIMODAL pipeline, and pretty-prints results:
+
+```bash
+pip install reportlab                # one-time: PDF generation
+pip install rich                     # optional: coloured output
+
+python scripts/demo.py               # default: MULTIMODAL
+python scripts/demo.py --capability OCR
+python scripts/demo.py --question "What metrics are shown?"
+```
+
+The script auto-generates a 2-page sample PDF in `scripts/assets/`
+(gitignored) on first run. Pass `--self-test` to verify imports and PDF
+generation without a running backend:
+
+```bash
+python scripts/demo.py --self-test
+```
+
+Sample output (with `rich`):
+```
+[1/5] health check (http://localhost:8080) ...
+[2/5] preparing sample PDF ...
+  .../scripts/assets/demo_sample.pdf (12,345 bytes)
+[3/5] submitting MULTIMODAL job ...
+  jobId = abc-123  status = QUEUED
+[4/5] polling for completion ...
+  ... RUNNING
+  SUCCEEDED
+[5/5] fetching results ...
++----- Job Summary -----+
+| Job ID: abc-123       |
+| Capability: MULTIMODAL|
+| Status: SUCCEEDED     |
++-----------------------+
+--- FINAL_RESPONSE ---
+(grounded markdown answer)
+Demo complete.
 ```
 
 ## Verified on this machine (phase 2)
@@ -131,9 +241,8 @@ Phase 1.1 results still hold. New phase-2 verification:
   phase 2 all extend without rewrites — OCR is a new capability that
   produces an OCR_TEXT artifact which the RAG capability can then consume.
 - **Phase 3+** — multimodal capability, real LLM generation provider,
-  MinIO/S3 storage adapter, gate internal endpoints behind a shared
-  secret, retry orchestration, Kubernetes manifests, per-capability
-  Redis lanes, real frontend.
+  MinIO/S3 storage adapter, retry orchestration, Kubernetes manifests,
+  per-capability Redis lanes, real frontend.
 
 See [`docs/architecture.md`](docs/architecture.md) for design decisions
 and [`docs/api-summary.md`](docs/api-summary.md) for the concrete endpoint

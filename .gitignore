@@ -32,6 +32,9 @@ ai-worker/*.egg-info/
 ai-worker/eval/reports/
 ai-worker/eval/datasets/samples/
 
+# ---- Demo script generated assets ----
+scripts/assets/
+
 # ---- Local runtime state ----
 data/
 !data/.gitkeep

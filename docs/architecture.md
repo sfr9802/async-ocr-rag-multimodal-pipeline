@@ -47,6 +47,13 @@ The RAG capability has two logically distinct paths:
 Both paths share the same chunker, embedding provider, FAISS wrapper,
 and metadata store classes — they just use them in different orders.
 
+The default embedding model is multilingual (BAAI/bge-m3, 1024-dim),
+covering Korean and English retrieval in a single index. The generation
+provider is selectable: `extractive` (default, deterministic heuristic)
+or `claude` (Claude LLM via Anthropic API, with automatic extractive
+fallback on API failure). Set `AIPIPELINE_WORKER_RAG_GENERATOR=claude`
+to use Claude generation.
+
 ### Storage split (intentional, enforced at the DB level)
 
 | Store              | Purpose                                  | Phase |
@@ -345,10 +352,11 @@ are explicit non-goals for v1 and are **not** implemented:
 - **Dedicated image embeddings are deferred.** Image inputs do not
   produce their own vectors; they only contribute through OCR text
   + the (currently heuristic) vision description.
-- **Vision quality is intentionally mock-grade.** The default
-  `HeuristicVisionProvider` emits a structural description, not a
-  semantic caption. It is a seam for plugging in a real VLM later,
-  not a quality bar.
+- **Default vision provider is claude-sonnet-4-6; heuristic remains as
+  offline/CI fallback.** Set `AIPIPELINE_WORKER_MULTIMODAL_VISION_PROVIDER=claude`
+  and provide an Anthropic API key to use Claude Vision. The
+  `HeuristicVisionProvider` (Pillow-based structural description) is
+  still the default for environments without an API key.
 - **Per-page captions are single-page in v1.** Multi-page PDFs get
   OCR on every page but only page 1 goes through the vision stage.
   Extending this is a config knob change + a loop in the capability.
@@ -869,12 +877,12 @@ plain interface.
 | Real OCR engine                           | 2 (shipped) |
 | FAISS-based RAG capability                | 2 (shipped) |
 | Multimodal v1 (OCR + vision + text RAG)   | 2 (shipped) |
-| True multimodal retrieval (image embeddings, cross-modal search) | 3+    |
+| ~~True multimodal retrieval (image embeddings, cross-modal search)~~ | shipped (CLIP + RRF, opt-in) |
 | Real VLM provider (BLIP-2 / Claude Vision / GPT-4V / Gemini) | 3+    |
 | Multi-page vision captioning for PDFs     | 3+    |
 | Multimodal automated eval harness         | 3+    |
-| MinIO / S3 storage adapter                | 2     |
-| Auth on `/api/internal/*`                 | 2     |
+| ~~MinIO / S3 storage adapter~~            | shipped (backend=s3, AWS SDK v2) |
+| ~~Auth on `/api/internal/*`~~             | shipped (shared-secret header) |
 | Retry orchestration                       | 2     |
 | Per-capability Redis lanes                | 2     |
 | Kubernetes manifests                      | 2+    |

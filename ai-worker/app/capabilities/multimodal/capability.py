@@ -42,12 +42,12 @@ Design choices for v1 that are NOT accidents:
   is explicitly v1 scope — see `docs/architecture.md` "Multimodal v1
   limitations" for the deferred items.
 
-* **PDF page handling is asymmetric.** OCR walks every page via
-  `OcrProvider.ocr_pdf` (which already handles born-digital text
-  layers + rasterization). Vision only sees the FIRST page rasterized
-  via PyMuPDF. Page 1 is almost always representative of the visual
-  layout; captioning every page doubles cost for negligible v1 gain.
-  A later phase can add per-page captions.
+* **PDF page handling is now multi-page for vision.** OCR walks every
+  page via `OcrProvider.ocr_pdf` (which already handles born-digital
+  text layers + rasterization). Vision rasterizes up to
+  `max_vision_pages` pages (configurable, default 3) and sends each
+  through the vision provider independently. Individual page failures
+  are accumulated as warnings without failing the stage.
 """
 
 from __future__ import annotations
@@ -121,10 +121,14 @@ class MultimodalCapabilityConfig:
     over the same index.
 
     Fields:
-      pdf_vision_dpi:        DPI used when rasterizing PDF page 1 for
+      pdf_vision_dpi:        DPI used when rasterizing PDF pages for
                              the vision provider. 150 is plenty for
                              captioning; 200+ wastes memory without
                              helping the heuristic provider.
+      max_vision_pages:      maximum PDF pages to send through vision.
+                             Must be > 0 by the time it reaches here
+                             (the registry resolves 0/negative into
+                             the ocr_max_pages safety cap).
       max_fused_chunk_chars: cap on how much of the fused context is
                              injected as the synthetic rank-0 chunk.
                              Prevents a huge OCR dump from blowing out
@@ -138,9 +142,11 @@ class MultimodalCapabilityConfig:
     """
 
     pdf_vision_dpi: int = 150
+    max_vision_pages: int = 3
     max_fused_chunk_chars: int = 2000
     emit_trace: bool = False
     default_user_question: str = ""
+    use_cross_modal_retrieval: bool = False
 
 
 class MultimodalCapability(Capability):
@@ -161,14 +167,20 @@ class MultimodalCapability(Capability):
         retriever: Retriever,
         generator: GenerationProvider,
         config: MultimodalCapabilityConfig,
-        pdf_rasterizer: Optional[Callable[[bytes, int], Optional[bytes]]] = None,
+        pdf_pages_rasterizer: Optional[
+            Callable[[bytes, int, int], List[Tuple[int, bytes]]]
+        ] = None,
+        cross_modal_retriever: Optional[object] = None,
     ) -> None:
         self._ocr = ocr_provider
         self._vision = vision_provider
         self._retriever = retriever
         self._generator = generator
         self._config = config
-        self._pdf_rasterizer = pdf_rasterizer or _default_rasterize_pdf_first_page
+        self._pdf_pages_rasterizer = (
+            pdf_pages_rasterizer or _default_rasterize_pdf_pages
+        )
+        self._cross_modal_retriever = cross_modal_retriever
 
     # ------------------------------------------------------------------
 
@@ -219,7 +231,7 @@ class MultimodalCapability(Capability):
         ocr_text = ocr_document.full_text if ocr_document else ""
 
         # -- stage B: vision description --------------------------------
-        vision_result, vision_warnings = self._run_vision_stage(
+        vision_results, vision_warnings = self._run_vision_stage(
             file_artifact,
             kind=kind,
             mime_type=mime_type,
@@ -228,7 +240,7 @@ class MultimodalCapability(Capability):
         )
 
         # Hard failure: BOTH providers produced nothing usable.
-        if (not ocr_text or not ocr_text.strip()) and vision_result is None:
+        if (not ocr_text or not ocr_text.strip()) and not vision_results:
             # Mark downstream stages as skipped so the trace shape is
             # complete even in the terminal path. Operators reading
             # just the summary can see the exact gap.
@@ -250,7 +262,7 @@ class MultimodalCapability(Capability):
         fusion = build_fusion(
             user_question=question,
             ocr_text=ocr_text,
-            vision=vision_result,
+            vision_pages=vision_results,
         )
         fusion_ms = elapsed_ms(started)
         builder.record_ok(
@@ -278,7 +290,15 @@ class MultimodalCapability(Capability):
         # -- stage D: retrieval -----------------------------------------
         started = time.monotonic()
         try:
-            retrieval_report = self._retriever.retrieve(fusion.retrieval_query)
+            if (
+                self._config.use_cross_modal_retrieval
+                and self._cross_modal_retriever is not None
+            ):
+                retrieval_report = self._cross_modal_retriever.retrieve_multimodal(
+                    fusion.retrieval_query
+                )
+            else:
+                retrieval_report = self._retriever.retrieve(fusion.retrieval_query)
         except Exception as ex:
             retrieve_ms = elapsed_ms(started)
             builder.record_fail(
@@ -382,7 +402,7 @@ class MultimodalCapability(Capability):
                 filename="multimodal-vision.json",
                 content_type="application/json",
                 content=self._vision_result_json(
-                    vision=vision_result,
+                    vision_pages=vision_results,
                     filename=filename,
                     mime_type=mime_type,
                     kind=kind,
@@ -638,18 +658,20 @@ class MultimodalCapability(Capability):
         mime_type: Optional[str],
         hint: Optional[str],
         builder: TraceBuilder,
-    ) -> Tuple[Optional[VisionDescriptionResult], List[str]]:
+    ) -> Tuple[List[VisionDescriptionResult], List[str]]:
         """Run the vision provider and convert failures into soft warnings.
 
         For image inputs we hand the raw artifact bytes directly to
-        the provider. For PDF inputs we rasterize the first page via
-        PyMuPDF and hand that PNG to the provider — see the capability
-        docstring for the reasoning behind captioning only page 1.
+        the provider and return a single-element list.
 
-        Records a StageRecord on the builder:
-          * ok on success
-          * fail with `fallback_used=True` on VisionError, PDF
-            rasterization failure, or zero-byte rasterization output
+        For PDF inputs we rasterize up to ``max_vision_pages`` pages
+        via the injected rasterizer, then run each page through the
+        vision provider independently. Individual page failures are
+        accumulated as warnings — only a complete wipe-out (zero pages
+        succeeded) records a stage-level failure.
+
+        Returns ``(results, warnings)`` where *results* may be empty
+        when every attempt failed.
         """
         warnings: List[str] = []
         started = time.monotonic()
@@ -667,18 +689,23 @@ class MultimodalCapability(Capability):
                     provider=result.provider_name,
                     duration_ms=vision_ms,
                     details={
-                        "pageNumber": result.page_number,
-                        "captionPreview": result.caption[:200],
-                        "latencyMs": result.latency_ms,
-                        "detailCount": len(result.details),
+                        "pageCount": 1,
+                        "pages": [{
+                            "pageNumber": result.page_number,
+                            "captionPreview": result.caption[:120],
+                            "latencyMs": result.latency_ms,
+                            "detailCount": len(result.details),
+                        }],
                     },
                 )
-                return result, warnings
+                return [result], warnings
 
-            # PDF path
+            # -- PDF multi-page path ------------------------------------
             try:
-                png_bytes = self._pdf_rasterizer(
-                    artifact.content, self._config.pdf_vision_dpi
+                page_images = self._pdf_pages_rasterizer(
+                    artifact.content,
+                    self._config.pdf_vision_dpi,
+                    self._config.max_vision_pages,
                 )
             except Exception as ex:
                 vision_ms = elapsed_ms(started)
@@ -699,44 +726,86 @@ class MultimodalCapability(Capability):
                     retryable=False,
                     fallback_used=True,
                 )
-                return None, warnings
+                return [], warnings
 
-            if png_bytes is None or len(png_bytes) == 0:
+            if not page_images:
                 vision_ms = elapsed_ms(started)
                 warnings.append(
-                    "pdf rasterization returned no bytes (zero-page PDF?) "
+                    "pdf rasterization returned no pages (zero-page PDF?) "
                     "— vision stage skipped"
                 )
                 builder.record_fail(
                     STAGE_VISION,
                     provider=self._vision.name,
                     code="VISION_PDF_EMPTY",
-                    message="pdf rasterization returned zero bytes",
+                    message="pdf rasterization returned zero pages",
                     duration_ms=vision_ms,
                     retryable=False,
                     fallback_used=True,
                 )
-                return None, warnings
+                return [], warnings
 
-            result = self._vision.describe_image(
-                png_bytes,
-                mime_type="image/png",
-                hint=hint,
-                page_number=1,
-            )
+            # Describe each rasterized page independently.
+            results: List[VisionDescriptionResult] = []
+            failed_pages: List[int] = []
+            for page_no, png_bytes in page_images:
+                try:
+                    result = self._vision.describe_image(
+                        png_bytes,
+                        mime_type="image/png",
+                        hint=hint,
+                        page_number=page_no,
+                    )
+                    results.append(result)
+                except VisionError as page_ex:
+                    failed_pages.append(page_no)
+                    warnings.append(
+                        f"vision failed on page {page_no} "
+                        f"({page_ex.code}): {page_ex.message}"
+                    )
+                    log.warning(
+                        "MULTIMODAL vision page %d failed: code=%s "
+                        "message=%s — skipping page",
+                        page_no, page_ex.code, page_ex.message,
+                    )
+
             vision_ms = elapsed_ms(started)
-            builder.record_ok(
-                STAGE_VISION,
-                provider=result.provider_name,
-                duration_ms=vision_ms,
-                details={
-                    "pageNumber": result.page_number,
-                    "captionPreview": result.caption[:200],
-                    "latencyMs": result.latency_ms,
-                    "detailCount": len(result.details),
-                },
-            )
-            return result, warnings
+
+            if results:
+                page_details = [
+                    {
+                        "pageNumber": r.page_number,
+                        "captionPreview": r.caption[:120],
+                        "latencyMs": r.latency_ms,
+                        "detailCount": len(r.details),
+                    }
+                    for r in results
+                ]
+                builder.record_ok(
+                    STAGE_VISION,
+                    provider=results[0].provider_name,
+                    duration_ms=vision_ms,
+                    details={
+                        "pageCount": len(results),
+                        "failedPages": len(failed_pages),
+                        "pages": page_details,
+                    },
+                )
+            else:
+                # Every page failed — record stage failure.
+                builder.record_fail(
+                    STAGE_VISION,
+                    provider=self._vision.name,
+                    code="VISION_ALL_PAGES_FAILED",
+                    message=(
+                        f"all {len(failed_pages)} rasterized pages "
+                        "failed vision description"
+                    ),
+                    duration_ms=vision_ms,
+                    retryable=True,
+                    fallback_used=True,
+                )
+            return results, warnings
 
         except VisionError as ex:
             vision_ms = elapsed_ms(started)
@@ -758,7 +827,7 @@ class MultimodalCapability(Capability):
                 retryable=True,
                 fallback_used=True,
             )
-            return None, warnings
+            return [], warnings
 
     # ==================================================================
     # stage E helpers — building grounded chunks + generator query
@@ -804,38 +873,33 @@ class MultimodalCapability(Capability):
     @staticmethod
     def _vision_result_json(
         *,
-        vision: Optional[VisionDescriptionResult],
+        vision_pages: List[VisionDescriptionResult],
         filename: str,
         mime_type: Optional[str],
         kind: str,
         warnings: List[str],
     ) -> str:
-        if vision is None:
-            body = {
-                "filename": filename,
-                "mimeType": mime_type,
-                "kind": kind,
-                "provider": None,
-                "caption": None,
-                "details": [],
-                "pageNumber": None,
-                "latencyMs": None,
-                "warnings": warnings,
-                "available": False,
-            }
-        else:
-            body = {
-                "filename": filename,
-                "mimeType": mime_type,
-                "kind": kind,
-                "provider": vision.provider_name,
-                "caption": vision.caption,
-                "details": list(vision.details),
-                "pageNumber": vision.page_number,
-                "latencyMs": vision.latency_ms,
-                "warnings": warnings + list(vision.warnings),
-                "available": True,
-            }
+        all_warnings = list(warnings)
+        pages_list = []
+        for vr in vision_pages:
+            all_warnings.extend(vr.warnings)
+            pages_list.append({
+                "pageNumber": vr.page_number,
+                "provider": vr.provider_name,
+                "caption": vr.caption,
+                "details": list(vr.details),
+                "latencyMs": vr.latency_ms,
+            })
+
+        body = {
+            "filename": filename,
+            "mimeType": mime_type,
+            "kind": kind,
+            "pageCount": len(pages_list),
+            "pages": pages_list,
+            "warnings": all_warnings,
+            "available": len(pages_list) > 0,
+        }
         return json.dumps(body, ensure_ascii=False, indent=2)
 
     @staticmethod
@@ -878,8 +942,7 @@ def _default_rasterize_pdf_first_page(pdf_bytes: bytes, dpi: int) -> Optional[by
     """Rasterize the first page of a PDF to PNG bytes.
 
     Uses PyMuPDF (already a worker dep for the OCR stack). Kept as a
-    module-level function so the capability constructor's default
-    binds to something importable without lazy-loading state.
+    module-level function for backward compatibility.
 
     Returns None for zero-page PDFs. Raises on decoder failures —
     the capability wraps the raise into a non-fatal warning.
@@ -893,5 +956,34 @@ def _default_rasterize_pdf_first_page(pdf_bytes: bytes, dpi: int) -> Optional[by
         page = doc.load_page(0)
         pixmap = page.get_pixmap(dpi=int(dpi))
         return pixmap.tobytes("png")
+    finally:
+        doc.close()
+
+
+def _default_rasterize_pdf_pages(
+    pdf_bytes: bytes, dpi: int, max_pages: int
+) -> List[Tuple[int, bytes]]:
+    """Rasterize up to *max_pages* pages of a PDF to PNG bytes.
+
+    Returns a list of ``(page_number, png_bytes)`` tuples where
+    *page_number* is 1-indexed. Empty list for zero-page PDFs.
+
+    Raises on decoder failures — the capability wraps the raise into
+    a non-fatal warning.
+    """
+    import fitz  # type: ignore
+
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    try:
+        total = doc.page_count
+        if total == 0:
+            return []
+        effective = min(max_pages, total) if max_pages > 0 else total
+        result: List[Tuple[int, bytes]] = []
+        for idx in range(effective):
+            page = doc.load_page(idx)
+            pixmap = page.get_pixmap(dpi=int(dpi))
+            result.append((idx + 1, pixmap.tobytes("png")))
+        return result
     finally:
         doc.close()
