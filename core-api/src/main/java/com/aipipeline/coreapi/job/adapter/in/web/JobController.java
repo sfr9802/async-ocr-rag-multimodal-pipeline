@@ -7,9 +7,9 @@ import com.aipipeline.coreapi.job.adapter.in.web.dto.JobResponses;
 import com.aipipeline.coreapi.job.application.port.in.JobManagementUseCase;
 import com.aipipeline.coreapi.job.application.port.in.JobManagementUseCase.CreateJobCommand;
 import com.aipipeline.coreapi.job.application.port.in.JobManagementUseCase.StagedInputArtifact;
+import com.aipipeline.coreapi.job.application.service.JobSubmissionValidator;
 import com.aipipeline.coreapi.job.domain.JobCapability;
 import com.aipipeline.coreapi.job.domain.JobId;
-import jakarta.validation.Valid;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -18,6 +18,7 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -29,6 +30,10 @@ import java.util.List;
  *     application use case to persist and enqueue.
  *   - The controller is intentionally thin — it only maps HTTP to/from the
  *     use-case boundary.
+ *   - Capability/input validation is delegated to
+ *     {@link JobSubmissionValidator}, which runs BEFORE any storage.store()
+ *     or createAndEnqueue() work. If it throws, the pipeline is left in a
+ *     pristine state (no Artifact row, no Job row, no Redis dispatch).
  *   - Authentication is deferred to a later phase; the user explicitly
  *     scoped this out.
  */
@@ -46,13 +51,23 @@ public class JobController {
 
     /**
      * Text-based submission. Stages the prompt text as an INPUT_TEXT artifact.
+     *
+     * Contract:
+     *   - capability: required (CAPABILITY_REQUIRED / UNKNOWN_CAPABILITY)
+     *   - text:       required, content rules depend on capability
+     *                 (TEXT_REQUIRED for RAG when blank/null)
+     *   - OCR / MULTIMODAL on this endpoint → FILE_REQUIRED (wrong endpoint)
      */
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<JobResponses.JobCreated> createTextJob(@Valid @RequestBody CreateJobRequest body) {
-        JobCapability capability = JobCapability.fromString(body.capability());
+    public ResponseEntity<JobResponses.JobCreated> createTextJob(@RequestBody CreateJobRequest body) {
+        // Parse + validate BEFORE any side effects. If this throws, nothing
+        // has been persisted or enqueued yet.
+        JobCapability capability = JobSubmissionValidator.parseCapability(body.capability());
+        JobSubmissionValidator.validateTextSubmission(capability, body.text());
+
         byte[] bytes = body.text().getBytes(StandardCharsets.UTF_8);
         var stored = storage.store(
-                com.aipipeline.coreapi.job.domain.JobId.generate(),  // provisional prefix
+                JobId.generate(),  // provisional prefix
                 ArtifactType.INPUT_TEXT,
                 "prompt.txt",
                 "text/plain; charset=utf-8",
@@ -72,31 +87,72 @@ public class JobController {
 
     /**
      * File-based submission via multipart/form-data. Fields:
-     *   - capability : form field
-     *   - file       : the binary upload
+     *   - capability : form field (required)
+     *   - file       : the binary upload (required, non-empty; FILE_REQUIRED /
+     *                  FILE_EMPTY otherwise). The {@code required} flag is
+     *                  left at false on the annotation so missing files reach
+     *                  {@link JobSubmissionValidator} and produce the typed
+     *                  FILE_REQUIRED error code instead of Spring's generic
+     *                  {@code MissingServletRequestParameter}.
+     *   - text       : optional accompanying user question/prompt. When
+     *                  present, it is staged as a second INPUT_TEXT artifact
+     *                  alongside the INPUT_FILE. The MULTIMODAL capability
+     *                  uses this as the user question for its fusion step;
+     *                  OCR / MOCK capabilities ignore it (they only ever
+     *                  pick up INPUT_FILE / INPUT_TEXT respectively). RAG
+     *                  on this endpoint requires the text field to be
+     *                  non-blank — TEXT_REQUIRED otherwise.
+     *
+     * Per-capability file-type rules (OCR + MULTIMODAL): PNG, JPEG, PDF only.
+     * Anything else → UNSUPPORTED_FILE_TYPE.
      */
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<JobResponses.JobCreated> createFileJob(
-            @RequestParam("capability") String capabilityRaw,
-            @RequestParam("file") MultipartFile file
+            @RequestParam(value = "capability", required = false) String capabilityRaw,
+            @RequestParam(value = "file", required = false) MultipartFile file,
+            @RequestParam(value = "text", required = false) String text
     ) throws IOException {
-        JobCapability capability = JobCapability.fromString(capabilityRaw);
-        var stored = storage.store(
-                com.aipipeline.coreapi.job.domain.JobId.generate(),
+        // Parse + validate BEFORE staging any bytes. If either call throws,
+        // nothing has been stored or enqueued — the pipeline is left in a
+        // pristine state.
+        JobCapability capability = JobSubmissionValidator.parseCapability(capabilityRaw);
+        JobSubmissionValidator.validateFileSubmission(capability, file, text);
+
+        var storedFile = storage.store(
+                JobId.generate(),
                 ArtifactType.INPUT_FILE,
                 file.getOriginalFilename(),
                 file.getContentType(),
                 file.getInputStream(),
                 file.getSize());
 
-        StagedInputArtifact staged = new StagedInputArtifact(
+        List<StagedInputArtifact> stagedInputs = new ArrayList<>();
+        stagedInputs.add(new StagedInputArtifact(
                 ArtifactType.INPUT_FILE,
-                stored.storageUri(),
+                storedFile.storageUri(),
                 file.getContentType(),
-                stored.sizeBytes(),
-                stored.checksumSha256());
+                storedFile.sizeBytes(),
+                storedFile.checksumSha256()));
 
-        var result = jobManagement.createAndEnqueue(new CreateJobCommand(capability, List.of(staged)));
+        if (text != null && !text.isBlank()) {
+            byte[] textBytes = text.getBytes(StandardCharsets.UTF_8);
+            var storedText = storage.store(
+                    JobId.generate(),
+                    ArtifactType.INPUT_TEXT,
+                    "prompt.txt",
+                    "text/plain; charset=utf-8",
+                    new ByteArrayInputStream(textBytes),
+                    textBytes.length);
+
+            stagedInputs.add(new StagedInputArtifact(
+                    ArtifactType.INPUT_TEXT,
+                    storedText.storageUri(),
+                    "text/plain; charset=utf-8",
+                    storedText.sizeBytes(),
+                    storedText.checksumSha256()));
+        }
+
+        var result = jobManagement.createAndEnqueue(new CreateJobCommand(capability, stagedInputs));
         return ResponseEntity.accepted().body(JobResponses.JobCreated.from(result.job(), result.inputArtifacts()));
     }
 

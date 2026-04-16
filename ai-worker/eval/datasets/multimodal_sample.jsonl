@@ -1,0 +1,31 @@
+# Multimodal eval dataset — PLACEHOLDER SCHEMA ONLY.
+#
+# **** This is a forward-looking schema proposal, not a live eval. ****
+# There is no multimodal harness yet. These rows exist so a future
+# phase can wire a scorer against them without another round of
+# dataset design.
+#
+# Proposed schema:
+#   image              (required) : path relative to this file (like OCR dataset)
+#   question           (required) : natural-language question about the image
+#   expected_answer    (optional) : canonical short answer; exact match is
+#                                   the strictest possible bar, substring
+#                                   match is more forgiving
+#   expected_keywords  (optional) : list of substrings the answer must contain
+#   expected_labels    (optional) : list of visual labels the model must
+#                                   identify (object names, colors, etc.)
+#   requires_ocr       (optional) : bool; true if the task demands extracting
+#                                   text from the image before answering
+#                                   (useful for the future OCR -> RAG -> VLM
+#                                   chaining experiments)
+#   language           (optional) : Tesseract/VLM language code if requires_ocr
+#   notes              (optional) : free-form annotation
+#
+# When this schema ships as a live harness, the recommended metrics are:
+#   - exact match on expected_answer (binary)
+#   - substring match rate
+#   - keyword coverage (reuse eval.harness.metrics.keyword_coverage)
+#   - label recall / precision
+#   - optional CER over VLM's own OCR subfield (if the model exposes one)
+{"image": "samples/invoice_snippet.png", "question": "What is the total amount on this invoice?", "expected_answer": "$129.95", "expected_keywords": ["129.95"], "requires_ocr": true, "language": "eng", "notes": "OCR-dependent: tests text extraction + number comprehension"}
+{"image": "samples/hello_world.png", "question": "What words are written in the image?", "expected_answer": "HELLO WORLD", "expected_keywords": ["HELLO", "WORLD"], "requires_ocr": true, "language": "eng", "notes": "pure OCR question, baseline for visual text reading"}

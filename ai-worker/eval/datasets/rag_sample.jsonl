@@ -1,0 +1,17 @@
+# RAG eval sample dataset — small, obviously illustrative.
+# Lines starting with `#` and blank lines are ignored by the loader.
+# Schema per row:
+#   query              (required)  : the user query to test
+#   expected_doc_ids   (optional)  : list of doc ids that SHOULD appear in top_k
+#   expected_keywords  (optional)  : substrings we expect in the generated answer
+#   notes              (optional)  : free-form human annotation
+#
+# These rows target the committed anime_sample.jsonl fixture — after you
+# run `python -m scripts.build_rag_index --fixture`, the 8 documents
+# anime-001..anime-008 are indexed and the queries below should retrieve them.
+{"query": "who runs the bookshop at the end of the railway line?", "expected_doc_ids": ["anime-003"], "expected_keywords": ["bookshop", "translator"], "notes": "cozy mystery — main character is a retired translator"}
+{"query": "an anime about an old fisherman who feeds stray cats in a harbor", "expected_doc_ids": ["anime-005"], "expected_keywords": ["fisherman", "harbor", "cats"], "notes": "slice of life, almost documentary pacing"}
+{"query": "students who pilot construction mechs to reinforce dams", "expected_doc_ids": ["anime-002"], "expected_keywords": ["mech", "dam", "academy"], "notes": "civil engineering mecha, not military"}
+{"query": "weather team stuck in a mountain observatory during a storm", "expected_doc_ids": ["anime-004"], "expected_keywords": ["storm", "observatory"], "notes": "survival drama, anemometer subplot"}
+{"query": "late-night desert radio DJ taking listener requests", "expected_doc_ids": ["anime-008"], "expected_keywords": ["radio", "DJ", "desert"], "notes": "tonal, minimalist music anime"}
+{"query": "village gardeners who tend luminescent plants above the clouds", "expected_doc_ids": ["anime-001"], "expected_keywords": ["gardens", "Aoi"], "notes": "slice-of-life fantasy, intergenerational knowledge transfer"}

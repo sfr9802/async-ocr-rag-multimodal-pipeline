@@ -494,3 +494,160 @@ def test_ocr_disabled_leaves_other_capabilities_intact(monkeypatch):
     result = registry_module.build_default_registry(settings)
 
     assert set(result.available()) == {"MOCK", "RAG"}
+
+
+# ---------------------------------------------------------------------------
+# Normalized trace (trace.v1) assertions on OCR_RESULT.
+# ---------------------------------------------------------------------------
+
+
+def _ocr_trace(result: CapabilityOutput) -> dict:
+    """Extract the normalized trace dict embedded in OCR_RESULT."""
+    body = json.loads(_find_output(result, "OCR_RESULT").content)
+    return body["trace"]
+
+
+def _find_stage(trace: dict, stage_name: str) -> dict:
+    for rec in trace["stages"]:
+        if rec["stage"] == stage_name:
+            return rec
+    raise AssertionError(
+        f"no stage {stage_name!r} in trace; present: "
+        f"{[r['stage'] for r in trace['stages']]}"
+    )
+
+
+def test_ocr_result_carries_normalized_trace_on_happy_path():
+    """OCR_RESULT must embed a trace.v1 payload with classify + ocr
+    stages both ok, finalStatus=ok, every canonical envelope field
+    populated."""
+    provider = FakeOcrProvider(
+        image_result=OcrPageResult(
+            page_number=1, text="hello world", avg_confidence=92.0
+        )
+    )
+    cap = OcrCapability(provider=provider, config=_default_config())
+
+    result = cap.run(_make_job_input(
+        content=_png_bytes(),
+        content_type="image/png",
+        filename="page.png",
+    ))
+    trace = _ocr_trace(result)
+    assert trace["schemaVersion"] == "trace.v1"
+    assert trace["capability"] == "OCR"
+    assert trace["inputKind"] == "image"
+    assert trace["finalStatus"] == "ok"
+    stage_names = [rec["stage"] for rec in trace["stages"]]
+    assert stage_names == ["classify", "ocr"]
+    for rec in trace["stages"]:
+        assert rec["status"] == "ok"
+        assert rec["code"] is None
+        assert rec["fallbackUsed"] is False
+
+    ocr_stage = _find_stage(trace, "ocr")
+    assert ocr_stage["provider"] == "fake-ocr-1.0"
+    assert ocr_stage["details"]["textLength"] > 0
+    assert ocr_stage["details"]["pageCount"] == 1
+    assert ocr_stage["details"]["avgConfidence"] == 92.0
+
+
+def test_ocr_result_trace_marks_empty_text_as_warn():
+    """Zero-char extraction should mark ocr as warn(OCR_EMPTY_TEXT)
+    and the trace as partial. Existing extraction semantics
+    (OCR_RESULT.warnings list) must be unchanged."""
+    provider = FakeOcrProvider(
+        image_result=OcrPageResult(
+            page_number=1, text="", avg_confidence=None
+        )
+    )
+    cap = OcrCapability(provider=provider, config=_default_config())
+
+    result = cap.run(_make_job_input(
+        content=_png_bytes(),
+        content_type="image/png",
+        filename="blank.png",
+    ))
+    body = json.loads(_find_output(result, "OCR_RESULT").content)
+    trace = body["trace"]
+
+    assert trace["finalStatus"] == "partial"
+    ocr_stage = _find_stage(trace, "ocr")
+    assert ocr_stage["status"] == "warn"
+    assert ocr_stage["code"] == "OCR_EMPTY_TEXT"
+
+    # Existing OCR_RESULT.warnings still contains the empty-text warning.
+    assert any("zero characters" in w for w in body["warnings"])
+    # And the extraction fields are untouched.
+    assert body["textLength"] == 0
+    assert body["pageCount"] == 1
+
+
+def test_ocr_result_trace_marks_low_confidence_as_warn():
+    """Below-threshold avg confidence should mark ocr as
+    warn(OCR_LOW_CONFIDENCE), partial trace."""
+    provider = FakeOcrProvider(
+        image_result=OcrPageResult(
+            page_number=1, text="some text", avg_confidence=20.0
+        )
+    )
+    cap = OcrCapability(
+        provider=provider,
+        config=OcrCapabilityConfig(min_confidence_warn=40.0, max_pages=100),
+    )
+
+    result = cap.run(_make_job_input(
+        content=_png_bytes(),
+        content_type="image/png",
+        filename="low.png",
+    ))
+    trace = _ocr_trace(result)
+    ocr_stage = _find_stage(trace, "ocr")
+    assert ocr_stage["status"] == "warn"
+    assert ocr_stage["code"] == "OCR_LOW_CONFIDENCE"
+    assert trace["finalStatus"] == "partial"
+
+
+def test_ocr_unsupported_input_type_has_stable_code_and_no_trace_suffix():
+    """The classifier runs before the trace builder exists, so an
+    unsupported file type produces a bare stable error code with no
+    ambiguous 'trace:' suffix."""
+    provider = FakeOcrProvider()
+    cap = OcrCapability(provider=provider, config=_default_config())
+
+    with pytest.raises(CapabilityError) as exc_info:
+        cap.run(_make_job_input(
+            content=b"GIF89a\x01\x00",
+            content_type="image/gif",
+            filename="cat.gif",
+        ))
+
+    assert exc_info.value.code == "UNSUPPORTED_INPUT_TYPE"
+    assert "trace:" not in exc_info.value.message
+
+
+def test_ocr_provider_error_folds_trace_summary_into_message():
+    """A hard OcrError raised mid-extraction should produce a typed
+    CapabilityError whose message includes the stage flow summary so
+    operators can see classify=ok + ocr=fail without downloading
+    anything."""
+    provider = FakeOcrProvider(
+        raise_on="image",
+        raise_error=OcrError("IMAGE_DECODE_FAILED", "Pillow blew up"),
+    )
+    cap = OcrCapability(provider=provider, config=_default_config())
+
+    with pytest.raises(CapabilityError) as exc_info:
+        cap.run(_make_job_input(
+            content=_png_bytes(),
+            content_type="image/png",
+            filename="broken.png",
+        ))
+
+    assert exc_info.value.code == "OCR_IMAGE_DECODE_FAILED"
+    msg = exc_info.value.message
+    assert "Pillow blew up" in msg
+    assert "trace:" in msg
+    assert "classify:ok" in msg
+    assert "ocr:fail" in msg
+    assert "OCR_IMAGE_DECODE_FAILED" in msg

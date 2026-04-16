@@ -10,11 +10,23 @@ package com.aipipeline.coreapi.artifact.domain;
  *   - ERROR_REPORT
  *
  * Phase 2 adds:
- *   - OCR_TEXT     : plain extracted text from an OCR run
- *   - OCR_RESULT   : JSON envelope describing the OCR run (filename,
- *                    mime type, page count, text length, confidence,
- *                    engine name, warnings)
+ *   - OCR_TEXT         : plain extracted text from an OCR run
+ *   - OCR_RESULT       : JSON envelope describing the OCR run (filename,
+ *                        mime type, page count, text length, confidence,
+ *                        engine name, warnings)
  *   - RETRIEVAL_RESULT : JSON report produced by the RAG capability
+ *
+ * Phase 2 multimodal v1 additionally emits:
+ *   - VISION_RESULT    : JSON payload from a VisionDescriptionProvider
+ *                        (caption, structured details, provider name,
+ *                        per-page metadata, warnings). Produced by the
+ *                        MULTIMODAL capability's vision stage.
+ *   - MULTIMODAL_TRACE : Optional JSON trace recording which stages of
+ *                        the multimodal pipeline contributed signal,
+ *                        fusion metadata, per-stage warnings. Gated
+ *                        behind the worker's multimodal_emit_trace
+ *                        setting — MULTIMODAL jobs only produce this
+ *                        when the operator explicitly enables it.
  *
  * Core-api only validates the enum name — artifact schemas are owned by
  * the producing capability.
@@ -25,6 +37,8 @@ public enum ArtifactType {
     OCR_TEXT,
     OCR_RESULT,
     RETRIEVAL_RESULT,
+    VISION_RESULT,
+    MULTIMODAL_TRACE,
     FINAL_RESPONSE,
     ERROR_REPORT;
 

@@ -25,6 +25,13 @@ ai-worker/.pytest_cache/
 ai-worker/.mypy_cache/
 ai-worker/*.egg-info/
 
+# ---- Eval harness generated artifacts ----
+# Reports change every run and should not be committed. Sample OCR
+# fixture images are synthesized by scripts/make_ocr_sample_fixtures.py
+# and drift across fonts, so they are regenerated on demand.
+ai-worker/eval/reports/
+ai-worker/eval/datasets/samples/
+
 # ---- Local runtime state ----
 data/
 !data/.gitkeep
