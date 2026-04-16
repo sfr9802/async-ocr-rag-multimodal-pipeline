@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from dataclasses import dataclass
 from typing import List, Optional
 
@@ -40,6 +41,14 @@ from app.capabilities.ocr.provider import (
     OcrError,
     OcrPageResult,
     OcrProvider,
+)
+from app.capabilities.trace import (
+    INPUT_KIND_IMAGE,
+    INPUT_KIND_PDF,
+    STAGE_CLASSIFY,
+    STAGE_OCR,
+    TraceBuilder,
+    elapsed_ms,
 )
 
 log = logging.getLogger(__name__)
@@ -85,8 +94,28 @@ class OcrCapability(Capability):
 
     def run(self, input: CapabilityInput) -> CapabilityOutput:
         artifact = self._pick_input_artifact(input)
+
+        # -- stage 0: classify -----------------------------------------
+        # Happens before the trace builder exists, so an UNSUPPORTED
+        # input raises a clean typed error with no ambiguous stage
+        # bookkeeping.
+        started = time.monotonic()
         mime_type, kind = self._classify(artifact)
         filename = self._derive_filename(artifact, kind)
+        classify_ms = elapsed_ms(started)
+
+        input_kind = INPUT_KIND_PDF if kind == "pdf" else INPUT_KIND_IMAGE
+        builder = TraceBuilder(capability=self.name, input_kind=input_kind)
+        builder.record_ok(
+            STAGE_CLASSIFY,
+            duration_ms=classify_ms,
+            details={
+                "mimeType": mime_type,
+                "filename": filename,
+                "kind": kind,
+                "sizeBytes": len(artifact.content),
+            },
+        )
 
         log.info(
             "OCR start jobId=%s artifact=%s kind=%s mime=%s filename=%s "
@@ -99,6 +128,8 @@ class OcrCapability(Capability):
             len(artifact.content),
         )
 
+        # -- stage A: OCR extraction -----------------------------------
+        started = time.monotonic()
         try:
             if kind == "image":
                 page = self._provider.ocr_image(
@@ -112,12 +143,27 @@ class OcrCapability(Capability):
             elif kind == "pdf":
                 document = self._provider.ocr_pdf(artifact.content)
                 if len(document.pages) > self._config.max_pages:
+                    ocr_ms = elapsed_ms(started)
+                    builder.record_fail(
+                        STAGE_OCR,
+                        provider=self._provider.name,
+                        code="OCR_TOO_MANY_PAGES",
+                        message=(
+                            f"PDF has {len(document.pages)} pages, limit is "
+                            f"{self._config.max_pages}"
+                        ),
+                        duration_ms=ocr_ms,
+                        retryable=False,
+                        details={"pageCount": len(document.pages)},
+                    )
+                    builder.finalize_failed()
                     raise CapabilityError(
                         "OCR_TOO_MANY_PAGES",
                         f"PDF has {len(document.pages)} pages, limit is "
                         f"{self._config.max_pages}. Raise "
                         f"AIPIPELINE_WORKER_OCR_MAX_PAGES or split the "
-                        f"document before submitting.",
+                        f"document before submitting. "
+                        f"| trace: {builder.summary()}",
                     )
             else:
                 # _classify already raises, but belt-and-suspenders:
@@ -126,17 +172,89 @@ class OcrCapability(Capability):
                     f"OCR cannot process kind={kind!r}",
                 )
         except OcrError as ex:
-            raise CapabilityError(f"OCR_{ex.code}", ex.message) from ex
+            ocr_ms = elapsed_ms(started)
+            builder.record_fail(
+                STAGE_OCR,
+                provider=self._provider.name,
+                code=f"OCR_{ex.code}",
+                message=ex.message,
+                duration_ms=ocr_ms,
+                retryable=False,
+            )
+            builder.finalize_failed()
+            raise CapabilityError(
+                f"OCR_{ex.code}",
+                f"{ex.message} | trace: {builder.summary()}",
+            ) from ex
 
+        ocr_ms = elapsed_ms(started)
         warnings = self._collect_warnings(document)
 
+        # Classify the OCR stage as ok / warn depending on whether
+        # the engine produced any usable text and whether confidence
+        # fell below the configured threshold. An empty-text or
+        # low-confidence run still emits the artifacts, matching the
+        # existing behavior — the trace just flags it clearly.
+        ocr_details = {
+            "pageCount": len(document.pages),
+            "textLength": document.total_text_length,
+            "avgConfidence": (
+                round(document.avg_confidence, 2)
+                if document.avg_confidence is not None
+                else None
+            ),
+            "engineName": document.engine_name,
+        }
+        if document.total_text_length == 0:
+            builder.record_warn(
+                STAGE_OCR,
+                provider=self._provider.name,
+                code="OCR_EMPTY_TEXT",
+                message="OCR produced zero characters",
+                duration_ms=ocr_ms,
+                details=ocr_details,
+            )
+        elif (
+            document.avg_confidence is not None
+            and document.avg_confidence < self._config.min_confidence_warn
+        ):
+            builder.record_warn(
+                STAGE_OCR,
+                provider=self._provider.name,
+                code="OCR_LOW_CONFIDENCE",
+                message=(
+                    f"avg confidence {document.avg_confidence:.1f} "
+                    f"< warn threshold {self._config.min_confidence_warn:.1f}"
+                ),
+                duration_ms=ocr_ms,
+                details=ocr_details,
+            )
+        else:
+            builder.record_ok(
+                STAGE_OCR,
+                provider=self._provider.name,
+                duration_ms=ocr_ms,
+                details=ocr_details,
+            )
+
+        # If any OCR record was a warn, treat the overall trace as
+        # partial so consumers can tell "completed with caveats" apart
+        # from "clean success". Hard-fails never reach here — they
+        # raise above.
+        has_warn = any(rec.status == "warn" for rec in builder.trace.stages)
+        trace = (
+            builder.finalize_partial() if has_warn else builder.finalize_ok()
+        )
+
         log.info(
-            "OCR done jobId=%s pages=%d text_len=%d avg_conf=%s warnings=%d",
+            "OCR done jobId=%s pages=%d text_len=%d avg_conf=%s warnings=%d "
+            "final_status=%s",
             input.job_id,
             len(document.pages),
             document.total_text_length,
             _fmt_conf(document.avg_confidence),
             len(warnings),
+            trace.final_status,
         )
 
         ocr_text_artifact = CapabilityOutputArtifact(
@@ -155,6 +273,7 @@ class OcrCapability(Capability):
                 kind=kind,
                 document=document,
                 warnings=warnings,
+                trace=trace,
             ).encode("utf-8"),
         )
         return CapabilityOutput(outputs=[ocr_text_artifact, ocr_result_artifact])
@@ -280,7 +399,16 @@ class OcrCapability(Capability):
         kind: str,
         document: OcrDocumentResult,
         warnings: List[str],
+        trace,  # type: PipelineTrace — typed via duck-typing to avoid circular import
     ) -> str:
+        """Serialize the OCR_RESULT envelope.
+
+        The top-level body keeps its phase-2 extraction shape unchanged
+        (filename / mimeType / kind / engineName / pageCount / textLength
+        / avgConfidence / pages / warnings). A new `trace` field carries
+        the normalized stage flow — it is additive, so consumers that
+        don't parse it see zero behavior change.
+        """
         avg_conf = document.avg_confidence
         body = {
             "filename": filename,
@@ -306,6 +434,7 @@ class OcrCapability(Capability):
                 for p in document.pages
             ],
             "warnings": warnings,
+            "trace": trace.to_dict(),
         }
         return json.dumps(body, ensure_ascii=False, indent=2)
 

@@ -259,6 +259,61 @@ Two OUTPUT rows per job = double-write regression — file a bug.
   verify `AIPIPELINE_WORKER_REDIS_URL` and `AIPIPELINE_WORKER_QUEUE_PENDING_KEY`
   match the core-api side.
 
+### Inspecting pipeline trace artifacts
+
+OCR and MULTIMODAL jobs carry a normalized **stage-level trace** that
+tells you exactly which stages ran, which fell back, and which failed.
+See `docs/architecture.md` "Pipeline trace and failure reporting" for
+the full schema, error code table, and example payloads.
+
+**On a FAILED job** (MULTIMODAL), the trace summary is folded directly
+into the job's `errorMessage` field so you can see it without
+downloading anything:
+
+```bash
+curl -s http://localhost:8080/api/v1/jobs/$JOB_ID | python -c \
+  "import json, sys; j=json.load(sys.stdin); print(j.get('errorCode'), '|', j.get('errorMessage'))"
+# → MULTIMODAL_ALL_PROVIDERS_FAILED | ... | trace: classify:ok(0ms) ocr:fail(OCR_IMAGE_DECODE_FAILED,2ms,fallback) vision:fail(VISION_VLM_TIMEOUT,5ms,fallback) fusion:skipped retrieve:skipped generate:skipped
+```
+
+**On a SUCCEEDED OCR job**, the trace lives inside the `OCR_RESULT`
+artifact:
+
+```bash
+# 1. Get the OCR_RESULT access URL
+OCR_URL=$(curl -s http://localhost:8080/api/v1/jobs/$JOB_ID/result \
+  | python -c "import json, sys; outs = json.load(sys.stdin)['outputs']; \
+    print(next(o['accessUrl'] for o in outs if o['type']=='OCR_RESULT'))")
+
+# 2. Download and pretty-print the trace
+curl -s "http://localhost:8080$OCR_URL" | python -m json.tool | grep -A 30 '"trace"'
+```
+
+**On a SUCCEEDED MULTIMODAL job** (with `emit_trace=true`), the trace
+is a separate `MULTIMODAL_TRACE` artifact:
+
+```bash
+# Enable trace emission before starting the worker:
+export AIPIPELINE_WORKER_MULTIMODAL_EMIT_TRACE=true
+
+# After submitting a MULTIMODAL job and polling until SUCCEEDED:
+TRACE_URL=$(curl -s http://localhost:8080/api/v1/jobs/$JOB_ID/result \
+  | python -c "import json, sys; outs = json.load(sys.stdin)['outputs']; \
+    print(next(o['accessUrl'] for o in outs if o['type']=='MULTIMODAL_TRACE'))")
+curl -s "http://localhost:8080$TRACE_URL" | python -m json.tool
+```
+
+**Quick diagnosis from the trace `summary` field:**
+
+| Summary pattern                                | Diagnosis                                          |
+|-------------------------------------------------|----------------------------------------------------|
+| `ocr:ok vision:ok ... generate:ok`              | Clean success, no issues                           |
+| `vision:fail(VISION_...,fallback)`               | Vision provider is down; pipeline proceeded on OCR only |
+| `ocr:warn(OCR_EMPTY_TEXT,...,fallback)`           | Input had no readable text; answer grounded on vision caption only |
+| `ocr:fail(...) vision:fail(...) fusion:skipped`  | Both providers failed — terminal `MULTIMODAL_ALL_PROVIDERS_FAILED` |
+| `retrieve:fail(MULTIMODAL_RETRIEVAL_FAILED,...)`  | FAISS index is corrupt or unreachable; OCR/vision were fine |
+| `generate:fail(MULTIMODAL_GENERATION_FAILED,...)` | Generator raised after successful retrieval — rare |
+
 ## Windows-specific notes
 
 - Use git-bash or PowerShell. `cmd.exe` also works but some of the
@@ -576,6 +631,439 @@ visible in the job's `errorCode` field.
   output of job A and feeds it as `INPUT_TEXT` to a RAG job B; phase
   1 OCR deliberately stops short of that.
 
+## Phase 2: MULTIMODAL capability (v1)
+
+The MULTIMODAL capability accepts an **INPUT_FILE** artifact (PNG,
+JPEG, or PDF) plus an **optional INPUT_TEXT user question**, runs
+it through OCR + a visual-description provider, fuses the two
+signals into a retrieval query + grounding context, and hands that
+context to the existing text-RAG retriever + generator. The result
+is four output artifacts:
+
+- **OCR_TEXT** — plain UTF-8 text from the OCR stage.
+- **VISION_RESULT** — JSON envelope with provider name, caption,
+  structured details, per-page metadata, warnings, and an
+  `available` flag so downstream consumers can tell whether the
+  vision stage actually produced a result.
+- **RETRIEVAL_RESULT** — same JSON schema the standalone RAG
+  capability already emits, so existing consumers work unchanged.
+- **FINAL_RESPONSE** — grounded markdown answer produced by the
+  extractive generator, with the fused OCR + vision signal
+  injected as a synthetic rank-0 chunk.
+
+Optionally (off by default): **MULTIMODAL_TRACE** — a JSON trace
+recording which stages contributed, fusion metadata, and per-stage
+warnings. Enable with `AIPIPELINE_WORKER_MULTIMODAL_EMIT_TRACE=true`.
+
+> **v1 scope reminder.** MULTIMODAL v1 is **not** true multimodal
+> retrieval. It reuses the existing text-RAG retriever; there is no
+> dedicated image embedding index and no VLM answer generator. See
+> `docs/architecture.md` "Multimodal v1 limitations" for the full
+> list of deferred items.
+
+### Prerequisites
+
+MULTIMODAL is a **dependent** capability. At worker startup:
+
+1. **RAG must register successfully.** MULTIMODAL reuses the RAG
+   retriever + generator. Follow the "Phase 2: RAG capability"
+   section above to build the FAISS index and bring RAG up first.
+2. **OCR must register successfully.** MULTIMODAL reuses the OCR
+   provider for text extraction. Follow the "Phase 2: OCR
+   capability" section above to install Tesseract and PyMuPDF.
+3. The v1 vision provider is `HeuristicVisionProvider`, which has
+   no dependencies beyond Pillow (already pulled in transitively
+   by sentence-transformers). No additional install step.
+
+If either RAG or OCR fails to register, MULTIMODAL is skipped
+automatically with a clear warning that names the missing parent.
+MOCK, RAG, and OCR remain unaffected in either case.
+
+### Starting the worker with MULTIMODAL
+
+Just start the worker normally — registration is automatic:
+
+```bash
+cd ai-worker
+python -m app.main
+```
+
+On a healthy startup with all dependencies in place you should see:
+
+```
+RAG init: configured_model=BAAI/bge-m3 query_prefix='' passage_prefix='' index_dir=../rag-data top_k=5
+...
+RAG capability registered.
+OCR init: languages=eng pdf_dpi=200 tesseract_cmd=<PATH> min_conf_warn=40.0 max_pages=100
+...
+OCR capability registered.
+MULTIMODAL init: vision_provider=heuristic pdf_vision_dpi=150 emit_trace=False default_question='' (retrieval top-k inherited from RAG=5)
+MULTIMODAL capability registered.
+Active capabilities: ['MOCK', 'MULTIMODAL', 'OCR', 'RAG']
+```
+
+If RAG or OCR failed to register, MULTIMODAL is skipped with a
+warning like one of:
+
+```
+MULTIMODAL capability NOT registered: OCR capability is unavailable. MULTIMODAL v1 reuses the OCR provider — enable and fix OCR first, then restart the worker. MOCK, RAG remain registered.
+```
+
+or
+
+```
+MULTIMODAL capability NOT registered: RAG capability is unavailable. MULTIMODAL v1 reuses the RAG retriever + generator to feed the fused OCR + vision context into the existing text-RAG path — enable and fix RAG first, then restart the worker. MOCK, OCR remain registered.
+```
+
+### Submitting a MULTIMODAL job
+
+File + optional text, via the same multipart endpoint you already
+use for OCR:
+
+```bash
+# Image + user question
+curl -X POST http://localhost:8080/api/v1/jobs \
+  -F "capability=MULTIMODAL" \
+  -F "file=@/path/to/invoice.png" \
+  -F "text=what is the total amount on this invoice?"
+
+# PDF + user question
+curl -X POST http://localhost:8080/api/v1/jobs \
+  -F "capability=MULTIMODAL" \
+  -F "file=@/path/to/report.pdf" \
+  -F "text=summarize the main findings"
+
+# Image without a question — the fusion helper picks a neutral
+# default retrieval query
+curl -X POST http://localhost:8080/api/v1/jobs \
+  -F "capability=MULTIMODAL" \
+  -F "file=@/path/to/diagram.jpg"
+```
+
+Poll `GET /api/v1/jobs/{id}` until `SUCCEEDED`, then fetch
+`GET /api/v1/jobs/{id}/result`. The `outputs` array holds four
+artifacts (`OCR_TEXT`, `VISION_RESULT`, `RETRIEVAL_RESULT`,
+`FINAL_RESPONSE`), plus a fifth `MULTIMODAL_TRACE` when
+`AIPIPELINE_WORKER_MULTIMODAL_EMIT_TRACE=true`.
+
+### Sample end-to-end test flow
+
+This is the exact sequence to verify a fresh install works
+end-to-end:
+
+```bash
+# 1. (One time only) Build the RAG index and install Tesseract
+#    as described in the RAG and OCR sections above.
+
+# 2. Start infra + core-api + worker in three terminals.
+docker compose up -d redis
+cd core-api && mvn spring-boot:run
+cd ai-worker && python -m app.main
+
+# 3. Submit a MULTIMODAL job with any PNG or PDF and an optional
+#    question.
+JOB_ID=$(curl -s -X POST http://localhost:8080/api/v1/jobs \
+  -F "capability=MULTIMODAL" \
+  -F "file=@/path/to/some_document.png" \
+  -F "text=what is written in this image?" \
+  | python -c "import json, sys; print(json.load(sys.stdin)['jobId'])")
+echo "jobId=$JOB_ID"
+
+# 4. Poll until SUCCEEDED.
+for i in 1 2 3 4 5; do
+  STATUS=$(curl -s http://localhost:8080/api/v1/jobs/$JOB_ID \
+    | python -c "import json, sys; print(json.load(sys.stdin)['status'])")
+  echo "status=$STATUS"
+  [ "$STATUS" = "SUCCEEDED" ] && break
+  sleep 1
+done
+
+# 5. Fetch the result and list the artifact types.
+curl -s http://localhost:8080/api/v1/jobs/$JOB_ID/result \
+  | python -c "import json, sys; print([o['type'] for o in json.load(sys.stdin)['outputs']])"
+# → ['OCR_TEXT', 'VISION_RESULT', 'RETRIEVAL_RESULT', 'FINAL_RESPONSE']
+
+# 6. Download FINAL_RESPONSE to inspect the grounded answer.
+OUTPUT_URL=$(curl -s http://localhost:8080/api/v1/jobs/$JOB_ID/result \
+  | python -c "import json, sys; outs = json.load(sys.stdin)['outputs']; \
+    print(next(o['accessUrl'] for o in outs if o['type']=='FINAL_RESPONSE'))")
+curl -s "http://localhost:8080$OUTPUT_URL"
+```
+
+### MULTIMODAL configuration knobs (env vars)
+
+| Env var                                          | Default     | Notes                                                             |
+|---------------------------------------------------|-------------|-------------------------------------------------------------------|
+| `AIPIPELINE_WORKER_MULTIMODAL_ENABLED`           | `true`      | Set to `false` to skip MULTIMODAL registration entirely.          |
+| `AIPIPELINE_WORKER_MULTIMODAL_VISION_PROVIDER`   | `heuristic` | v1 only supports `heuristic` — reserved for future VLMs.          |
+| `AIPIPELINE_WORKER_MULTIMODAL_PDF_VISION_DPI`    | `150`       | DPI used to rasterize PDF page 1 for the vision provider.         |
+| `AIPIPELINE_WORKER_MULTIMODAL_EMIT_TRACE`        | `false`     | When true, also emit a `MULTIMODAL_TRACE` JSON artifact.          |
+| `AIPIPELINE_WORKER_MULTIMODAL_DEFAULT_QUESTION`  | (empty)     | Fallback user question when the job submits no INPUT_TEXT.       |
+
+Note: MULTIMODAL retrieval top-k is intentionally **inherited from
+`AIPIPELINE_WORKER_RAG_TOP_K`**. A MULTIMODAL job and a RAG job over
+the same FAISS index see the same retrieval shape.
+
+### Known limitations (MULTIMODAL v1)
+
+These are deferred by design — the goal of v1 is to **open** the
+pipeline to image/PDF inputs, not to chase quality yet:
+
+- **v1 is not true multimodal retrieval.** The retriever is the
+  existing text-RAG retriever. There is no image embedding index,
+  no cross-modal search, no multimodal FAISS partition.
+- **v1 uses OCR text + visual description to feed existing text RAG.**
+  All multimodal signal enters the retrieval stage as text in the
+  fused context block.
+- **Dedicated image embedding / cross-modal retrieval is deferred.**
+  That's the next phase after "manual multimodal eval set curation
+  + OCR/RAG/MM delta measurement".
+- **The default vision provider is a deterministic Pillow heuristic.**
+  It emits orientation, brightness, contrast, and dominant-channel
+  descriptors. It is a seam for plugging in a real VLM (BLIP-2,
+  GPT-4V, Claude Vision, Gemini) — not a quality bar.
+- **Multi-page PDFs get OCR on every page but only page 1 is
+  captioned.** Extending the vision stage to per-page captions is
+  a single config knob + loop away.
+- **Evaluation for multimodal quality is still mostly manual at
+  this stage.** The eval stub in
+  `ai-worker/eval/datasets/multimodal_sample.jsonl` is a
+  forward-looking schema proposal, not a live harness.
+
+### Recommended next step
+
+Before investing in true multimodal retrieval or a real VLM,
+curate a manual multimodal eval set (30–50 samples) and measure
+the OCR-only / RAG-only / MULTIMODAL answer quality delta on them.
+That measurement tells you whether the next marginal improvement
+should be (a) better OCR preprocessing, (b) a real VLM behind the
+`VisionDescriptionProvider` seam, (c) dedicated image embeddings,
+or (d) a real LLM generator — and it pins that decision to actual
+product quality instead of developer intuition.
+
+## Pipeline closeout tooling
+
+Two local-first tools ship in `ai-worker/scripts/` for developer and
+operator workflows. Neither tunes quality — they exist so a human can
+confirm "my stack is wired up correctly" in seconds instead of chasing
+log files across four terminals.
+
+### `python -m scripts.doctor` — readiness checker
+
+A lightweight, offline-first probe of every runtime prerequisite the
+worker needs before it can serve real jobs. Run it BEFORE starting
+the worker to diagnose why a capability would refuse to register.
+
+```bash
+cd ai-worker
+python -m scripts.doctor
+```
+
+Each check returns PASS / FAIL / WARN with a concrete remediation
+hint. Exit code is `0` when every check passes and `1` otherwise. A
+green run covers:
+
+- Redis reachable at `AIPIPELINE_WORKER_REDIS_URL`
+- PostgreSQL reachable at `AIPIPELINE_WORKER_RAG_DB_DSN`
+- `aipipeline.job`, `aipipeline.artifact`, and `ragmeta.*` tables
+  present (Flyway V1 + V2 ran)
+- `faiss.index` and `build.json` exist in the configured index dir
+- `build.json` is valid JSON with the required fields
+- The runtime `AIPIPELINE_WORKER_RAG_EMBEDDING_MODEL` matches the
+  model that built the index — the same strict check the worker's
+  `Retriever.ensure_ready()` performs at startup
+- Tesseract binary is on PATH (or at `AIPIPELINE_WORKER_OCR_TESSERACT_CMD`)
+  and every language in `AIPIPELINE_WORKER_OCR_LANGUAGES` is installed
+- Pillow + PyMuPDF (`fitz`) are importable
+- A rolled-up capability readiness summary that mirrors the worker
+  registry: `MOCK` is always ready; `RAG` is ready iff all DB + index
+  checks pass; `OCR` is ready iff Tesseract + image deps pass;
+  `MULTIMODAL` is ready iff both `RAG` and `OCR` are ready.
+
+Flags:
+
+- `--json` — emit a machine-readable JSON report to stdout
+- `--only redis,postgres,...` — run a subset (useful when you've
+  already confirmed the other half)
+
+Expected output on a fully-wired dev machine:
+
+```
+== ai-worker doctor ==
+[PASS] redis                  Redis reachable at redis://localhost:6379/0 (2 ms)
+[PASS] postgres               PostgreSQL reachable. (12 ms)
+[PASS] schemas                aipipeline + ragmeta schemas / tables present. (8 ms)
+[PASS] faiss_index            FAISS index files present in ../rag-data (0 ms)
+[PASS] build_json             build.json parseable (version=v-1776253724). (0 ms)
+[PASS] runtime_model_match    Runtime model matches index (BAAI/bge-m3). (0 ms)
+[PASS] tesseract              Tesseract 5.3.3 available (languages: ['eng']). (40 ms)
+[PASS] image_deps             Pillow + PyMuPDF importable. (2 ms)
+[PASS] capability_readiness   MOCK:ready, RAG:ready, OCR:ready, MULTIMODAL:ready
+```
+
+Typical failure modes it surfaces:
+
+| Failing check           | Meaning                                                                  |
+|--------------------------|--------------------------------------------------------------------------|
+| `redis` FAIL             | `docker compose up -d redis` forgotten, or wrong `REDIS_URL` env var     |
+| `postgres` FAIL          | Mode A: host postgres off; Mode B: forgot `--profile independent`        |
+| `schemas` FAIL           | core-api hasn't booted yet → Flyway V1/V2 never ran                     |
+| `faiss_index` FAIL       | Index not built yet → `python -m scripts.build_rag_index --fixture`     |
+| `build_json` FAIL        | index dir manually edited or partially overwritten → rebuild             |
+| `runtime_model_match` FAIL | env var `AIPIPELINE_WORKER_RAG_EMBEDDING_MODEL` drifted from index model |
+| `tesseract` FAIL         | binary missing on PATH or missing language pack                          |
+| `image_deps` FAIL        | fresh venv without `pip install -r requirements.txt`                    |
+
+### `python -m scripts.smoke_runner` — full-stack smoke runner
+
+A one-command end-to-end smoke of the real async pipeline through the
+real Spring API. It submits one job per capability (`MOCK`, `RAG`,
+`OCR`, `MULTIMODAL`), polls each job until terminal, fetches the
+result, and asserts that the expected artifact types landed.
+
+Prerequisites (all covered by the doctor check above):
+
+1. Redis, PostgreSQL, core-api, and the worker are all running
+2. FAISS index exists (`python -m scripts.build_rag_index --fixture`)
+3. Tesseract + PyMuPDF + Pillow are available
+4. OCR sample fixtures have been generated once:
+   `python -m scripts.make_ocr_sample_fixtures` (safe to re-run)
+
+Run from inside `ai-worker/` for local defaults:
+
+```bash
+cd ai-worker
+python -m scripts.smoke_runner
+```
+
+Or from the repo root via the thin wrapper:
+
+```bash
+python scripts/smoke_all.py
+```
+
+Flags:
+
+- `--base-url http://host:port` — point at a non-default core-api
+- `--timeout 120` — raise the per-job polling deadline (default 60s)
+- `--poll-interval 0.25` — tighten polling for faster feedback
+- `--only MOCK,RAG` — run a subset
+- `--fixture path/to/file.png` — override the OCR/MULTIMODAL input
+- `--report smoke-report.json` — write the machine-readable report
+- `--verbose` — DEBUG logging for the runner itself
+
+Expected console output on a healthy pipeline:
+
+```
+== smoke runner (http://localhost:8080) ==
+started: 2026-04-15T12:34:56+0900  duration: 4123 ms  pass=4 fail=0 skip=0
+[OK]   MOCK        job=5d31e42e-... final=SUCCEEDED (145 ms)
+         outputs: ['FINAL_RESPONSE']
+[OK]   RAG         job=6e42f53f-... final=SUCCEEDED (612 ms)
+         outputs: ['RETRIEVAL_RESULT', 'FINAL_RESPONSE']
+[OK]   OCR         job=7f53064a-... final=SUCCEEDED (1842 ms)
+         outputs: ['OCR_TEXT', 'OCR_RESULT']
+[OK]   MULTIMODAL  job=8a64175b-... final=SUCCEEDED (1524 ms)
+         outputs: ['OCR_TEXT', 'VISION_RESULT', 'RETRIEVAL_RESULT', 'FINAL_RESPONSE']
+```
+
+Corresponding JSON report (`smoke-report.json`):
+
+```json
+{
+  "baseUrl": "http://localhost:8080",
+  "startedAt": "2026-04-15T12:34:56+0900",
+  "durationMs": 4123.0,
+  "summary": { "passed": 4, "failed": 0, "skipped": 0, "total": 4 },
+  "cases": [
+    {
+      "capability": "MOCK",
+      "status": "SUCCESS",
+      "jobId": "5d31e42e-...",
+      "submitHttpStatus": 202,
+      "finalJobStatus": "SUCCEEDED",
+      "durationMs": 145.0,
+      "outputTypes": ["FINAL_RESPONSE"],
+      "missingArtifacts": [],
+      "unexpectedArtifacts": [],
+      "errorCode": null,
+      "errorMessage": null,
+      "failureReason": null
+    },
+    {
+      "capability": "MULTIMODAL",
+      "status": "SUCCESS",
+      "jobId": "8a64175b-...",
+      "submitHttpStatus": 202,
+      "finalJobStatus": "SUCCEEDED",
+      "durationMs": 1524.0,
+      "outputTypes": ["OCR_TEXT", "VISION_RESULT", "RETRIEVAL_RESULT", "FINAL_RESPONSE"],
+      "missingArtifacts": [],
+      "unexpectedArtifacts": [],
+      "errorCode": null,
+      "errorMessage": null,
+      "failureReason": null
+    }
+  ]
+}
+```
+
+(Field names in the JSON report follow `dataclasses.asdict` — they're
+the `snake_case` python attributes, not camelCase. The top-level
+summary keys are the only camelCase hand-crafted fields.)
+
+Typical failure modes it surfaces:
+
+| Failure line                                                 | Likely cause                                               |
+|---------------------------------------------------------------|------------------------------------------------------------|
+| `HTTP error: ConnectError`                                    | core-api not running                                       |
+| `Timed out ... waiting for job ... to reach a terminal state` | worker not running, wrong Redis queue key                  |
+| `Job ended in 'FAILED' (errorCode='UNKNOWN_CAPABILITY' ...)`  | worker refused to register the capability (see doctor)    |
+| `missing required artifact type(s) ['RETRIEVAL_RESULT']`      | RAG capability registered but retrieval stage broke       |
+| `carries unexpected artifact type(s) [...]`                   | capability started emitting a new output without updating `REQUIRED_OUTPUTS` |
+| `POST /jobs returned status='RUNNING'`                        | core-api regression (should always accept as `QUEUED`)    |
+| `fixture load failed`                                         | `python -m scripts.make_ocr_sample_fixtures` never ran     |
+
+**What this tool proves:** pipeline connectivity and contract
+integrity. A green run guarantees that core-api accepts every
+capability, the worker consumes the Redis queue, every capability
+produces the artifact types the API documentation lists, and the
+`/result` endpoint carries downloadable access URLs for each one.
+
+**What this tool does NOT prove:** OCR, RAG, or MULTIMODAL answer
+quality. The runner asserts on artifact *types*, not on answer
+content. The sample input ("which anime is about an old fisherman
+feeding stray harbor cats", the SMOKE TEST placeholder PNG) is
+chosen to exercise the plumbing, not to be a meaningful eval. For
+quality measurement use `eval/run_eval.py` against a curated dataset
+— see `eval/README.md` for the harness contract.
+
+### Pipeline closeout checklist
+
+Use this sequence to close out a pipeline change or verify a fresh
+clone:
+
+1. `docker compose up -d redis` (Mode A) or
+   `docker compose --profile independent up -d` (Mode B)
+2. `cd core-api && mvn spring-boot:run` — wait for the Tomcat banner
+3. `cd ai-worker && python -m scripts.build_rag_index --fixture` —
+   one-time or after any model/dataset change
+4. `python -m scripts.make_ocr_sample_fixtures` — one-time, to
+   generate the committed PNGs under `eval/datasets/samples/`
+5. `python -m scripts.doctor` — expect every row green before moving on
+6. `python -m app.main` — start the worker in a fresh terminal; look
+   for `Active capabilities: ['MOCK', 'MULTIMODAL', 'OCR', 'RAG']`
+7. `python -m scripts.smoke_runner --report smoke-report.json` —
+   expect `pass=4 fail=0 skip=0` and four SUCCESS rows
+8. `python -m pytest tests/ -q` — sanity-check that nothing in the
+   worker test suite regressed while you were touching things
+
+Step 5 catches the "env drift" class of bugs (missing binary, wrong
+model, missing schema) before they waste a smoke run. Step 7 proves
+the async pipeline survives a real round trip end to end. Together
+they replace "poke the UI and see if anything breaks" with a
+deterministic, machine-readable record of what works and what doesn't.
+
 ## Running tests
 
 Worker-side unit tests (no infra needed):
@@ -585,12 +1073,31 @@ cd ai-worker
 python -m pytest tests/ -q
 ```
 
-Expected: `29 passed` — 2 mock capability, 6 chunker, 2 RAG happy-path,
-6 RAG validation, and 13 OCR (5 happy-path variants, 3 unsupported-type
-rejections, 2 empty/low-confidence edge cases, 3 registry resilience
-cases). All OCR tests use a fake provider, so they run without
-Tesseract or PyMuPDF installed; all RAG tests use the hashing fallback
-embedder, so no model download and no Postgres needed.
+Expected: 154 passing across:
+- 2 mock capability
+- 6 RAG chunker
+- 2 RAG happy-path
+- 6 RAG validation
+- 13 OCR (happy-path variants, unsupported-type rejections,
+  empty/low-confidence edge cases, registry resilience)
+- 16 MULTIMODAL (image + PDF happy paths, OCR/vision failure
+  isolation, both-fail hard error, unsupported type rejection,
+  fusion determinism, heuristic vision provider exercise,
+  registry parent-dependency checks)
+- 22 doctor (check function happy paths + every remediation
+  branch, capability roll-up, DSN redaction, text/JSON reporters)
+- 32 smoke runner (shape assertion unit coverage across
+  submission / final status / result-outputs drift modes,
+  report builder counters, parse_only arg parser, fixture
+  loader fallback)
+- the rest come from the eval harness unit tests
+
+All OCR + MULTIMODAL tests use fake providers, so they run without
+Tesseract or PyMuPDF installed. All RAG tests use the hashing
+fallback embedder, so no model download and no Postgres needed.
+One MULTIMODAL test exercises `HeuristicVisionProvider` on a real
+Pillow-generated image; Pillow ships with sentence-transformers so
+the test auto-skips only on an unusually stripped-down venv.
 
 ## Configuration knobs (env vars)
 

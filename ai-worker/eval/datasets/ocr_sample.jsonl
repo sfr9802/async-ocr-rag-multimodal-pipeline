@@ -1,0 +1,16 @@
+# OCR eval sample dataset — intentionally small and illustrative.
+# Schema per row:
+#   file          (required) : path RELATIVE to this JSONL file's directory
+#   ground_truth  (required) : the exact expected extracted text (UTF-8)
+#   language      (optional) : Tesseract language code — "eng", "eng+kor",
+#                              "kor", "jpn", etc. WER is reported as None
+#                              for CJK-family codes.
+#   notes         (optional) : free-form annotation
+#
+# The sample files below do NOT ship in the repo — they are synthesized
+# by `python -m scripts.make_ocr_sample_fixtures`. Running the OCR eval
+# before that helper prints a clean "skipped (missing)" summary for each
+# row, which is itself a useful smoke test of the harness wiring.
+{"file": "samples/hello_world.png", "ground_truth": "HELLO WORLD", "language": "eng", "notes": "bare minimum smoke test — single line, black text on white"}
+{"file": "samples/invoice_snippet.png", "ground_truth": "Invoice #1024\nTotal: $129.95", "language": "eng", "notes": "two lines, symbol + digits"}
+{"file": "samples/multi_paragraph.png", "ground_truth": "The quick brown fox jumps over the lazy dog.\nSphinx of black quartz, judge my vow.", "language": "eng", "notes": "pangrams, typical document-ish density"}

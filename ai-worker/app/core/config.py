@@ -167,6 +167,55 @@ class WorkerSettings(BaseSettings):
         ),
     )
 
+    # --- multimodal capability (phase 2, v1) ---
+    multimodal_enabled: bool = Field(
+        default=True,
+        description=(
+            "Set to false to skip trying to initialize the MULTIMODAL "
+            "capability at worker startup. MULTIMODAL v1 depends on the "
+            "OCR capability and the RAG retriever — if either of those "
+            "is not available, the multimodal builder is skipped "
+            "automatically with a clear warning (MOCK/RAG/OCR remain "
+            "unaffected)."
+        ),
+    )
+    multimodal_vision_provider: str = Field(
+        default="heuristic",
+        description=(
+            "Which VisionDescriptionProvider to build. v1 ships only "
+            "'heuristic' — a deterministic Pillow-based fallback that "
+            "lets the multimodal pipeline be exercised end-to-end "
+            "without downloading a VLM. Future phases can add 'blip2', "
+            "'claude-vision', etc. and switch via this knob."
+        ),
+    )
+    multimodal_pdf_vision_dpi: int = Field(
+        default=150,
+        description=(
+            "DPI used to rasterize PDF page 1 for the vision provider. "
+            "The OCR stage walks every page via PyMuPDF + Tesseract; "
+            "the vision stage only ever looks at page 1 in v1, so a "
+            "modest DPI is enough."
+        ),
+    )
+    multimodal_emit_trace: bool = Field(
+        default=False,
+        description=(
+            "When true, MULTIMODAL jobs also emit a MULTIMODAL_TRACE "
+            "artifact alongside OCR_TEXT / VISION_RESULT / "
+            "RETRIEVAL_RESULT / FINAL_RESPONSE. Off by default to keep "
+            "the artifact count at 4 for most consumers."
+        ),
+    )
+    multimodal_default_question: str = Field(
+        default="",
+        description=(
+            "Fallback user question used when a MULTIMODAL job does "
+            "NOT supply an INPUT_TEXT artifact. Leave empty to let the "
+            "fusion helper choose a neutral default query on its own."
+        ),
+    )
+
     model_config = SettingsConfigDict(
         env_prefix="AIPIPELINE_WORKER_",
         env_file=".env",
