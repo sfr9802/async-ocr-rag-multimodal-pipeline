@@ -93,9 +93,10 @@ class S3ArtifactStorageAdapterTest {
         assertThat(stored.checksumSha256()).isNotBlank();
 
         // Read back
-        InputStream readBack = adapter.openForRead(stored.storageUri());
-        byte[] readData = readBack.readAllBytes();
-        assertThat(readData).isEqualTo(data);
+        try (InputStream readBack = adapter.openForRead(stored.storageUri())) {
+            byte[] readData = readBack.readAllBytes();
+            assertThat(readData).isEqualTo(data);
+        }
     }
 
     @Test

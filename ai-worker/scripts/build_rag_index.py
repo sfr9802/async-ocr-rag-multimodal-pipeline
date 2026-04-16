@@ -229,11 +229,14 @@ def _build_image_index(
 
     # Parse manifest
     entries = []
-    for line in manifest_path.read_text(encoding="utf-8").splitlines():
+    for line_no, line in enumerate(manifest_path.read_text(encoding="utf-8").splitlines(), 1):
         line = line.strip()
         if not line:
             continue
-        entries.append(_json.loads(line))
+        try:
+            entries.append(_json.loads(line))
+        except _json.JSONDecodeError as e:
+            log.warning("Invalid JSON on line %d of manifest: %s — skipping", line_no, e)
     log.info("Image manifest: %d entries from %s", len(entries), manifest_path)
 
     if not entries:

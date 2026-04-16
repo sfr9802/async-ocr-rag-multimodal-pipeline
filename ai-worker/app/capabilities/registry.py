@@ -384,7 +384,7 @@ def _build_cross_modal_retriever(settings: WorkerSettings, text_retriever):
     from app.capabilities.rag.image_index import ImageFaissIndex
     from app.capabilities.rag.image_metadata_store import ImageMetadataStore
 
-    cache_key = ("cross_modal", settings.cross_modal_clip_model, settings.rag_index_dir)
+    cache_key = ("cross_modal", settings.cross_modal_clip_model, settings.rag_index_dir, settings.cross_modal_rrf_k)
     cached = _shared_component_cache.get(cache_key)
     if cached is not None:
         return cached

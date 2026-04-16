@@ -88,6 +88,13 @@ class CrossModalRetriever:
         looked_up = self._img_meta.lookup_by_faiss_rows(
             self._img_index.info.index_version, row_ids
         )
+        if len(looked_up) < len(row_ids):
+            log.warning(
+                "Image metadata mismatch: FAISS returned %d hits but only "
+                "%d found in ragmeta.image_chunks (index_version=%s). "
+                "Possible stale index or incomplete ingest.",
+                len(row_ids), len(looked_up), self._img_index.info.index_version,
+            )
         score_by_row = {row_id: score for row_id, score in hits[0]}
 
         results: List[RetrievedChunk] = []

@@ -56,7 +56,7 @@ import json
 import logging
 import time
 from dataclasses import dataclass
-from typing import Callable, List, Optional, Tuple
+from typing import Callable, List, Optional, Protocol, Tuple, runtime_checkable
 
 from app.capabilities.base import (
     Capability,
@@ -108,6 +108,13 @@ _IMAGE_MIME_PREFIXES = ("image/png", "image/jpeg", "image/jpg")
 _IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg")
 _PDF_MIME_TYPES = ("application/pdf", "application/x-pdf")
 _PDF_EXTENSION = ".pdf"
+
+
+@runtime_checkable
+class CrossModalRetrieverLike(Protocol):
+    """Structural type for cross-modal retriever injection."""
+
+    def retrieve_multimodal(self, query_text: str) -> RetrievalReport: ...
 
 
 @dataclass(frozen=True)
@@ -170,7 +177,7 @@ class MultimodalCapability(Capability):
         pdf_pages_rasterizer: Optional[
             Callable[[bytes, int, int], List[Tuple[int, bytes]]]
         ] = None,
-        cross_modal_retriever: Optional[object] = None,
+        cross_modal_retriever: Optional["CrossModalRetrieverLike"] = None,
     ) -> None:
         self._ocr = ocr_provider
         self._vision = vision_provider

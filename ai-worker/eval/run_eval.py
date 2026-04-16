@@ -442,7 +442,7 @@ def _run_multimodal_cli(args: argparse.Namespace) -> int:
         summary=mm_summary_to_dict(summary),
         rows=[mm_row_to_dict(r) for r in rows],
         metadata=_multimodal_metadata(
-            settings, cross_modal=getattr(args, "cross_modal", False)
+            settings, cross_modal=(cross_modal is not None),
         ),
     )
     if not args.no_csv:

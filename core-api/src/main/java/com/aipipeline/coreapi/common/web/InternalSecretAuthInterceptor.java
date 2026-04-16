@@ -62,6 +62,8 @@ public class InternalSecretAuthInterceptor implements HandlerInterceptor {
 
         String header = request.getHeader(HEADER);
         if (header == null || !constantTimeEquals(header)) {
+            log.warn("Internal auth failed: {} {} from {}",
+                    request.getMethod(), request.getRequestURI(), request.getRemoteAddr());
             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
             response.setContentType(MediaType.APPLICATION_JSON_VALUE);
             response.getWriter().write("{\"error\":\"internal_auth_failed\"}");

@@ -69,7 +69,10 @@ class StorageResolver:
         bucket, key = self._parse_s3_uri(uri)
         client = self._get_s3_client()
         response = client.get_object(Bucket=bucket, Key=key)
-        return response["Body"].read()
+        try:
+            return response["Body"].read()
+        finally:
+            response["Body"].close()
 
     def _get_s3_client(self):
         if self._s3_client is not None:
