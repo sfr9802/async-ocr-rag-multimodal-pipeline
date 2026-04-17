@@ -6,6 +6,10 @@ Thumbs.db
 *.iml
 *.swp
 
+# ---- Claude Code local state ----
+# Per-user permission approvals; .claude/commands/*.md are tracked.
+.claude/settings.local.json
+
 # ---- Java / Maven ----
 core-api/target/
 core-api/.mvn/wrapper/maven-wrapper.jar
@@ -31,6 +35,13 @@ ai-worker/*.egg-info/
 # and drift across fonts, so they are regenerated on demand.
 ai-worker/eval/reports/
 ai-worker/eval/datasets/samples/
+
+# ---- Optuna tuning artifacts ----
+# Keep summary.md + config.yaml (deterministic replay), drop the
+# binary SQLite study and per-run plots. See docs/tuning.md.
+ai-worker/eval/experiments/studies/**/study.db
+ai-worker/eval/experiments/studies/**/study.db-journal
+ai-worker/eval/experiments/studies/**/plots/
 
 # ---- Demo script generated assets ----
 scripts/assets/
