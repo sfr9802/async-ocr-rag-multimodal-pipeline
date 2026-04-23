@@ -10,25 +10,33 @@
 # `/propose-next` slash command emits proposals as chat diffs, never
 # via direct Edit, and `_meta.created_by` tracks provenance.
 
-experiment_id: rag-cheap-sweep-v1
+experiment_id: rag-cheap-sweep-v3
 
 objective:
   # Mode selects the eval subcommand. One of: rag | ocr | multimodal.
   mode: rag
-  # Dataset path is resolved relative to ai-worker/. The Korean sample
-  # exercises bge-m3's multilingual path; switch to rag_sample.jsonl
-  # for the English fixture.
-  dataset: eval/datasets/rag_sample_kr.jsonl
+  # Dataset path is resolved relative to ai-worker/.
+  # v3 moves onto rag_anime_extended_kr.jsonl (30 rows against the
+  # anime+enterprise bge-m3 index). Both rag_sample_kr and
+  # rag_agent_fixture_kr saturate this index at mean_hit_at_k=1.0
+  # regardless of top_k/MMR/parser; anime_extended has a baseline of
+  # hit@5=0.900 / mrr=0.867 / misses=3 with headroom for actual search.
+  dataset: eval/datasets/rag_anime_extended_kr.jsonl
   # Primary metric must be a field in the eval summary JSON. The
   # runner maximizes it (per optuna.direction below). Valid choices
   # depend on mode:
   #   rag         : mean_hit_at_k | mrr | mean_keyword_coverage
   #   ocr         : 1 - mean_cer (minimize mean_cer via direction=minimize)
   #   multimodal  : mean_exact_match | mean_substring_match | mean_keyword_coverage
-  primary_metric: mean_hit_at_k
+  #
+  # v3 picks mrr over mean_hit_at_k because mean_hit_at_k is a
+  # top-k-thresholded indicator (flat across rag_top_k >= 3) whereas
+  # mrr is rank-sensitive — reranker / MMR / parser ablations show up
+  # in mrr where they are invisible in hit@k.
+  primary_metric: mrr
   # Secondary metrics are stored on each trial as user_attrs for later
   # pareto / trade-off analysis. They do NOT influence search.
-  secondary_metrics: [mrr, mean_total_ms, p50_retrieval_ms]
+  secondary_metrics: [mean_hit_at_k, mean_keyword_coverage, mean_total_ms, p50_retrieval_ms]
 
 search_space:
   # Phase 1 — CHEAP params only (no re-embedding, no index rebuild).
@@ -38,6 +46,16 @@ search_space:
     type: int
     low: 3
     high: 15
+  # v2: two categoricals picked for OFFLINE signal. rag_reranker's
+  # cross_encoder choice is deliberately kept OUT until the
+  # bge-reranker-v2-m3 model is prewarmed in the HF cache — first-run
+  # download (~300MB) would otherwise bloat trial #0.
+  rag_use_mmr:
+    type: categorical
+    choices: [false, true]
+  rag_query_parser:
+    type: categorical
+    choices: ["off", "regex"]
   # TODO(phase-2): re-enable once MULTIMODAL eval is the default mode
   # for a round; cross_modal_rrf_k only moves the metric when
   # --cross-modal is on.
@@ -65,6 +83,13 @@ optuna:
 _meta:
   created_by: human              # human | claude-proposed | claude-approved
   notes: |
-    Initial Phase 1 search space — cheap params only, TPE sampler,
-    seeded for reproducibility. Expand after the first round exposes
-    which knobs actually move the metric.
+    v3 — first round wired against a workload with actual headroom.
+    v1 (rag_sample_kr.jsonl, hit@5 primary) and v2 (rag_agent_fixture_kr,
+    hit@5 primary) both saturated to 1.0 on every trial, so fANOVA
+    importance collapsed and TPE had zero gradient. v3 swaps to
+    rag_anime_extended_kr.jsonl (baseline mrr=0.867) and changes the
+    primary metric to mrr because hit@5 stays flat for rag_top_k>=3
+    while mrr is rank-sensitive — MMR and parser ablations show up in
+    mrr where they are invisible in hit@k. Two offline categoricals
+    (rag_use_mmr, rag_query_parser) ride on top of rag_top_k to give
+    /analyze-study actual ablation signal.

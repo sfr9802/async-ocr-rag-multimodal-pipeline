@@ -728,7 +728,7 @@ def _print_agent_compare_summary(summary: Dict[str, Any]) -> None:
 
 def _print_rag_summary(summary: RagEvalSummary) -> None:
     print()
-    print(f"RAG eval — {summary.dataset_path}")
+    print(f"RAG eval - {summary.dataset_path}")
     print(f"  rows evaluated       : {summary.row_count}")
     print(f"  with expected_doc_ids: {summary.rows_with_expected_doc_ids}")
     print(f"  with expected_kwds   : {summary.rows_with_expected_keywords}")
@@ -846,7 +846,7 @@ def _ocr_csv_columns() -> List[str]:
 
 def _print_ocr_summary(summary: OcrEvalSummary) -> None:
     print()
-    print(f"OCR eval — {summary.dataset_path}")
+    print(f"OCR eval - {summary.dataset_path}")
     print(f"  rows in dataset  : {summary.row_count}")
     print(f"  evaluated        : {summary.evaluated_rows}")
     print(f"  skipped (missing): {summary.skipped_rows}")
@@ -1050,7 +1050,7 @@ def _multimodal_csv_columns() -> List[str]:
 
 def _print_multimodal_summary(summary: MultimodalEvalSummary) -> None:
     print()
-    print(f"Multimodal eval — {summary.dataset_path}")
+    print(f"Multimodal eval - {summary.dataset_path}")
     print(f"  rows in dataset     : {summary.row_count}")
     print(f"  evaluated           : {summary.evaluated_rows}")
     print(f"  skipped             : {summary.skipped_rows}")
