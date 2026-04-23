@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import List
+from typing import List, Optional
 
 
 @dataclass(frozen=True)
@@ -24,6 +24,7 @@ class RetrievedChunk:
     section: str
     text: str
     score: float
+    rerank_score: Optional[float] = None
 
 
 class GenerationProvider(ABC):

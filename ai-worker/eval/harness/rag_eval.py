@@ -93,6 +93,7 @@ class RagEvalRow:
     expected_keywords: List[str] = field(default_factory=list)
     retrieved_doc_ids: List[str] = field(default_factory=list)
     retrieval_scores: List[float] = field(default_factory=list)
+    rerank_scores: List[Optional[float]] = field(default_factory=list)
     hit_at_k: Optional[float] = None
     recall_at_k: Optional[float] = None
     reciprocal_rank: Optional[float] = None
@@ -105,6 +106,8 @@ class RagEvalRow:
     total_ms: float = 0.0
     index_version: Optional[str] = None
     embedding_model: Optional[str] = None
+    reranker_name: Optional[str] = None
+    candidate_k: Optional[int] = None
     notes: Optional[str] = None
     answer: Optional[str] = None
     error: Optional[str] = None
@@ -133,6 +136,8 @@ class RagEvalSummary:
     misses: List[Dict[str, Any]] = field(default_factory=list)
     index_version: Optional[str] = None
     embedding_model: Optional[str] = None
+    reranker_name: Optional[str] = None
+    candidate_k: Optional[int] = None
     started_at: Optional[str] = None
     finished_at: Optional[str] = None
     duration_ms: float = 0.0
@@ -195,11 +200,18 @@ def run_rag_eval(
             retrieved = list(getattr(report, "results", []) or [])
             retrieved_doc_ids = [getattr(r, "doc_id", "") for r in retrieved]
             retrieval_scores = [float(getattr(r, "score", 0.0)) for r in retrieved]
+            rerank_scores_raw = [getattr(r, "rerank_score", None) for r in retrieved]
 
             row.retrieved_doc_ids = retrieved_doc_ids
             row.retrieval_scores = [round(s, 6) for s in retrieval_scores]
+            row.rerank_scores = [
+                round(float(s), 6) if s is not None else None
+                for s in rerank_scores_raw
+            ]
             row.index_version = getattr(report, "index_version", None)
             row.embedding_model = getattr(report, "embedding_model", None)
+            row.reranker_name = getattr(report, "reranker_name", None)
+            row.candidate_k = getattr(report, "candidate_k", None)
 
             # Generation is inside the try/except too so a bad generator
             # doesn't abort the full eval.
@@ -283,6 +295,12 @@ def _aggregate(
     embedding_model = next(
         (r.embedding_model for r in rows if r.embedding_model), None
     )
+    reranker_name = next(
+        (r.reranker_name for r in rows if r.reranker_name), None
+    )
+    candidate_k = next(
+        (r.candidate_k for r in rows if r.candidate_k is not None), None
+    )
 
     return RagEvalSummary(
         dataset_path=dataset_path,
@@ -306,6 +324,8 @@ def _aggregate(
         misses=_collect_misses(rows),
         index_version=index_version,
         embedding_model=embedding_model,
+        reranker_name=reranker_name,
+        candidate_k=candidate_k,
     )
 
 

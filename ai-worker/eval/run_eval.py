@@ -229,6 +229,7 @@ def _build_rag_stack(args: argparse.Namespace):
     call doesn't pull in faiss / psycopg2 / torch."""
     from pathlib import Path as _P
 
+    from app.capabilities.registry import _build_reranker
     from app.capabilities.rag.embeddings import SentenceTransformerEmbedder
     from app.capabilities.rag.faiss_index import FaissIndex
     from app.capabilities.rag.generation import ExtractiveGenerator
@@ -247,11 +248,14 @@ def _build_rag_stack(args: argparse.Namespace):
         passage_prefix=settings.rag_embedding_prefix_passage,
     )
     index = FaissIndex(_P(settings.rag_index_dir))
+    reranker = _build_reranker(settings)
     retriever = Retriever(
         embedder=embedder,
         index=index,
         metadata=metadata,
         top_k=top_k,
+        reranker=reranker,
+        candidate_k=settings.rag_candidate_k,
     )
     retriever.ensure_ready()
     return retriever, ExtractiveGenerator(), settings
@@ -301,6 +305,9 @@ def _rag_metadata(
         "embedding_model": settings.rag_embedding_model,
         "rag_index_dir": str(settings.rag_index_dir),
         "top_k": top_k,
+        "reranker": settings.rag_reranker,
+        "candidate_k": settings.rag_candidate_k,
+        "rerank_batch": settings.rag_rerank_batch,
         "run_at": datetime.now().isoformat(timespec="seconds"),
     }
     if offline_info is not None:
@@ -331,6 +338,10 @@ def _rag_csv_columns() -> List[str]:
         "total_ms",
         "index_version",
         "embedding_model",
+        "reranker_name",
+        "candidate_k",
+        "retrieval_scores",
+        "rerank_scores",
         "notes",
         "error",
     ]
@@ -358,6 +369,8 @@ def _print_rag_summary(summary: RagEvalSummary) -> None:
     print(f"  misses (capped 20)   : {len(summary.misses)}")
     print(f"  index_version        : {summary.index_version}")
     print(f"  embedding_model      : {summary.embedding_model}")
+    print(f"  reranker             : {summary.reranker_name or 'n/a'}")
+    print(f"  candidate_k          : {summary.candidate_k if summary.candidate_k is not None else 'n/a'}")
     print()
 
 

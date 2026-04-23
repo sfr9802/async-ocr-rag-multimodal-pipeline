@@ -72,13 +72,15 @@ def build_default_registry(settings: WorkerSettings) -> CapabilityRegistry:
     if settings.rag_enabled:
         log.info(
             "RAG init: configured_model=%s query_prefix=%r passage_prefix=%r "
-            "index_dir=%s top_k=%d generator=%s",
+            "index_dir=%s top_k=%d generator=%s reranker=%s candidate_k=%d",
             settings.rag_embedding_model,
             settings.rag_embedding_prefix_query,
             settings.rag_embedding_prefix_passage,
             settings.rag_index_dir,
             settings.rag_top_k,
             settings.rag_generator,
+            settings.rag_reranker,
+            settings.rag_candidate_k,
         )
         try:
             registry.register(_build_rag_capability(settings))
@@ -311,6 +313,9 @@ def _get_shared_retriever_bundle(settings: WorkerSettings):
         settings.rag_db_dsn,
         settings.rag_generator,
         settings.rag_claude_generation_model,
+        settings.rag_reranker,
+        settings.rag_candidate_k,
+        settings.rag_rerank_batch,
     )
     cached = _shared_component_cache.get(key)
     if cached is not None:
@@ -331,11 +336,14 @@ def _get_shared_retriever_bundle(settings: WorkerSettings):
         passage_prefix=settings.rag_embedding_prefix_passage,
     )
     index = FaissIndex(Path(settings.rag_index_dir))
+    reranker = _build_reranker(settings)
     retriever = Retriever(
         embedder=embedder,
         index=index,
         metadata=metadata,
         top_k=settings.rag_top_k,
+        reranker=reranker,
+        candidate_k=settings.rag_candidate_k,
     )
     # ensure_ready() is the strict gate: on any model/dim mismatch
     # between the runtime embedder and the on-disk build.json it
@@ -370,6 +378,57 @@ def _get_shared_retriever_bundle(settings: WorkerSettings):
     bundle = (retriever, generator)
     _shared_component_cache[key] = bundle
     return bundle
+
+
+def _build_reranker(settings: WorkerSettings):
+    """Build the reranker named by settings.rag_reranker.
+
+    Supported values:
+      - 'off' / 'noop' / '' (default): NoOpReranker (no behaviour
+        change, reproduces the Phase 0 bi-encoder-only baseline).
+      - 'cross_encoder' / 'cross-encoder' / 'ce': CrossEncoderReranker
+        loading sentence_transformers.CrossEncoder. On any init failure
+        (ImportError on sentence_transformers / torch, CUDA init
+        failure, model download failure), the registry downgrades to
+        NoOpReranker and logs a warning — RAG still registers and
+        continues to serve bi-encoder-only retrieval.
+    """
+    from app.capabilities.rag.reranker import (
+        CrossEncoderReranker,
+        NoOpReranker,
+        RerankerProvider,
+    )
+
+    name = (settings.rag_reranker or "off").strip().lower()
+    if name in ("", "off", "noop", "none", "false", "0"):
+        log.info("RAG reranker disabled (noop).")
+        return NoOpReranker()
+
+    if name in ("cross_encoder", "cross-encoder", "ce"):
+        try:
+            reranker: RerankerProvider = CrossEncoderReranker(
+                batch_size=settings.rag_rerank_batch,
+            )
+            log.info("RAG reranker active: %s", reranker.name)
+            return reranker
+        except Exception as ex:
+            log.warning(
+                "RAG reranker init failed (%s: %s). "
+                "Falling back to NoOpReranker — RAG continues to serve "
+                "bi-encoder-only retrieval. To enable: pip install "
+                "sentence-transformers>=2.2, ensure network access for "
+                "the BAAI/bge-reranker-v2-m3 model download, then "
+                "restart the worker.",
+                type(ex).__name__, ex,
+            )
+            return NoOpReranker()
+
+    log.warning(
+        "Unknown rag_reranker=%r. Falling back to NoOpReranker. "
+        "Supported: 'off', 'cross_encoder'.",
+        settings.rag_reranker,
+    )
+    return NoOpReranker()
 
 
 def _build_cross_modal_retriever(settings: WorkerSettings, text_retriever):

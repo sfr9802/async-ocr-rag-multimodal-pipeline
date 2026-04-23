@@ -138,6 +138,35 @@ class WorkerSettings(BaseSettings):
         default=5,
         description="Number of chunks to retrieve per query.",
     )
+    rag_reranker: str = Field(
+        default="off",
+        description=(
+            "Which RerankerProvider to use after bi-encoder retrieval. "
+            "Options: 'off' (NoOpReranker — returns bi-encoder top-k "
+            "unchanged, default for CI / Phase 0 reproducibility), "
+            "'cross_encoder' (sentence-transformers CrossEncoder, loads "
+            "BAAI/bge-reranker-v2-m3 by default). On init failure the "
+            "registry falls back to NoOpReranker + a warning; RAG is "
+            "never taken down by a broken reranker."
+        ),
+    )
+    rag_candidate_k: int = Field(
+        default=30,
+        description=(
+            "Number of bi-encoder candidates fetched from FAISS before "
+            "reranking. The reranker trims this down to rag_top_k. "
+            "Values <= rag_top_k collapse to rag_top_k (no widening), "
+            "which is what the NoOpReranker path wants."
+        ),
+    )
+    rag_rerank_batch: int = Field(
+        default=64,
+        description=(
+            "CrossEncoder.predict batch size. Bigger batches are faster "
+            "on GPU and safe at bge-reranker-v2-m3's max_length=512. "
+            "Lower to 16 or 32 if CPU OOMs on the rerank step."
+        ),
+    )
     rag_db_dsn: str = Field(
         default="host=localhost port=5432 dbname=aipipeline user=aipipeline password=aipipeline_pw",
         description="libpq connection string for the ragmeta schema. Uses the same cluster as core-api.",
