@@ -72,7 +72,8 @@ def build_default_registry(settings: WorkerSettings) -> CapabilityRegistry:
     if settings.rag_enabled:
         log.info(
             "RAG init: configured_model=%s query_prefix=%r passage_prefix=%r "
-            "index_dir=%s top_k=%d generator=%s reranker=%s candidate_k=%d",
+            "index_dir=%s top_k=%d generator=%s reranker=%s candidate_k=%d "
+            "use_mmr=%s mmr_lambda=%.3f",
             settings.rag_embedding_model,
             settings.rag_embedding_prefix_query,
             settings.rag_embedding_prefix_passage,
@@ -81,6 +82,8 @@ def build_default_registry(settings: WorkerSettings) -> CapabilityRegistry:
             settings.rag_generator,
             settings.rag_reranker,
             settings.rag_candidate_k,
+            settings.rag_use_mmr,
+            settings.rag_mmr_lambda,
         )
         try:
             registry.register(_build_rag_capability(settings))
@@ -316,6 +319,8 @@ def _get_shared_retriever_bundle(settings: WorkerSettings):
         settings.rag_reranker,
         settings.rag_candidate_k,
         settings.rag_rerank_batch,
+        settings.rag_use_mmr,
+        settings.rag_mmr_lambda,
     )
     cached = _shared_component_cache.get(key)
     if cached is not None:
@@ -344,6 +349,8 @@ def _get_shared_retriever_bundle(settings: WorkerSettings):
         top_k=settings.rag_top_k,
         reranker=reranker,
         candidate_k=settings.rag_candidate_k,
+        use_mmr=settings.rag_use_mmr,
+        mmr_lambda=settings.rag_mmr_lambda,
     )
     # ensure_ready() is the strict gate: on any model/dim mismatch
     # between the runtime embedder and the on-disk build.json it

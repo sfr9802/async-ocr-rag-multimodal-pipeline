@@ -108,6 +108,8 @@ class RagEvalRow:
     embedding_model: Optional[str] = None
     reranker_name: Optional[str] = None
     candidate_k: Optional[int] = None
+    use_mmr: Optional[bool] = None
+    mmr_lambda: Optional[float] = None
     notes: Optional[str] = None
     answer: Optional[str] = None
     error: Optional[str] = None
@@ -138,6 +140,8 @@ class RagEvalSummary:
     embedding_model: Optional[str] = None
     reranker_name: Optional[str] = None
     candidate_k: Optional[int] = None
+    use_mmr: Optional[bool] = None
+    mmr_lambda: Optional[float] = None
     started_at: Optional[str] = None
     finished_at: Optional[str] = None
     duration_ms: float = 0.0
@@ -212,6 +216,8 @@ def run_rag_eval(
             row.embedding_model = getattr(report, "embedding_model", None)
             row.reranker_name = getattr(report, "reranker_name", None)
             row.candidate_k = getattr(report, "candidate_k", None)
+            row.use_mmr = getattr(report, "use_mmr", None)
+            row.mmr_lambda = getattr(report, "mmr_lambda", None)
 
             # Generation is inside the try/except too so a bad generator
             # doesn't abort the full eval.
@@ -237,7 +243,17 @@ def run_rag_eval(
             row.keyword_coverage = keyword_coverage(
                 answer, expected_keywords
             )
-            row.dup_rate = round(dup_rate(retrieved_doc_ids[:top_k]), 4)
+            # Prefer the dup_rate the Retriever already computed — that
+            # captures the real final top-k (post-MMR, post-rerank) and
+            # stays consistent across retriever variants. Fall back to
+            # the harness-side metric only for old retrievers / test
+            # doubles that don't surface the field.
+            report_dup = getattr(report, "dup_rate", None)
+            row.dup_rate = (
+                round(float(report_dup), 4)
+                if report_dup is not None
+                else round(dup_rate(retrieved_doc_ids[:top_k]), 4)
+            )
             gap_abs, gap_rel = topk_gap(retrieval_scores[:top_k])
             row.topk_gap = round(gap_abs, 6) if gap_abs is not None else None
             row.topk_rel_gap = round(gap_rel, 6) if gap_rel is not None else None
@@ -301,6 +317,12 @@ def _aggregate(
     candidate_k = next(
         (r.candidate_k for r in rows if r.candidate_k is not None), None
     )
+    use_mmr = next(
+        (r.use_mmr for r in rows if r.use_mmr is not None), None
+    )
+    mmr_lambda = next(
+        (r.mmr_lambda for r in rows if r.mmr_lambda is not None), None
+    )
 
     return RagEvalSummary(
         dataset_path=dataset_path,
@@ -326,6 +348,8 @@ def _aggregate(
         embedding_model=embedding_model,
         reranker_name=reranker_name,
         candidate_k=candidate_k,
+        use_mmr=use_mmr,
+        mmr_lambda=mmr_lambda,
     )
 
 

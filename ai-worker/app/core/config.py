@@ -167,6 +167,28 @@ class WorkerSettings(BaseSettings):
             "Lower to 16 or 32 if CPU OOMs on the rerank step."
         ),
     )
+    rag_use_mmr: bool = Field(
+        default=False,
+        description=(
+            "Enable the post-rerank MMR (Maximal Marginal Relevance) "
+            "diversity pass. When true, the top-k is selected from the "
+            "reranker's candidate list by a relevance-minus-penalty "
+            "score that penalises candidates sharing a doc_id with an "
+            "already-selected chunk. Off by default — env unset "
+            "reproduces the Phase 1 rerank-only top-k bit-for-bit."
+        ),
+    )
+    rag_mmr_lambda: float = Field(
+        default=0.7,
+        description=(
+            "MMR trade-off weight in [0.0, 1.0]. value = lambda * "
+            "relevance - (1 - lambda) * max_doc_id_penalty. lambda=1.0 "
+            "degenerates to relevance-only (matches no-MMR ordering); "
+            "lambda=0.0 maximises diversity at the cost of relevance. "
+            "Default 0.7 matches the port/rag tuning sweep's best "
+            "dup_rate/recall trade-off."
+        ),
+    )
     rag_db_dsn: str = Field(
         default="host=localhost port=5432 dbname=aipipeline user=aipipeline password=aipipeline_pw",
         description="libpq connection string for the ragmeta schema. Uses the same cluster as core-api.",

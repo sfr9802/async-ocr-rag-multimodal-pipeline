@@ -13,6 +13,14 @@ reranker then re-scores those candidates with a cross-encoder and
 returns the top ``top_k``. When the reranker is ``NoOpReranker``, the
 bi-encoder's top-k is returned unchanged — bit-for-bit identical to the
 pre-reranker Phase 0 baseline.
+
+An optional MMR (Maximal Marginal Relevance) diversity pass composes
+after the reranker. When ``use_mmr=True`` the reranker is asked for
+its full candidate list (not truncated to top-k) so MMR has something
+to diversify across; the MMR selector then picks the final top-k using
+``value = lambda * relevance - (1 - lambda) * doc_id_penalty``, where
+the penalty is 0.6 for candidates sharing a doc_id with any already-
+selected chunk. ``use_mmr=False`` (default) reproduces Phase 1 exactly.
 """
 
 from __future__ import annotations
@@ -30,6 +38,9 @@ from app.capabilities.rag.reranker import NoOpReranker, RerankerProvider
 log = logging.getLogger(__name__)
 
 
+_MMR_DOC_ID_PENALTY = 0.6
+
+
 @dataclass(frozen=True)
 class RetrievalReport:
     query: str
@@ -41,6 +52,9 @@ class RetrievalReport:
     candidate_k: int = 0
     topk_gap: Optional[float] = None
     topk_rel_gap: Optional[float] = None
+    use_mmr: bool = False
+    mmr_lambda: Optional[float] = None
+    dup_rate: float = 0.0
 
 
 class Retriever:
@@ -53,6 +67,8 @@ class Retriever:
         top_k: int,
         reranker: Optional[RerankerProvider] = None,
         candidate_k: Optional[int] = None,
+        use_mmr: bool = False,
+        mmr_lambda: float = 0.7,
     ) -> None:
         self._embedder = embedder
         self._index = index
@@ -66,6 +82,11 @@ class Retriever:
             self._candidate_k = self._top_k
         else:
             self._candidate_k = max(self._top_k, int(candidate_k))
+        self._use_mmr = bool(use_mmr)
+        # Clamp lambda into [0.0, 1.0]; values outside that range have
+        # no meaningful interpretation and would make the selector pick
+        # unstable winners on tied relevance.
+        self._mmr_lambda = max(0.0, min(1.0, float(mmr_lambda)))
         self._info: IndexBuildInfo | None = None
 
     def ensure_ready(self) -> None:
@@ -147,6 +168,9 @@ class Retriever:
                 candidate_k=self._candidate_k,
                 topk_gap=None,
                 topk_rel_gap=None,
+                use_mmr=self._use_mmr,
+                mmr_lambda=self._mmr_lambda if self._use_mmr else None,
+                dup_rate=0.0,
             )
         row_ids = [row_id for row_id, _score in hits[0]]
         looked_up = self._metadata.lookup_chunks_by_faiss_rows(
@@ -164,9 +188,26 @@ class Retriever:
                 score=float(score_by_row.get(hit.faiss_row_id, 0.0)),
             ))
 
-        results = self._reranker.rerank(query, candidates, k=self._top_k)
+        # When MMR is on, ask the reranker for its FULL candidate pool so
+        # the diversity selector has somewhere to reach for lower-ranked
+        # chunks from other docs. The MMR selector then trims to top_k.
+        # When MMR is off, trim at the reranker as before — bit-for-bit
+        # Phase 1 behaviour.
+        rerank_k = len(candidates) if self._use_mmr else self._top_k
+        reranked = self._reranker.rerank(query, candidates, k=rerank_k)
+
+        if self._use_mmr:
+            results = _mmr_select(
+                reranked,
+                top_k=self._top_k,
+                mmr_lambda=self._mmr_lambda,
+                doc_id_penalty=_MMR_DOC_ID_PENALTY,
+            )
+        else:
+            results = reranked
 
         topk_gap, topk_rel_gap = _compute_topk_gap(results)
+        dup_rate_value = _compute_dup_rate(results)
 
         return RetrievalReport(
             query=query,
@@ -178,6 +219,9 @@ class Retriever:
             candidate_k=self._candidate_k,
             topk_gap=topk_gap,
             topk_rel_gap=topk_rel_gap,
+            use_mmr=self._use_mmr,
+            mmr_lambda=self._mmr_lambda if self._use_mmr else None,
+            dup_rate=dup_rate_value,
         )
 
 
@@ -205,3 +249,76 @@ def _compute_topk_gap(
     abs_gap = round(float(s1) - float(s2), 4)
     rel_gap = round(abs_gap / float(s1), 4) if abs(s1) > 1e-9 else None
     return abs_gap, rel_gap
+
+
+def _compute_dup_rate(results: List[RetrievedChunk]) -> float:
+    """Fraction of duplicate doc_ids in the result list: 1 - unique/len.
+
+    Same definition as the eval harness metric so the per-call value
+    the Retriever surfaces in RetrievalReport matches what the offline
+    harness computes post-hoc. Rounded to 4 dp for stable report output.
+    """
+    n = len(results)
+    if n <= 1:
+        return 0.0
+    unique = len({c.doc_id for c in results})
+    return round(1.0 - unique / float(n), 4)
+
+
+def _mmr_select(
+    candidates: List[RetrievedChunk],
+    *,
+    top_k: int,
+    mmr_lambda: float,
+    doc_id_penalty: float,
+) -> List[RetrievedChunk]:
+    """Pick top_k chunks using MMR with a doc_id-based diversity penalty.
+
+    For each un-selected candidate we compute::
+
+        value = mmr_lambda * relevance - (1 - mmr_lambda) * max_penalty
+
+    where ``relevance`` is the candidate's ``rerank_score`` when present
+    and falls back to the bi-encoder ``score``; ``max_penalty`` is the
+    maximum doc_id-overlap penalty against the already-selected set
+    (``doc_id_penalty`` when the candidate's doc_id matches any selected
+    chunk, 0.0 otherwise).
+
+    The first pick is always the highest-relevance candidate (nothing
+    is selected yet, so max_penalty is 0 for every candidate). At
+    ``mmr_lambda == 1.0`` the penalty term vanishes entirely and the
+    selector degenerates to relevance-only — ordering matches the
+    no-MMR path exactly, which is what the "lambda=1.0" contract test
+    exercises.
+
+    Pure-Python, O(top_k * len(candidates)); candidate lists are bounded
+    by ``candidate_k`` (default 30) so the quadratic factor is fine.
+    """
+    k = max(0, int(top_k))
+    if k == 0 or not candidates:
+        return []
+
+    def _relevance(c: RetrievedChunk) -> float:
+        if c.rerank_score is not None:
+            return float(c.rerank_score)
+        return float(c.score)
+
+    remaining: List[RetrievedChunk] = list(candidates)
+    selected: List[RetrievedChunk] = []
+    selected_doc_ids: set[str] = set()
+
+    while remaining and len(selected) < k:
+        best_idx = 0
+        best_value = float("-inf")
+        for i, cand in enumerate(remaining):
+            relevance = _relevance(cand)
+            max_penalty = doc_id_penalty if cand.doc_id in selected_doc_ids else 0.0
+            value = mmr_lambda * relevance - (1.0 - mmr_lambda) * max_penalty
+            if value > best_value:
+                best_value = value
+                best_idx = i
+        chosen = remaining.pop(best_idx)
+        selected.append(chosen)
+        selected_doc_ids.add(chosen.doc_id)
+
+    return selected
