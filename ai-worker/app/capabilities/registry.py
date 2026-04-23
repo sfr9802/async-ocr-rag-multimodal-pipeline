@@ -135,6 +135,7 @@ def build_default_registry(settings: WorkerSettings) -> CapabilityRegistry:
                 type(ex).__name__, ex,
             )
 
+    multimodal_registered = False
     if settings.multimodal_enabled:
         if not ocr_registered:
             log.warning(
@@ -166,6 +167,7 @@ def build_default_registry(settings: WorkerSettings) -> CapabilityRegistry:
             )
             try:
                 registry.register(_build_multimodal_capability(settings))
+                multimodal_registered = True
                 log.info("MULTIMODAL capability registered.")
             except Exception as ex:
                 log.warning(
@@ -175,6 +177,44 @@ def build_default_registry(settings: WorkerSettings) -> CapabilityRegistry:
                     "and the multimodal_* settings, then restart the worker.",
                     type(ex).__name__, ex,
                 )
+
+    # AUTO depends on at least one of RAG / OCR / MULTIMODAL being
+    # registered — it has nothing to dispatch to otherwise. Missing
+    # sub-capabilities are not fatal: the router simply can't route to
+    # them and the AutoCapability returns a clarify response with a
+    # reason when a missing-sub action is selected.
+    if rag_registered or ocr_registered or multimodal_registered:
+        try:
+            registry.register(
+                _build_auto_capability(
+                    settings,
+                    registry=registry,
+                    rag_registered=rag_registered,
+                    ocr_registered=ocr_registered,
+                    multimodal_registered=multimodal_registered,
+                )
+            )
+            log.info(
+                "AUTO capability registered (router=%s confidence_threshold=%.2f "
+                "rag=%s ocr=%s multimodal=%s).",
+                settings.agent_router,
+                settings.agent_confidence_threshold,
+                rag_registered, ocr_registered, multimodal_registered,
+            )
+        except Exception as ex:
+            log.warning(
+                "AUTO capability NOT registered (%s: %s). MOCK, RAG, OCR, "
+                "MULTIMODAL continue to serve their own capabilities. "
+                "Check the agent_router / agent_confidence_threshold "
+                "settings, then restart the worker.",
+                type(ex).__name__, ex,
+            )
+    else:
+        log.info(
+            "AUTO capability NOT registered: no downstream capabilities "
+            "(RAG / OCR / MULTIMODAL) are available. Enable at least one, "
+            "then restart the worker. MOCK remains registered."
+        )
 
     log.info("Active capabilities: %s", registry.available())
     return registry
@@ -636,6 +676,90 @@ def _build_cross_modal_retriever(settings: WorkerSettings, text_retriever):
     )
     _shared_component_cache[cache_key] = retriever
     return retriever
+
+
+def _build_auto_capability(
+    settings: WorkerSettings,
+    *,
+    registry: "CapabilityRegistry",
+    rag_registered: bool,
+    ocr_registered: bool,
+    multimodal_registered: bool,
+) -> Capability:
+    """Build the AUTO capability.
+
+    Reuses the already-registered RAG / OCR / MULTIMODAL Capability
+    instances (pulled from the registry) so there is exactly one
+    RagCapability / OcrCapability / MultimodalCapability in the
+    process regardless of whether AUTO is enabled. Missing
+    sub-capabilities become ``None`` — AutoCapability's missing-sub
+    branch handles the dispatch-time failure with a typed
+    ``AUTO_<sub>_UNAVAILABLE`` error code.
+
+    The router is built from ``settings.agent_router``. When the env
+    asks for ``llm`` but the configured LLM backend has downgraded to
+    NoOpChatProvider (either because ``llm_backend`` was unset or the
+    remote backend was unreachable), the registry auto-downgrades to
+    the rule router with a warning — AUTO never goes down because of a
+    missing LLM.
+    """
+    from app.capabilities.agent.capability import AutoCapability
+    from app.capabilities.agent.router import (
+        AgentRouterProvider,
+        LlmAgentRouter,
+        RuleBasedAgentRouter,
+    )
+    from app.clients.llm_chat import NoOpChatProvider
+
+    chat = _get_shared_llm_chat(settings)
+    parser = _build_query_parser(settings)
+
+    requested = (settings.agent_router or "rule").strip().lower()
+    router: AgentRouterProvider
+    if requested in ("", "rule", "off", "noop", "none", "false", "0"):
+        router = RuleBasedAgentRouter()
+        log.info("AUTO router active: rule")
+    elif requested == "llm":
+        if isinstance(chat, NoOpChatProvider):
+            log.warning(
+                "AUTO router requested=llm but llm_backend is noop "
+                "(or downgraded). Falling back to rule-based router — "
+                "set AIPIPELINE_WORKER_LLM_BACKEND=ollama|claude and "
+                "ensure the backend is reachable to re-enable the LLM "
+                "router."
+            )
+            router = RuleBasedAgentRouter()
+        else:
+            router = LlmAgentRouter(
+                chat,
+                parser,
+                confidence_threshold=settings.agent_confidence_threshold,
+            )
+            log.info(
+                "AUTO router active: %s (threshold=%.2f)",
+                router.name, settings.agent_confidence_threshold,
+            )
+    else:
+        log.warning(
+            "Unknown agent_router=%r. Falling back to rule-based router. "
+            "Supported: 'rule', 'llm'.",
+            settings.agent_router,
+        )
+        router = RuleBasedAgentRouter()
+
+    rag_capability = registry.get("RAG") if rag_registered else None
+    ocr_capability = registry.get("OCR") if ocr_registered else None
+    multimodal_capability = registry.get("MULTIMODAL") if multimodal_registered else None
+
+    return AutoCapability(
+        router=router,
+        parser=parser,
+        rag=rag_capability,
+        ocr=ocr_capability,
+        multimodal=multimodal_capability,
+        chat=chat if not isinstance(chat, NoOpChatProvider) else None,
+        direct_answer_max_tokens=settings.agent_direct_answer_max_tokens,
+    )
 
 
 def _build_vision_provider(settings: WorkerSettings):

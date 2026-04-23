@@ -208,8 +208,9 @@ def test_mock_capability_still_registers_when_rag_fails(monkeypatch):
 
 
 def test_rag_disabled_leaves_mock_only(monkeypatch):
-    """Sanity check on the opt-out path: with rag_enabled=False the
-    registry never tries to build RAG and MOCK is the sole capability."""
+    """Sanity check on the opt-out path: with every real capability
+    disabled, the registry never tries to build RAG/OCR/MULTIMODAL,
+    AUTO has no sub to dispatch to, and MOCK is the sole capability."""
     from app.capabilities import registry as registry_module
     from app.core.config import WorkerSettings
 
@@ -224,7 +225,9 @@ def test_rag_disabled_leaves_mock_only(monkeypatch):
         registry_module, "_build_rag_capability", _should_not_be_called
     )
 
-    settings = WorkerSettings(rag_enabled=False)
+    settings = WorkerSettings(
+        rag_enabled=False, ocr_enabled=False, multimodal_enabled=False
+    )
     result = registry_module.build_default_registry(settings)
 
     assert result.available() == ["MOCK"]

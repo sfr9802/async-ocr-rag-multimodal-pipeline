@@ -442,6 +442,41 @@ class WorkerSettings(BaseSettings):
         ),
     )
 
+    # --- auto / agent router (phase 3) ---
+    agent_router: str = Field(
+        default="rule",
+        description=(
+            "Which AgentRouterProvider to build for the AUTO capability. "
+            "Options: 'rule' (RuleBasedAgentRouter — deterministic 5-branch "
+            "decision tree over the (text, file) pair, default), 'llm' "
+            "(LlmAgentRouter — wraps the shared LlmChatProvider with a "
+            "function-calling / JSON-mode decision, falls back to the rule "
+            "router on low confidence or provider failure). When 'llm' is "
+            "selected but llm_backend is 'noop' the registry auto-downgrades "
+            "to 'rule' with a warning so AUTO never goes down because of a "
+            "missing LLM."
+        ),
+    )
+    agent_confidence_threshold: float = Field(
+        default=0.55,
+        description=(
+            "Minimum confidence the LlmAgentRouter must self-report for its "
+            "decision to be accepted. Below this threshold the router "
+            "degrades to its rule-based fallback and stamps "
+            "router_name='llm-*-fallback-rule' so the downgrade is visible "
+            "in trace / metrics. Ignored when agent_router='rule'."
+        ),
+    )
+    agent_direct_answer_max_tokens: int = Field(
+        default=512,
+        description=(
+            "Max tokens requested from the chat backend when the LLM router "
+            "selects 'direct_answer' and AutoCapability answers inline. "
+            "Keep it small — direct_answer is for trivial prompts, longer "
+            "responses should go through RAG."
+        ),
+    )
+
     # --- cross-modal retrieval (opt-in) ---
     cross_modal_enabled: bool = Field(
         default=False,

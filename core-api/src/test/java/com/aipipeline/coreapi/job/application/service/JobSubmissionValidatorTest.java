@@ -40,6 +40,8 @@ class JobSubmissionValidatorTest {
                     .isEqualTo(JobCapability.OCR);
             assertThat(JobSubmissionValidator.parseCapability("MULTIMODAL"))
                     .isEqualTo(JobCapability.MULTIMODAL);
+            assertThat(JobSubmissionValidator.parseCapability("AUTO"))
+                    .isEqualTo(JobCapability.AUTO);
         }
 
         @Test
@@ -150,6 +152,33 @@ class JobSubmissionValidatorTest {
                     JobSubmissionValidator.validateTextSubmission(JobCapability.MULTIMODAL, "caption it"))
                     .isInstanceOf(InvalidJobSubmissionException.class)
                     .extracting("errorCode").isEqualTo(ErrorCodes.FILE_REQUIRED);
+        }
+
+        // ---- AUTO: text optional, blank allowed, null rejected ----
+
+        @Test
+        void auto_with_text_accepted() {
+            JobSubmissionValidator.validateTextSubmission(JobCapability.AUTO, "what is rag");
+        }
+
+        @Test
+        void auto_with_blank_text_accepted() {
+            // Router is allowed to emit clarify on blank text — the
+            // validator must not reject blank text so the routing stage
+            // gets a chance to run.
+            JobSubmissionValidator.validateTextSubmission(JobCapability.AUTO, "   ");
+            JobSubmissionValidator.validateTextSubmission(JobCapability.AUTO, "");
+        }
+
+        @Test
+        void auto_with_null_text_rejected_TEXT_REQUIRED() {
+            // Null would NPE in the controller's text-to-bytes path.
+            // Match the MOCK-JSON contract: require the field to be
+            // present (possibly empty) rather than absent.
+            assertThatThrownBy(() ->
+                    JobSubmissionValidator.validateTextSubmission(JobCapability.AUTO, null))
+                    .isInstanceOf(InvalidJobSubmissionException.class)
+                    .extracting("errorCode").isEqualTo(ErrorCodes.TEXT_REQUIRED);
         }
     }
 
@@ -348,6 +377,66 @@ class JobSubmissionValidatorTest {
                     "file", "thing.bin", "application/octet-stream",
                     new byte[]{1, 2, 3, 4});
             JobSubmissionValidator.validateFileSubmission(JobCapability.MOCK, arbitrary, null);
+        }
+
+        // ---- AUTO on multipart: file OR text, PNG/JPEG/PDF when file present ----
+
+        @Test
+        void auto_with_text_only_accepted() {
+            JobSubmissionValidator.validateFileSubmission(
+                    JobCapability.AUTO, null, "route this question for me");
+        }
+
+        @Test
+        void auto_with_file_only_accepted() {
+            MultipartFile png = pngFile("receipt.png");
+            JobSubmissionValidator.validateFileSubmission(
+                    JobCapability.AUTO, png, null);
+        }
+
+        @Test
+        void auto_with_file_and_text_accepted() {
+            MultipartFile pdf = new MockMultipartFile(
+                    "file", "report.pdf", "application/pdf", "%PDF-1.4 fake".getBytes());
+            JobSubmissionValidator.validateFileSubmission(
+                    JobCapability.AUTO, pdf, "what does this report say");
+        }
+
+        @Test
+        void auto_with_neither_text_nor_file_rejected_AUTO_NO_INPUT() {
+            assertThatThrownBy(() ->
+                    JobSubmissionValidator.validateFileSubmission(JobCapability.AUTO, null, null))
+                    .isInstanceOf(InvalidJobSubmissionException.class)
+                    .extracting("errorCode").isEqualTo(ErrorCodes.AUTO_NO_INPUT);
+        }
+
+        @Test
+        void auto_with_blank_text_and_no_file_rejected_AUTO_NO_INPUT() {
+            assertThatThrownBy(() ->
+                    JobSubmissionValidator.validateFileSubmission(JobCapability.AUTO, null, "   "))
+                    .isInstanceOf(InvalidJobSubmissionException.class)
+                    .extracting("errorCode").isEqualTo(ErrorCodes.AUTO_NO_INPUT);
+        }
+
+        @Test
+        void auto_with_text_and_unsupported_file_type_rejected_UNSUPPORTED_FILE_TYPE() {
+            // Fail fast at the boundary rather than letting the router
+            // emit a clarify for a file it can never actually route to
+            // OCR / MULTIMODAL.
+            MultipartFile gif = new MockMultipartFile(
+                    "file", "cat.gif", "image/gif", "GIF89a".getBytes());
+            assertThatThrownBy(() ->
+                    JobSubmissionValidator.validateFileSubmission(JobCapability.AUTO, gif, "what is this"))
+                    .isInstanceOf(InvalidJobSubmissionException.class)
+                    .extracting("errorCode").isEqualTo(ErrorCodes.UNSUPPORTED_FILE_TYPE);
+        }
+
+        @Test
+        void auto_with_text_only_bypasses_file_type_gate() {
+            // No file supplied at all — the unsupported-file check must
+            // not fire because there's nothing to check.
+            JobSubmissionValidator.validateFileSubmission(
+                    JobCapability.AUTO, null, "describe the latest incident");
         }
     }
 

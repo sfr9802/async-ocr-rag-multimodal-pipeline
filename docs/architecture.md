@@ -370,6 +370,134 @@ are explicit non-goals for v1 and are **not** implemented:
   generator is an independent change behind the existing
   `GenerationProvider` interface.
 
+## Phase 3: AUTO capability
+
+Phase 3 adds a single-pass **AUTO** capability — a dispatcher that
+inspects the submitted `(text, file)` pair and routes the job to one of
+the existing RAG / OCR / MULTIMODAL capabilities internally, so clients
+no longer have to pick the capability up-front. Phase 6 upgrades the
+same seam into a real agent loop; Phase 3 keeps it deliberately
+simple — one router call, one sub-capability call, one callback.
+
+### Why this lives in the worker, not core-api
+
+Routing is a capability decision (what engine to run, which index to
+hit, how to frame the question), not a submission decision (is the
+payload valid). Putting it in the worker keeps core-api free of
+capability-specific logic and means the router has access to the same
+`LlmChatProvider` the RAG query parser already depends on.
+
+### Five-stage flow
+
+```
+         ┌─────────────────┐
+(text,   │ route_classify  │  decode INPUT_TEXT / INPUT_FILE into
+ file) ─►│                 │──► text, file_bytes, file_mime
+         └────────┬────────┘
+                  ▼
+         ┌─────────────────┐
+         │ route_decide    │  AgentRouterProvider -> AgentDecision
+         │ (rule | llm)    │  (action, confidence, reason,
+         └────────┬────────┘   router_name, parsed_query?)
+                  ▼
+          ┌─────────────────┐
+          │    dispatch     │ ─► MULTIMODAL.run(input)
+          │                 │ ─► OCR.run(input)
+          │                 │ ─► RAG.run(input)
+          │                 │ ─► direct_answer (inline LLM call)
+          │                 │ ─► clarify (inline Korean message)
+          └────────┬────────┘
+                   ▼
+          ┌─────────────────┐
+          │   AGENT_DECISION│  JSON artifact with the routing metadata;
+          │   + sub outputs │  always the FIRST output artifact.
+          └─────────────────┘
+```
+
+### Rule-based router (default)
+
+`RuleBasedAgentRouter` is the deterministic fallback and the default
+when `AIPIPELINE_WORKER_AGENT_ROUTER=rule` (also the default value).
+Its decision tree handles the ~95% of cases where routing is obvious
+from the input shape alone:
+
+| Input                                         | Action       | Confidence |
+|-----------------------------------------------|--------------|------------|
+| `text>6ch + file in {png,jpeg,pdf}`           | `multimodal` | 0.95       |
+| `file in {png,jpeg,pdf}` only                 | `ocr`        | 0.90       |
+| `text>6ch` only                               | `rag`        | 0.70       |
+| `text<=6ch` only                              | `clarify`    | 0.50       |
+| neither                                       | `clarify`    | 0.00       |
+
+"File in {png,jpeg,pdf}" is by mime-type — unsupported types
+(`image/gif`, `application/zip`, etc.) collapse to the "no-file"
+row so a `text>6ch + gif` input still routes to RAG rather than
+failing inside MULTIMODAL. Empty files (`file_size=0`) are also
+treated as "no-file" at this layer.
+
+### LLM router (opt-in)
+
+`LlmAgentRouter` wraps the shared `LlmChatProvider` (same instance the
+query parser uses) and asks it to pick between the five actions. On
+backends that advertise `function_calling` (Ollama with gemma4, Claude)
+it routes through `chat_tools` with a `route_job` tool spec; otherwise
+it falls back to `chat_json` with a schema hint. Thinking mode is
+enabled iff the backend advertises it.
+
+The LLM router **degrades to the rule router** (never raises) on ANY of:
+
+- `LlmChatError` from the underlying provider (network, timeout,
+  invalid JSON, empty response).
+- Schema violation at our layer (missing field, wrong type, action
+  not in the 5-enum).
+- `confidence < AIPIPELINE_WORKER_AGENT_CONFIDENCE_THRESHOLD` (default
+  0.55) — the model answered but isn't sure enough to act on.
+
+The fallback decision's `router_name` becomes
+`f"llm-{chat.name}-fallback-rule"` so operators can diff clean LLM runs
+from degraded runs in the `AGENT_DECISION` artifact without reading
+logs.
+
+### Registry wiring
+
+`build_default_registry` registers AUTO opportunistically:
+
+1. RAG, OCR, MULTIMODAL all attempt registration as usual.
+2. If **at least one** of the three succeeded, AUTO is registered with
+   references to whichever subs are live. Missing subs become `None`
+   on the AutoCapability — the router can still route to them, but the
+   capability raises a typed `AUTO_<sub>_UNAVAILABLE` error code at
+   dispatch time rather than crashing with `AttributeError`.
+3. If **none** of the three are live, AUTO is skipped with a warning —
+   there is nothing to dispatch to.
+
+Requesting the LLM router while `llm_backend=noop` (or the backend
+downgraded to NoOp at worker startup) causes the registry to
+auto-downgrade AUTO to the rule router with a warning. AUTO never
+goes down because of a missing LLM.
+
+### Single terminal callback
+
+AUTO is a normal `Capability` — it takes one `CapabilityInput` and
+returns one `CapabilityOutput`. The sub-capability's artifacts are
+passed through to the outputs list unchanged (with `AGENT_DECISION`
+prepended), so the TaskRunner issues exactly one terminal callback per
+AUTO job, matching the shape it already handles for RAG / OCR /
+MULTIMODAL. The sub-capability's internal trace (OCR_RESULT.trace or
+MULTIMODAL_TRACE) is preserved verbatim — AUTO adds the routing
+metadata as a sibling artifact rather than nesting its own trace.
+
+### Environment variables
+
+| Variable                                             | Default | Meaning                                                                 |
+|-------------------------------------------------------|---------|-------------------------------------------------------------------------|
+| `AIPIPELINE_WORKER_AGENT_ROUTER`                      | `rule`  | Router implementation — `rule` or `llm`.                                |
+| `AIPIPELINE_WORKER_AGENT_CONFIDENCE_THRESHOLD`        | `0.55`  | LLM decisions below this confidence fall back to the rule router.       |
+| `AIPIPELINE_WORKER_AGENT_DIRECT_ANSWER_MAX_TOKENS`    | `512`   | Max tokens requested when the LLM router selects `direct_answer`.       |
+
+All three default to safe values, so an unset env produces the same
+behaviour the deterministic rule router has shipped with since Phase 3.
+
 ## Pipeline trace and failure reporting
 
 ### Goal
@@ -877,6 +1005,8 @@ plain interface.
 | Real OCR engine                           | 2 (shipped) |
 | FAISS-based RAG capability                | 2 (shipped) |
 | Multimodal v1 (OCR + vision + text RAG)   | 2 (shipped) |
+| AUTO capability (single-pass dispatcher)  | 3 (shipped) |
+| AGENT capability (loop + critic + retry)  | 6     |
 | ~~True multimodal retrieval (image embeddings, cross-modal search)~~ | shipped (CLIP + RRF, opt-in) |
 | Real VLM provider (BLIP-2 / Claude Vision / GPT-4V / Gemini) | 3+    |
 | Multi-page vision captioning for PDFs     | 3+    |

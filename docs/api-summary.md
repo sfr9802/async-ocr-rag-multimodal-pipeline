@@ -33,6 +33,7 @@ Accepted capability values:
 | `RAG`        | phase 2 | `RETRIEVAL_RESULT` + `FINAL_RESPONSE`                                           |
 | `OCR`        | phase 2 | `OCR_TEXT` + `OCR_RESULT`                                                       |
 | `MULTIMODAL` | phase 2 v1 | `OCR_TEXT` + `VISION_RESULT` + `RETRIEVAL_RESULT` + `FINAL_RESPONSE` (+ optional `MULTIMODAL_TRACE`) |
+| `AUTO`       | phase 3 | `AGENT_DECISION` + whatever the dispatched sub-capability emits (RAG / OCR / MULTIMODAL artifacts, or an inline `FINAL_RESPONSE` for clarify / direct_answer) |
 
 Before submitting a RAG or MULTIMODAL job the worker-side FAISS
 index must be built with `python -m scripts.build_rag_index
@@ -114,6 +115,8 @@ pristine state — no `artifact` row, no `job` row, no Redis dispatch.
 | `OCR`         | multipart  | optional (ignored by worker)| **required, non-empty**           | PNG, JPEG, PDF             |
 | `MULTIMODAL`  | JSON       | — (rejected: FILE_REQUIRED) | **required via multipart**        | PNG, JPEG, PDF             |
 | `MULTIMODAL`  | multipart  | optional (user question)    | **required, non-empty**           | PNG, JPEG, PDF             |
+| `AUTO`        | JSON       | required (may be blank)     | —                                 | —                          |
+| `AUTO`        | multipart  | optional (may be blank)     | optional, non-empty; at least ONE of text/file required | PNG, JPEG, PDF when present |
 
 Validation rules enforced at the API boundary:
 
@@ -139,6 +142,13 @@ Validation rules enforced at the API boundary:
 7. **MOCK preserves phase-1 compatibility.** Any file type is
    accepted for MOCK on multipart (no type gate); MOCK on the JSON
    endpoint accepts an empty (but non-null) `text` field.
+8. **AUTO requires at least one of text or file on multipart.** The
+   worker-side router can't route a job with no text and no file —
+   rejected fast with `AUTO_NO_INPUT`. A supplied file must still be
+   PNG/JPEG/PDF (same rule as MULTIMODAL). On the JSON endpoint AUTO
+   mirrors MOCK: text must be present (non-null) but can be blank,
+   and there is no file field. Output always includes an
+   `AGENT_DECISION` artifact as the first output.
 
 ### Submission examples
 
@@ -251,7 +261,38 @@ curl -X POST http://localhost:8080/api/v1/jobs \
   -d '{"capability":"SUMMARIZE","text":"hi"}'
 # → 400 Bad Request
 # { "code": "UNKNOWN_CAPABILITY",
-#   "message": "Unknown capability: SUMMARIZE. Accepted values: MOCK, RAG, OCR, MULTIMODAL." }
+#   "message": "Unknown capability: SUMMARIZE. Accepted values: MOCK, RAG, OCR, MULTIMODAL, AUTO." }
+```
+
+Valid — AUTO text-only job (router emits `rag` when text is long enough):
+
+```bash
+curl -X POST http://localhost:8080/api/v1/jobs \
+  -H "Content-Type: application/json" \
+  -d '{"capability":"AUTO","text":"which anime features harbor cats?"}'
+# → 202 Accepted, jobId=..., status=QUEUED
+# Outputs will be: AGENT_DECISION + RETRIEVAL_RESULT + FINAL_RESPONSE
+```
+
+Valid — AUTO multipart with text + PDF (router emits `multimodal`):
+
+```bash
+curl -X POST http://localhost:8080/api/v1/jobs \
+  -F "capability=AUTO" \
+  -F "file=@/path/to/invoice.pdf" \
+  -F "text=what is the total amount"
+# → 202 Accepted
+# Outputs will be: AGENT_DECISION + OCR_TEXT + VISION_RESULT + RETRIEVAL_RESULT + FINAL_RESPONSE
+```
+
+**Invalid** — AUTO multipart with neither text nor file:
+
+```bash
+curl -X POST http://localhost:8080/api/v1/jobs \
+  -F "capability=AUTO"
+# → 400 Bad Request
+# { "code": "AUTO_NO_INPUT",
+#   "message": "AUTO jobs on the multipart endpoint require AT LEAST ONE of ..." }
 ```
 
 ### `GET /api/v1/jobs/{jobId}`
@@ -393,6 +434,51 @@ The MULTIMODAL `RETRIEVAL_RESULT` schema is identical to the RAG
 capability's — downstream consumers can treat them identically, the
 only difference is the job's `capability` value in the status endpoint.
 
+For an AUTO job, `outputs` always begins with an `AGENT_DECISION`
+artifact that records the routing decision, followed by whatever
+artifacts the dispatched sub-capability emitted. The shape depends on
+which action the router selected:
+
+```json
+{
+  "jobId": "...",
+  "capability": "AUTO",
+  "status": "SUCCEEDED",
+  "outputs": [
+    { "id": "...", "type": "AGENT_DECISION",   "contentType": "application/json",             "accessUrl": "..." },
+    { "id": "...", "type": "OCR_TEXT",         "contentType": "text/plain; charset=utf-8",    "accessUrl": "..." },
+    { "id": "...", "type": "VISION_RESULT",    "contentType": "application/json",             "accessUrl": "..." },
+    { "id": "...", "type": "RETRIEVAL_RESULT", "contentType": "application/json",             "accessUrl": "..." },
+    { "id": "...", "type": "FINAL_RESPONSE",   "contentType": "text/markdown; charset=utf-8", "accessUrl": "..." }
+  ]
+}
+```
+
+The `AGENT_DECISION` artifact has this shape (produced by
+`AutoCapability._serialize_decision`):
+
+```json
+{
+  "action": "multimodal",
+  "reason": "text (32 chars) + supported file (application/pdf, 20480B) -> multimodal",
+  "confidence": 0.95,
+  "routerName": "rule",
+  "parsedQuery": null
+}
+```
+
+`action` is one of `rag`, `ocr`, `multimodal`, `direct_answer`, or
+`clarify`. `routerName` is `rule` for the deterministic router,
+`llm-<backend>` for a clean LLM decision, or `llm-<backend>-fallback-rule`
+when the LLM router degraded to the rule path (low confidence,
+schema violation, or provider failure). `parsedQuery` carries the
+same shape as the RAG `parsedQuery` structure when the LLM router
+attached one to a `rag` decision; it is `null` otherwise.
+
+Clarify and direct_answer actions emit an inline `FINAL_RESPONSE`
+instead of calling a sub-capability, so the outputs list is just
+`AGENT_DECISION + FINAL_RESPONSE`.
+
 ### `GET /api/v1/artifacts/{id}/content`
 
 Streams the artifact bytes. Content-Type and Content-Length are set from
@@ -526,11 +612,12 @@ dispatch was issued. Clients can safely retry with a fixed request.
 | Code                     | HTTP | Meaning                                                                                |
 |---------------------------|------|----------------------------------------------------------------------------------------|
 | `CAPABILITY_REQUIRED`     | 400  | `capability` field is missing / blank / whitespace-only.                               |
-| `UNKNOWN_CAPABILITY`      | 400  | `capability` value is not one of `MOCK`, `RAG`, `OCR`, `MULTIMODAL`.                  |
-| `TEXT_REQUIRED`           | 400  | Capability requires a non-blank `text` field but none was supplied (RAG; MOCK-JSON null). |
+| `UNKNOWN_CAPABILITY`      | 400  | `capability` value is not one of `MOCK`, `RAG`, `OCR`, `MULTIMODAL`, `AUTO`.           |
+| `TEXT_REQUIRED`           | 400  | Capability requires a non-blank `text` field but none was supplied (RAG; MOCK-JSON / AUTO-JSON null). |
 | `FILE_REQUIRED`           | 400  | Capability requires a file upload but none was supplied, or the capability was submitted on the wrong endpoint. |
 | `FILE_EMPTY`              | 400  | A `file` form field was present but carried zero bytes.                                |
-| `UNSUPPORTED_FILE_TYPE`   | 400  | File's content-type and filename extension both fall outside the allowed set for the capability (OCR / MULTIMODAL require PNG, JPEG, or PDF). |
+| `UNSUPPORTED_FILE_TYPE`   | 400  | File's content-type and filename extension both fall outside the allowed set for the capability (OCR / MULTIMODAL / AUTO require PNG, JPEG, or PDF when a file is supplied). |
+| `AUTO_NO_INPUT`           | 400  | AUTO multipart job supplied neither a non-blank `text` nor a non-empty `file`.         |
 
 ### Other known error codes
 

@@ -27,6 +27,8 @@ import java.util.Set;
  *   <tr><td>OCR</td>        <td>multipart</td><td>optional (ignored by worker)</td> <td><b>required, non-empty</b></td> <td>PNG, JPEG, PDF</td></tr>
  *   <tr><td>MULTIMODAL</td> <td>JSON</td>     <td>-</td>                       <td><b>rejected: FILE_REQUIRED</b></td> <td>-</td></tr>
  *   <tr><td>MULTIMODAL</td> <td>multipart</td><td>optional</td>                <td><b>required, non-empty</b></td> <td>PNG, JPEG, PDF</td></tr>
+ *   <tr><td>AUTO</td>       <td>JSON</td>     <td>optional (may be blank)</td> <td>-</td>            <td>-</td></tr>
+ *   <tr><td>AUTO</td>       <td>multipart</td><td>optional</td>                <td>optional, non-empty (at least one of text/file required)</td> <td>PNG, JPEG, PDF</td></tr>
  * </table>
  *
  * <h2>Error codes</h2>
@@ -57,6 +59,8 @@ public final class JobSubmissionValidator {
         public static final String FILE_EMPTY = "FILE_EMPTY";
         /** File's content-type/extension is not allowed for this capability. */
         public static final String UNSUPPORTED_FILE_TYPE = "UNSUPPORTED_FILE_TYPE";
+        /** AUTO multipart submission with neither a non-blank text nor a file. */
+        public static final String AUTO_NO_INPUT = "AUTO_NO_INPUT";
 
         private ErrorCodes() {}
     }
@@ -93,14 +97,14 @@ public final class JobSubmissionValidator {
         if (raw == null || raw.isBlank()) {
             throw new InvalidJobSubmissionException(
                     ErrorCodes.CAPABILITY_REQUIRED,
-                    "capability field is required. Accepted values: MOCK, RAG, OCR, MULTIMODAL.");
+                    "capability field is required. Accepted values: MOCK, RAG, OCR, MULTIMODAL, AUTO.");
         }
         try {
             return JobCapability.fromString(raw);
         } catch (IllegalArgumentException ex) {
             throw new InvalidJobSubmissionException(
                     ErrorCodes.UNKNOWN_CAPABILITY,
-                    "Unknown capability: " + raw + ". Accepted values: MOCK, RAG, OCR, MULTIMODAL.");
+                    "Unknown capability: " + raw + ". Accepted values: MOCK, RAG, OCR, MULTIMODAL, AUTO.");
         }
     }
 
@@ -161,6 +165,21 @@ public final class JobSubmissionValidator {
                                     + "(empty string is acceptable for backward compatibility).");
                 }
             }
+            case AUTO -> {
+                // AUTO on the JSON endpoint accepts any non-null text —
+                // blank / whitespace-only is fine because the router emits
+                // a clarify FINAL_RESPONSE rather than rejecting the job.
+                // Null is rejected so the controller's text-to-bytes path
+                // does not NPE (matches the MOCK-JSON contract).
+                if (text == null) {
+                    throw new InvalidJobSubmissionException(
+                            ErrorCodes.TEXT_REQUIRED,
+                            "AUTO jobs on the JSON endpoint require a 'text' "
+                                    + "field (empty string is acceptable — use it "
+                                    + "to force a clarify response). To include a "
+                                    + "file, use the multipart endpoint.");
+                }
+            }
         }
     }
 
@@ -195,6 +214,14 @@ public final class JobSubmissionValidator {
      *       neutral default retrieval query.</li>
      *   <li>MOCK is left unopinionated: any file type is accepted, text is
      *       optional. Preserves phase-1 backward compatibility.</li>
+     *   <li>AUTO accepts a text-only submission, a file-only submission, or
+     *       both — the router inspects whichever arrived. At least one of
+     *       (non-blank text, non-empty file) is required; the all-missing
+     *       case fails fast with AUTO_NO_INPUT rather than creating a job
+     *       that can only ever emit a clarify response. When a file IS
+     *       supplied its type must be PNG/JPEG/PDF (same rule as
+     *       MULTIMODAL — anything else fails the worker-side router
+     *       anyway).</li>
      * </ul>
      */
     public static void validateFileSubmission(
@@ -202,7 +229,16 @@ public final class JobSubmissionValidator {
             MultipartFile file,
             String text
     ) {
-        // The multipart endpoint always requires a real file.
+        // AUTO is the only capability where the file field is OPTIONAL on
+        // the multipart endpoint — it is routed from (text, file) pair, so
+        // either side is enough. Every other capability requires a real
+        // file; the shared "file must exist + non-empty" guard below runs
+        // for them after the AUTO branch's own text/file check.
+        if (capability == JobCapability.AUTO) {
+            validateAutoMultipart(file, text);
+            return;
+        }
+
         if (file == null) {
             throw new InvalidJobSubmissionException(
                     ErrorCodes.FILE_REQUIRED,
@@ -229,6 +265,40 @@ public final class JobSubmissionValidator {
                 // Phase-1 compatibility: MOCK accepts any non-empty file and
                 // any (or no) text. No additional checks.
             }
+            case AUTO -> {
+                // Handled above via the early-return branch.
+            }
+        }
+    }
+
+    private static void validateAutoMultipart(MultipartFile file, String text) {
+        boolean hasText = text != null && !text.isBlank();
+        boolean hasFile = file != null && !file.isEmpty() && file.getSize() > 0;
+
+        if (!hasText && !hasFile) {
+            throw new InvalidJobSubmissionException(
+                    ErrorCodes.AUTO_NO_INPUT,
+                    "AUTO jobs on the multipart endpoint require AT LEAST ONE of: "
+                            + "a non-blank 'text' form field, or a non-empty 'file' form field. "
+                            + "Neither was supplied — the router would have nothing to route on.");
+        }
+
+        // A file that is present but empty is always an error, even on AUTO —
+        // core-api would stage a zero-byte INPUT_FILE that the worker's
+        // routing classifier cannot use.
+        if (file != null && !file.isEmpty() && file.getSize() <= 0) {
+            throw new InvalidJobSubmissionException(
+                    ErrorCodes.FILE_EMPTY,
+                    "AUTO job supplied a 'file' form field but its size is 0 bytes. "
+                            + "Omit the file entirely to submit a text-only AUTO job.");
+        }
+
+        // When a file IS present, enforce the same PNG/JPEG/PDF rule as
+        // MULTIMODAL. The worker-side router will otherwise return a
+        // clarify response — we fail fast at the boundary instead so the
+        // client gets a clean UNSUPPORTED_FILE_TYPE immediately.
+        if (hasFile) {
+            requireSupportedFileType(JobCapability.AUTO, file);
         }
     }
 
