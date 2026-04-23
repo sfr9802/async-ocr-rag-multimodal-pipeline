@@ -1,0 +1,577 @@
+{
+  "schema_version": "1.0",
+  "round_id": "round_01",
+  "study_id": "rag-cheap-sweep-v3",
+  "parent_config_hash": "0e073814a046c6ebe348110fe1949d4ad66f2880753aec3786c2920cd03615db",
+  "optuna": {
+    "version": "4.5.0",
+    "sampler": {
+      "type": "TPESampler",
+      "params": {
+        "multivariate": true
+      },
+      "seed": 42
+    },
+    "pruner": {
+      "type": "NopPruner",
+      "params": {}
+    }
+  },
+  "objective": {
+    "name": "mrr",
+    "direction": "maximize"
+  },
+  "search_space": {
+    "rag_top_k": {
+      "type": "int",
+      "low": 3,
+      "high": 15
+    },
+    "rag_use_mmr": {
+      "type": "categorical",
+      "choices": [
+        false,
+        true
+      ]
+    },
+    "rag_query_parser": {
+      "type": "categorical",
+      "choices": [
+        "off",
+        "regex"
+      ]
+    }
+  },
+  "fixed_params": {
+    "rag_embedding_model": "BAAI/bge-m3",
+    "rag_reranker": "off",
+    "dataset": "eval/datasets/rag_anime_extended_kr.jsonl"
+  },
+  "n_trials": 18,
+  "trials": [
+    {
+      "number": 0,
+      "state": "COMPLETE",
+      "value": 0.8778,
+      "params": {
+        "rag_top_k": 7,
+        "rag_use_mmr": false,
+        "rag_query_parser": "off"
+      },
+      "datetime_start": "2026-04-23T21:30:52.959761",
+      "datetime_complete": "2026-04-23T21:31:07.226876",
+      "user_attrs": {
+        "config_hash": "fcf99e483dce",
+        "cost_usd": 0.0,
+        "eval_wall_ms": 13555.637,
+        "latency_ms": 13566.954,
+        "secondary_metric_values": {
+          "mean_hit_at_k": 0.9667,
+          "mean_keyword_coverage": 0.9556,
+          "mean_total_ms": 39.228,
+          "p50_retrieval_ms": 30.974
+        }
+      }
+    },
+    {
+      "number": 1,
+      "state": "COMPLETE",
+      "value": 0.8667,
+      "params": {
+        "rag_top_k": 5,
+        "rag_use_mmr": true,
+        "rag_query_parser": "regex"
+      },
+      "datetime_start": "2026-04-23T21:31:07.337941",
+      "datetime_complete": "2026-04-23T21:31:21.787115",
+      "user_attrs": {
+        "config_hash": "bbd1a44eeb1e",
+        "cost_usd": 0.0,
+        "eval_wall_ms": 13635.997,
+        "latency_ms": 13644.069,
+        "secondary_metric_values": {
+          "mean_hit_at_k": 0.9,
+          "mean_keyword_coverage": 0.9,
+          "mean_total_ms": 39.958,
+          "p50_retrieval_ms": 30.93
+        }
+      }
+    },
+    {
+      "number": 2,
+      "state": "COMPLETE",
+      "value": 0.8667,
+      "params": {
+        "rag_top_k": 3,
+        "rag_use_mmr": false,
+        "rag_query_parser": "off"
+      },
+      "datetime_start": "2026-04-23T21:31:21.893637",
+      "datetime_complete": "2026-04-23T21:31:36.132510",
+      "user_attrs": {
+        "config_hash": "5c5183318698",
+        "cost_usd": 0.0,
+        "eval_wall_ms": 13449.365,
+        "latency_ms": 13455.573,
+        "secondary_metric_values": {
+          "mean_hit_at_k": 0.9,
+          "mean_keyword_coverage": 0.9,
+          "mean_total_ms": 38.411,
+          "p50_retrieval_ms": 30.959
+        }
+      }
+    },
+    {
+      "number": 3,
+      "state": "COMPLETE",
+      "value": 0.8667,
+      "params": {
+        "rag_top_k": 5,
+        "rag_use_mmr": true,
+        "rag_query_parser": "off"
+      },
+      "datetime_start": "2026-04-23T21:31:36.238228",
+      "datetime_complete": "2026-04-23T21:31:50.493973",
+      "user_attrs": {
+        "config_hash": "f61c0e1009f8",
+        "cost_usd": 0.0,
+        "eval_wall_ms": 13474.995,
+        "latency_ms": 13483.514,
+        "secondary_metric_values": {
+          "mean_hit_at_k": 0.9,
+          "mean_keyword_coverage": 0.9,
+          "mean_total_ms": 39.146,
+          "p50_retrieval_ms": 31.12
+        }
+      }
+    },
+    {
+      "number": 4,
+      "state": "COMPLETE",
+      "value": 0.8778,
+      "params": {
+        "rag_top_k": 10,
+        "rag_use_mmr": true,
+        "rag_query_parser": "regex"
+      },
+      "datetime_start": "2026-04-23T21:31:50.617044",
+      "datetime_complete": "2026-04-23T21:32:04.883043",
+      "user_attrs": {
+        "config_hash": "763f398144d0",
+        "cost_usd": 0.0,
+        "eval_wall_ms": 13499.552,
+        "latency_ms": 13507.702,
+        "secondary_metric_values": {
+          "mean_hit_at_k": 0.9667,
+          "mean_keyword_coverage": 0.9556,
+          "mean_total_ms": 39.247,
+          "p50_retrieval_ms": 31.118
+        }
+      }
+    },
+    {
+      "number": 5,
+      "state": "COMPLETE",
+      "value": 0.8778,
+      "params": {
+        "rag_top_k": 13,
+        "rag_use_mmr": true,
+        "rag_query_parser": "off"
+      },
+      "datetime_start": "2026-04-23T21:32:04.996920",
+      "datetime_complete": "2026-04-23T21:32:19.333590",
+      "user_attrs": {
+        "config_hash": "51deea60fab3",
+        "cost_usd": 0.0,
+        "eval_wall_ms": 13559.794,
+        "latency_ms": 13567.593,
+        "secondary_metric_values": {
+          "mean_hit_at_k": 0.9667,
+          "mean_keyword_coverage": 0.9667,
+          "mean_total_ms": 40.56,
+          "p50_retrieval_ms": 31.007
+        }
+      }
+    },
+    {
+      "number": 6,
+      "state": "COMPLETE",
+      "value": 0.8778,
+      "params": {
+        "rag_top_k": 10,
+        "rag_use_mmr": false,
+        "rag_query_parser": "regex"
+      },
+      "datetime_start": "2026-04-23T21:32:19.461513",
+      "datetime_complete": "2026-04-23T21:32:34.054413",
+      "user_attrs": {
+        "config_hash": "e5b97cc39c34",
+        "cost_usd": 0.0,
+        "eval_wall_ms": 13741.769,
+        "latency_ms": 13749.384,
+        "secondary_metric_values": {
+          "mean_hit_at_k": 0.9667,
+          "mean_keyword_coverage": 0.9556,
+          "mean_total_ms": 39.463,
+          "p50_retrieval_ms": 31.065
+        }
+      }
+    },
+    {
+      "number": 7,
+      "state": "COMPLETE",
+      "value": 0.8778,
+      "params": {
+        "rag_top_k": 13,
+        "rag_use_mmr": false,
+        "rag_query_parser": "off"
+      },
+      "datetime_start": "2026-04-23T21:32:34.168469",
+      "datetime_complete": "2026-04-23T21:32:48.898829",
+      "user_attrs": {
+        "config_hash": "354b08166769",
+        "cost_usd": 0.0,
+        "eval_wall_ms": 13885.001,
+        "latency_ms": 13895.017,
+        "secondary_metric_values": {
+          "mean_hit_at_k": 0.9667,
+          "mean_keyword_coverage": 0.9667,
+          "mean_total_ms": 38.788,
+          "p50_retrieval_ms": 30.529
+        }
+      }
+    },
+    {
+      "number": 8,
+      "state": "COMPLETE",
+      "value": 0.8778,
+      "params": {
+        "rag_top_k": 7,
+        "rag_use_mmr": false,
+        "rag_query_parser": "off"
+      },
+      "datetime_start": "2026-04-23T23:47:24.500904",
+      "datetime_complete": "2026-04-23T23:47:38.744310",
+      "user_attrs": {
+        "config_hash": "fcf99e483dce",
+        "cost_usd": 0.0,
+        "eval_wall_ms": 13670.264,
+        "latency_ms": 13678.673,
+        "secondary_metric_values": {
+          "mean_hit_at_k": 0.9667,
+          "mean_keyword_coverage": 0.9556,
+          "mean_total_ms": 41.108,
+          "p50_retrieval_ms": 31.124
+        }
+      }
+    },
+    {
+      "number": 9,
+      "state": "COMPLETE",
+      "value": 0.8667,
+      "params": {
+        "rag_top_k": 5,
+        "rag_use_mmr": true,
+        "rag_query_parser": "regex"
+      },
+      "datetime_start": "2026-04-23T23:47:38.824405",
+      "datetime_complete": "2026-04-23T23:47:52.379800",
+      "user_attrs": {
+        "config_hash": "bbd1a44eeb1e",
+        "cost_usd": 0.0,
+        "eval_wall_ms": 13014.724,
+        "latency_ms": 13022.825,
+        "secondary_metric_values": {
+          "mean_hit_at_k": 0.9,
+          "mean_keyword_coverage": 0.9,
+          "mean_total_ms": 38.796,
+          "p50_retrieval_ms": 30.859
+        }
+      }
+    },
+    {
+      "number": 10,
+      "state": "COMPLETE",
+      "value": 0.8667,
+      "params": {
+        "rag_top_k": 3,
+        "rag_use_mmr": false,
+        "rag_query_parser": "regex"
+      },
+      "datetime_start": "2026-04-23T23:47:52.464337",
+      "datetime_complete": "2026-04-23T23:48:06.233070",
+      "user_attrs": {
+        "config_hash": "7d4b05230b21",
+        "cost_usd": 0.0,
+        "eval_wall_ms": 13050.2,
+        "latency_ms": 13058.346,
+        "secondary_metric_values": {
+          "mean_hit_at_k": 0.9,
+          "mean_keyword_coverage": 0.9,
+          "mean_total_ms": 38.544,
+          "p50_retrieval_ms": 30.782
+        }
+      }
+    },
+    {
+      "number": 11,
+      "state": "COMPLETE",
+      "value": 0.8778,
+      "params": {
+        "rag_top_k": 11,
+        "rag_use_mmr": true,
+        "rag_query_parser": "regex"
+      },
+      "datetime_start": "2026-04-23T23:48:06.306093",
+      "datetime_complete": "2026-04-23T23:48:19.827805",
+      "user_attrs": {
+        "config_hash": "a9b0ee017e43",
+        "cost_usd": 0.0,
+        "eval_wall_ms": 12929.169,
+        "latency_ms": 12937.08,
+        "secondary_metric_values": {
+          "mean_hit_at_k": 0.9667,
+          "mean_keyword_coverage": 0.9667,
+          "mean_total_ms": 38.523,
+          "p50_retrieval_ms": 30.767
+        }
+      }
+    },
+    {
+      "number": 12,
+      "state": "COMPLETE",
+      "value": 0.8778,
+      "params": {
+        "rag_top_k": 9,
+        "rag_use_mmr": true,
+        "rag_query_parser": "off"
+      },
+      "datetime_start": "2026-04-23T23:48:19.918679",
+      "datetime_complete": "2026-04-23T23:48:33.511241",
+      "user_attrs": {
+        "config_hash": "5b384be4044c",
+        "cost_usd": 0.0,
+        "eval_wall_ms": 13048.175,
+        "latency_ms": 13057.487,
+        "secondary_metric_values": {
+          "mean_hit_at_k": 0.9667,
+          "mean_keyword_coverage": 0.9556,
+          "mean_total_ms": 38.805,
+          "p50_retrieval_ms": 30.901
+        }
+      }
+    },
+    {
+      "number": 13,
+      "state": "COMPLETE",
+      "value": 0.8778,
+      "params": {
+        "rag_top_k": 14,
+        "rag_use_mmr": true,
+        "rag_query_parser": "regex"
+      },
+      "datetime_start": "2026-04-23T23:48:33.594727",
+      "datetime_complete": "2026-04-23T23:48:47.233993",
+      "user_attrs": {
+        "config_hash": "ec0774057b6e",
+        "cost_usd": 0.0,
+        "eval_wall_ms": 13074.186,
+        "latency_ms": 13084.753,
+        "secondary_metric_values": {
+          "mean_hit_at_k": 0.9667,
+          "mean_keyword_coverage": 0.9667,
+          "mean_total_ms": 39.873,
+          "p50_retrieval_ms": 30.904
+        }
+      }
+    },
+    {
+      "number": 14,
+      "state": "COMPLETE",
+      "value": 0.8778,
+      "params": {
+        "rag_top_k": 9,
+        "rag_use_mmr": false,
+        "rag_query_parser": "off"
+      },
+      "datetime_start": "2026-04-23T23:48:47.312751",
+      "datetime_complete": "2026-04-23T23:49:00.770738",
+      "user_attrs": {
+        "config_hash": "ec2db8b68a81",
+        "cost_usd": 0.0,
+        "eval_wall_ms": 12910.538,
+        "latency_ms": 12918.177,
+        "secondary_metric_values": {
+          "mean_hit_at_k": 0.9667,
+          "mean_keyword_coverage": 0.9556,
+          "mean_total_ms": 38.455,
+          "p50_retrieval_ms": 30.877
+        }
+      }
+    },
+    {
+      "number": 15,
+      "state": "COMPLETE",
+      "value": 0.8778,
+      "params": {
+        "rag_top_k": 9,
+        "rag_use_mmr": true,
+        "rag_query_parser": "regex"
+      },
+      "datetime_start": "2026-04-23T23:49:00.846909",
+      "datetime_complete": "2026-04-23T23:49:14.791754",
+      "user_attrs": {
+        "config_hash": "4c6ca434ed98",
+        "cost_usd": 0.0,
+        "eval_wall_ms": 13396.944,
+        "latency_ms": 13406.052,
+        "secondary_metric_values": {
+          "mean_hit_at_k": 0.9667,
+          "mean_keyword_coverage": 0.9556,
+          "mean_total_ms": 44.599,
+          "p50_retrieval_ms": 32.229
+        }
+      }
+    },
+    {
+      "number": 16,
+      "state": "COMPLETE",
+      "value": 0.8778,
+      "params": {
+        "rag_top_k": 8,
+        "rag_use_mmr": false,
+        "rag_query_parser": "regex"
+      },
+      "datetime_start": "2026-04-23T23:49:14.869255",
+      "datetime_complete": "2026-04-23T23:49:29.261167",
+      "user_attrs": {
+        "config_hash": "c1553c78baba",
+        "cost_usd": 0.0,
+        "eval_wall_ms": 13844.822,
+        "latency_ms": 13853.11,
+        "secondary_metric_values": {
+          "mean_hit_at_k": 0.9667,
+          "mean_keyword_coverage": 0.9556,
+          "mean_total_ms": 40.409,
+          "p50_retrieval_ms": 31.002
+        }
+      }
+    },
+    {
+      "number": 17,
+      "state": "COMPLETE",
+      "value": 0.8778,
+      "params": {
+        "rag_top_k": 14,
+        "rag_use_mmr": false,
+        "rag_query_parser": "regex"
+      },
+      "datetime_start": "2026-04-23T23:49:29.345097",
+      "datetime_complete": "2026-04-23T23:49:43.713223",
+      "user_attrs": {
+        "config_hash": "f68c95519070",
+        "cost_usd": 0.0,
+        "eval_wall_ms": 13752.974,
+        "latency_ms": 13762.003,
+        "secondary_metric_values": {
+          "mean_hit_at_k": 0.9667,
+          "mean_keyword_coverage": 0.9667,
+          "mean_total_ms": 47.402,
+          "p50_retrieval_ms": 44.695
+        }
+      }
+    }
+  ],
+  "best_trial": {
+    "number": 0,
+    "state": "COMPLETE",
+    "value": 0.8778,
+    "params": {
+      "rag_top_k": 7,
+      "rag_use_mmr": false,
+      "rag_query_parser": "off"
+    },
+    "datetime_start": "2026-04-23T21:30:52.959761",
+    "datetime_complete": "2026-04-23T21:31:07.226876",
+    "user_attrs": {
+      "config_hash": "fcf99e483dce",
+      "cost_usd": 0.0,
+      "eval_wall_ms": 13555.637,
+      "latency_ms": 13566.954,
+      "secondary_metric_values": {
+        "mean_hit_at_k": 0.9667,
+        "mean_keyword_coverage": 0.9556,
+        "mean_total_ms": 39.228,
+        "p50_retrieval_ms": 30.974
+      }
+    }
+  },
+  "statistics": {
+    "n_complete": 18,
+    "n_pruned": 0,
+    "n_failed": 0,
+    "best_value": 0.8778,
+    "median_value": 0.8778,
+    "mean_value": 0.8747166666666667,
+    "std_value": 0.004971725611450772,
+    "quantiles": {
+      "p10": 0.8667,
+      "p25": 0.8667,
+      "p50": 0.8778,
+      "p75": 0.8778,
+      "p90": 0.8778
+    },
+    "boundary_hits": {
+      "rag_top_k": {
+        "low": 2,
+        "high": 0
+      }
+    }
+  },
+  "param_importances": {
+    "rag_top_k": 1.0,
+    "rag_use_mmr": 0.0,
+    "rag_query_parser": 0.0
+  },
+  "clusters": [
+    {
+      "label": "rag_top_k>=7 plateau (mrr=0.8778)",
+      "trial_numbers": [
+        0,
+        4,
+        5,
+        6,
+        7,
+        8,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17
+      ],
+      "center": {
+        "rag_top_k_min": 7,
+        "rag_top_k_max": 14,
+        "mrr": 0.8778
+      }
+    },
+    {
+      "label": "rag_top_k<7 lower band (mrr=0.8667)",
+      "trial_numbers": [
+        1,
+        2,
+        3,
+        9,
+        10
+      ],
+      "center": {
+        "rag_top_k_min": 3,
+        "rag_top_k_max": 5,
+        "mrr": 0.8667
+      }
+    }
+  ],
+  "notes": "Round 1 on anime_extended_kr fixture. TPE with seed=42. Two resume segments (initial 8 + resumed 10 = 18). No pruner. cross_encoder reranker intentionally kept out of search space until HF cache is prewarmed."
+}

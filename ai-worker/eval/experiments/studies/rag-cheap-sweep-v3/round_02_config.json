@@ -1,0 +1,77 @@
+{
+  "schema_version": "1.0",
+  "round_id": "round_02",
+  "n_trials": 15,
+  "sampler": {
+    "type": "TPESampler",
+    "params": {
+      "multivariate": true
+    },
+    "seed": 42
+  },
+  "pruner": {
+    "type": "NopPruner",
+    "params": {}
+  },
+  "search_space": {
+    "rag_top_k": { "type": "int", "low": 7, "high": 15 }
+  },
+  "fixed_params": {
+    "rag_use_mmr": false,
+    "rag_query_parser": "off",
+    "rag_embedding_model": "BAAI/bge-m3",
+    "rag_reranker": "off",
+    "dataset": "eval/datasets/rag_anime_extended_kr.jsonl"
+  },
+  "stop_conditions": {
+    "max_rounds": 5,
+    "max_total_trials": 100,
+    "target_value": null,
+    "no_improvement_rounds": 2,
+    "min_delta": 0.005
+  },
+  "provenance": {
+    "kind": "llm_proposed",
+    "source_round_id": "round_01",
+    "source_bundle_hash": "b7612a2956a46f913e041853e636857b6e8d8375dfe78810d418e22ba5537f78",
+    "parent_config_hash": "0e073814a046c6ebe348110fe1949d4ad66f2880753aec3786c2920cd03615db",
+    "generated_at": "2026-04-23T14:56:34Z",
+    "generated_by": {
+      "tool": "claude_code",
+      "model": "claude-opus-4-7",
+      "prompt_version": "0.1.0",
+      "prompt_path": "prompts/claude_code/propose_next_round.md"
+    },
+    "reviewer": {
+      "kind": "human",
+      "id": null,
+      "approved_at": null,
+      "comments": null
+    },
+    "rationale": "Round 01 (n=18) produced a single-dimensional picture: param_importances.rag_top_k=1.0, rag_use_mmr=0.0, rag_query_parser=0.0. Top cluster (13 trials at mrr 0.8778) covers rag_top_k in [7,14]; bottom cluster (5 trials at 0.8667) covers rag_top_k in {3,5}. boundary_hits.rag_top_k.high=0 so no reason to expand; .low=2 hits are both in the worse cluster so narrowing is safe. Both categoricals frozen at their WorkerSettings defaults (rag_use_mmr=false, rag_query_parser=off) — the plateau splits 5/5 and 6/4 across their choices so either value is indistinguishable from the other in the metric, and freezing shrinks the confirmation round to 9 effective int cells. n_trials=15 because this is a confirmation sweep of a narrowed space, not fresh exploration. reviewer.kind=human / approved_at=null because freezing 2 of 3 search dims is a large structural change even if the importance math says it is safe.",
+    "diff_summary": [
+      {
+        "action": "narrow",
+        "target": "rag_top_k",
+        "before": { "type": "int", "low": 3, "high": 15 },
+        "after":  { "type": "int", "low": 7, "high": 15 },
+        "evidence": "clusters[1].trial_numbers span rag_top_k in {3,5} at mrr 0.8667; clusters[0].trial_numbers span rag_top_k in [7,14] at mrr 0.8778; statistics.boundary_hits.rag_top_k={low:2, high:0}; param_importances.rag_top_k=1.0"
+      },
+      {
+        "action": "freeze",
+        "target": "rag_use_mmr",
+        "before": { "type": "categorical", "choices": [false, true] },
+        "after":  false,
+        "evidence": "param_importances.rag_use_mmr=0.0 at n=18 (was 0.032 at n=8, now confirmed noise); clusters[0] splits 5/5 between false and true"
+      },
+      {
+        "action": "freeze",
+        "target": "rag_query_parser",
+        "before": { "type": "categorical", "choices": ["off", "regex"] },
+        "after":  "off",
+        "evidence": "param_importances.rag_query_parser=0.0; clusters[0] splits 6/4 between off and regex; regex normalization is a no-op on this fixture's well-formed KR queries"
+      }
+    ]
+  },
+  "notes": "Confirmation round on a narrowed single-axis space. Expected result: best value stays at 0.8778, rag_top_k importance stays at 1.0, stop_conditions.no_improvement_rounds fires (will be 1 after this round). Round_03 plan: promote rag_reranker to categorical ['off', 'cross_encoder'] after BAAI/bge-reranker-v2-m3 is prewarmed in the HF cache, or swap the fixture to something with more headroom than 0.8778-mrr / 0.9667-hit@5. The two sentinel __FILL_AT_ADAPTER__ hashes in the schema docs are NOT used here because I computed real sha256s off the on-disk bundle and config.yaml directly."
+}
