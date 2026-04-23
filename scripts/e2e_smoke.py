@@ -18,6 +18,7 @@ Exit code 0 on success, non-zero on any failure.
 from __future__ import annotations
 
 import json
+import os
 import sys
 import time
 from urllib.parse import urljoin
@@ -30,7 +31,15 @@ POLL_INTERVAL_SECONDS = 0.5
 
 
 def main() -> int:
-    client = httpx.Client(base_url=BASE, timeout=10.0)
+    # If AIPIPELINE_INTERNAL_SECRET is set, include the header on every
+    # request. The current flow only hits public /api/v1/** endpoints (not
+    # gated), but the header is harmless and keeps the smoke test ready for
+    # future internal-endpoint assertions.
+    headers: dict[str, str] = {}
+    secret = os.environ.get("AIPIPELINE_INTERNAL_SECRET")
+    if secret:
+        headers["X-Internal-Secret"] = secret
+    client = httpx.Client(base_url=BASE, timeout=10.0, headers=headers)
 
     print("[1/4] submitting text job ...")
     submit = client.post("/api/v1/jobs", json={

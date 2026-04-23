@@ -177,11 +177,32 @@ be within 0.10 of each other; anything worse means OCR quality is
 blocking retrieval on real inputs. **This stage is currently manual**
 — see "What is still manual" at the bottom of this doc.
 
-### 4. Multimodal (future)
+### 4. Multimodal
 
-Not implemented yet. The dataset schema is committed as a
-placeholder; the harness + gates will be added when the multimodal
-capability lands.
+**Goal:** confirm the full multimodal pipeline (OCR + vision + fusion +
+retrieval + generation) produces answers that mention the right keywords
+and surface the correct visual labels.
+
+**Run:**
+```bash
+python -m scripts.make_multimodal_sample_fixtures    # one-time
+python -m eval.run_eval multimodal \
+  --dataset eval/datasets/multimodal_sample.jsonl
+```
+
+**Gate:** `mean_keyword_coverage >= 0.60` **and**
+`mean_substring_match >= 0.50` on the fixture. If you fall below,
+the problem is likely in the vision provider or the fusion step —
+check the MULTIMODAL_TRACE artifacts for stage-level diagnostics.
+
+**Filtering:** use `--require-ocr-only` to evaluate only OCR-dependent
+rows. Use `--vision-provider heuristic|claude` to override the vision
+provider for A/B comparison.
+
+**Stage-level latency breakdown:** the harness reports OCR, vision,
+and retrieval+generation latency separately when `emit_trace=True`
+(enabled automatically during eval runs). Use these to identify
+which stage is the bottleneck.
 
 ## Running the eval CLI
 
@@ -203,6 +224,18 @@ python -m eval.run_eval ocr \
     --dataset eval/datasets/ocr_sample.jsonl \
     --out-json eval/reports/ocr-latest.json \
     --out-csv  eval/reports/ocr-latest.csv
+
+# Multimodal — builds the full MULTIMODAL capability (OCR + vision + RAG)
+python -m eval.run_eval multimodal \
+    --dataset eval/datasets/multimodal_sample.jsonl \
+    --out-json eval/reports/multimodal-latest.json \
+    --out-csv  eval/reports/multimodal-latest.csv
+
+# Multimodal — OCR-only rows with Claude vision provider
+python -m eval.run_eval multimodal \
+    --dataset eval/datasets/multimodal_sample.jsonl \
+    --require-ocr-only \
+    --vision-provider claude
 ```
 
 CLI flags:

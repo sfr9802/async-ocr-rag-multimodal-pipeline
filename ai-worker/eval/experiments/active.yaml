@@ -1,0 +1,70 @@
+# Active search-space declaration for Optuna-driven hyperparameter tuning.
+#
+# This file is git-tracked and is the single source of truth for the
+# NEXT tune-round. `tune.py` freezes a copy into
+# `studies/<experiment_id>/config.yaml` at study start so every study
+# has a deterministic replay record even if `active.yaml` later
+# changes.
+#
+# Every change SHOULD pass through human approval — the
+# `/propose-next` slash command emits proposals as chat diffs, never
+# via direct Edit, and `_meta.created_by` tracks provenance.
+
+experiment_id: rag-cheap-sweep-v1
+
+objective:
+  # Mode selects the eval subcommand. One of: rag | ocr | multimodal.
+  mode: rag
+  # Dataset path is resolved relative to ai-worker/. The Korean sample
+  # exercises bge-m3's multilingual path; switch to rag_sample.jsonl
+  # for the English fixture.
+  dataset: eval/datasets/rag_sample_kr.jsonl
+  # Primary metric must be a field in the eval summary JSON. The
+  # runner maximizes it (per optuna.direction below). Valid choices
+  # depend on mode:
+  #   rag         : mean_hit_at_k | mrr | mean_keyword_coverage
+  #   ocr         : 1 - mean_cer (minimize mean_cer via direction=minimize)
+  #   multimodal  : mean_exact_match | mean_substring_match | mean_keyword_coverage
+  primary_metric: mean_hit_at_k
+  # Secondary metrics are stored on each trial as user_attrs for later
+  # pareto / trade-off analysis. They do NOT influence search.
+  secondary_metrics: [mrr, mean_total_ms, p50_retrieval_ms]
+
+search_space:
+  # Phase 1 — CHEAP params only (no re-embedding, no index rebuild).
+  # All keys are WorkerSettings field names; tune.py sets each as
+  # AIPIPELINE_WORKER_<KEY_UPPER> on the eval subprocess.
+  rag_top_k:
+    type: int
+    low: 3
+    high: 15
+  # TODO(phase-2): re-enable once MULTIMODAL eval is the default mode
+  # for a round; cross_modal_rrf_k only moves the metric when
+  # --cross-modal is on.
+  # cross_modal_rrf_k:
+  #   type: int
+  #   low: 10
+  #   high: 120
+  # TODO(phase-2): the following capability-config knobs are NOT
+  # currently env-var-backed in WorkerSettings. Wiring them means
+  # adding fields to config.py + threading them into the relevant
+  # capability factory. Revisit in a follow-up session:
+  #   max_query_chars, short_query_words, max_fused_chunk_chars,
+  #   excerpt_chars.
+  # TODO(phase-2): expensive params (embedding_model, chunk size,
+  # query/passage prefixes) require an index cache keyed on their
+  # hash so trials reuse rather than rebuild. See docs/tuning.md
+  # "When to use cheap vs expensive params".
+
+optuna:
+  sampler: tpe                   # tpe | random
+  n_trials: 50
+  seed: 42
+  direction: maximize            # maximize | minimize
+
+_meta:
+  created_by: human              # human | claude-proposed | claude-approved
+  notes: |
+    Initial Phase 1 search space — cheap params only, TPE sampler,
+    seeded for reproducibility. Expand after the first round exposes
+    which knobs actually move the metric.

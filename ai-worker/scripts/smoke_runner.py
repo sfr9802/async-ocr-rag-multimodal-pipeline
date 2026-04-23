@@ -384,7 +384,7 @@ class SmokeRunner:
         self._timeout = timeout_seconds
         self._poll_interval = poll_interval_seconds
         self._owns_client = client is None
-        self._client = client or httpx.Client(base_url=base_url, timeout=15.0)
+        self._client = client or httpx.Client(base_url=base_url, timeout=max(30.0, timeout_seconds))
 
     def close(self) -> None:
         if self._owns_client:

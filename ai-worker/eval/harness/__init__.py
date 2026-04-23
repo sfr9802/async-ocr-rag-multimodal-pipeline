@@ -22,6 +22,11 @@ from eval.harness.metrics import (
     reciprocal_rank,
     wer,
 )
+from eval.harness.multimodal_eval import (
+    MultimodalEvalRow,
+    MultimodalEvalSummary,
+    run_multimodal_eval,
+)
 from eval.harness.ocr_eval import OcrEvalRow, OcrEvalSummary, run_ocr_eval
 from eval.harness.rag_eval import RagEvalRow, RagEvalSummary, run_rag_eval
 
@@ -35,6 +40,9 @@ __all__ = [
     "load_jsonl",
     "write_csv_report",
     "write_json_report",
+    "MultimodalEvalRow",
+    "MultimodalEvalSummary",
+    "run_multimodal_eval",
     "OcrEvalRow",
     "OcrEvalSummary",
     "run_ocr_eval",
