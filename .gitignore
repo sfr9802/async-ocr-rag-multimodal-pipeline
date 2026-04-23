@@ -38,6 +38,10 @@ ai-worker/*.egg-info/
 ai-worker/eval/reports/*
 !ai-worker/eval/reports/baseline-phase0.json
 !ai-worker/eval/reports/baseline-phase0-anime.json
+# Phase 8 agent-loop decision: the markdown + backing JSON are the
+# record of the measured A/B, not a run-to-run report.
+!ai-worker/eval/reports/agent-loop-decision.md
+!ai-worker/eval/reports/agent-loop-decision.json
 ai-worker/eval/datasets/samples/
 
 # ---- Optuna tuning artifacts ----

@@ -498,19 +498,29 @@ class AgentCompareRow:
     answers so a human reviewer can eyeball what the loop rewrote. The
     loop-off snapshot is the ``iter0_*`` fields; the loop-on snapshot is
     ``final_*``.
+
+    Phase 8 additions: ``difficulty`` + per-mode retrieval metrics
+    (``{iter0,final}_{recall,mrr}``) so the decision gate can judge
+    per-difficulty recovery.
     """
 
     query: str
+    difficulty: Optional[str] = None
+    expected_doc_ids: List[str] = field(default_factory=list)
     expected_keywords: List[str] = field(default_factory=list)
     # loop=off snapshot
     iter0_answer: str = ""
     iter0_retrieved_doc_ids: List[str] = field(default_factory=list)
+    iter0_recall_at_k: Optional[float] = None
+    iter0_reciprocal_rank: Optional[float] = None
     iter0_keyword_coverage: Optional[float] = None
     iter0_tokens: int = 0
     iter0_ms: float = 0.0
     # loop=on snapshot
     final_answer: str = ""
     final_retrieved_doc_ids: List[str] = field(default_factory=list)
+    final_recall_at_k: Optional[float] = None
+    final_reciprocal_rank: Optional[float] = None
     final_keyword_coverage: Optional[float] = None
     total_tokens: int = 0
     total_ms: float = 0.0
@@ -538,6 +548,7 @@ def run_agent_compare_eval(
     *,
     agent_run_fn: Any,
     dataset_path: Optional[str] = None,
+    top_k: int = 5,
 ) -> List[AgentCompareRow]:
     """Run the compare harness over ``dataset``.
 
@@ -545,21 +556,24 @@ def run_agent_compare_eval(
     twice per row — once with ``loop_enabled=False`` (captures the
     iter0 baseline) and once with ``loop_enabled=True`` (captures the
     final loop result). The per-row ``keyword_coverage`` is computed
-    against the row's ``expected_keywords``.
-
-    Returns a list of ``AgentCompareRow`` suitable for feeding into
-    ``eval.harness.metrics.loop_recovery_rate`` /
-    ``answer_recall_delta`` / ``avg_cost_multiplier`` /
-    ``iter_count_mean``.
+    against the row's ``expected_keywords`` and ``recall_at_k`` /
+    ``reciprocal_rank`` against ``expected_doc_ids``.
     """
     rows: List[AgentCompareRow] = []
     for idx, raw in enumerate(dataset, start=1):
         query = _require_str(raw, "query", row_index=idx)
+        expected_doc_ids = _list_of_str(raw.get("expected_doc_ids"))
         expected_keywords = _list_of_str(raw.get("expected_keywords"))
+        difficulty_raw = raw.get("difficulty")
+        difficulty = (
+            str(difficulty_raw).strip().lower() if difficulty_raw else None
+        )
         notes = raw.get("notes")
 
         row = AgentCompareRow(
             query=query,
+            difficulty=difficulty,
+            expected_doc_ids=expected_doc_ids,
             expected_keywords=expected_keywords,
             notes=str(notes) if notes is not None else None,
         )
@@ -573,6 +587,12 @@ def run_agent_compare_eval(
             row.iter0_keyword_coverage = keyword_coverage(
                 row.iter0_answer, expected_keywords
             )
+            row.iter0_recall_at_k = recall_at_k(
+                row.iter0_retrieved_doc_ids, expected_doc_ids, k=top_k
+            )
+            row.iter0_reciprocal_rank = reciprocal_rank(
+                row.iter0_retrieved_doc_ids, expected_doc_ids
+            )
 
             on = agent_run_fn(query, True)
             row.final_answer = on.answer or ""
@@ -583,6 +603,12 @@ def run_agent_compare_eval(
             row.stop_reason = on.stop_reason
             row.final_keyword_coverage = keyword_coverage(
                 row.final_answer, expected_keywords
+            )
+            row.final_recall_at_k = recall_at_k(
+                row.final_retrieved_doc_ids, expected_doc_ids, k=top_k
+            )
+            row.final_reciprocal_rank = reciprocal_rank(
+                row.final_retrieved_doc_ids, expected_doc_ids
             )
         except Exception as ex:
             row.error = f"{type(ex).__name__}: {ex}"
@@ -601,3 +627,138 @@ def run_agent_compare_eval(
 
 def agent_compare_row_to_dict(row: AgentCompareRow) -> Dict[str, Any]:
     return asdict(row)
+
+
+# ---------------------------------------------------------------------------
+# Agent compare summary (phase 8 decision gate).
+# ---------------------------------------------------------------------------
+
+
+def _mean(values: List[float]) -> Optional[float]:
+    return round(statistics.fmean(values), 4) if values else None
+
+
+def _p_latency(values: List[float], p: float) -> float:
+    from eval.harness.metrics import p_percentile
+
+    return round(p_percentile(values, p), 3) if values else 0.0
+
+
+def _bucket_stats(
+    rows: List[AgentCompareRow],
+    mode: str,
+) -> Dict[str, Any]:
+    """Per-mode slice of compare rows: retrieval + keyword + latency."""
+    if mode == "off":
+        recalls = [r.iter0_recall_at_k for r in rows if r.iter0_recall_at_k is not None]
+        rrs = [r.iter0_reciprocal_rank for r in rows if r.iter0_reciprocal_rank is not None]
+        kcs = [r.iter0_keyword_coverage for r in rows if r.iter0_keyword_coverage is not None]
+        latencies = [r.iter0_ms for r in rows if r.error is None]
+        tokens = [r.iter0_tokens for r in rows if r.error is None]
+    else:
+        recalls = [r.final_recall_at_k for r in rows if r.final_recall_at_k is not None]
+        rrs = [r.final_reciprocal_rank for r in rows if r.final_reciprocal_rank is not None]
+        kcs = [r.final_keyword_coverage for r in rows if r.final_keyword_coverage is not None]
+        latencies = [r.total_ms for r in rows if r.error is None]
+        tokens = [r.total_tokens for r in rows if r.error is None]
+    return {
+        "row_count": len(rows),
+        "mean_recall_at_k": _mean(recalls),
+        "mrr": _mean(rrs),
+        "mean_keyword_coverage": _mean(kcs),
+        "mean_latency_ms": round(statistics.fmean(latencies), 3) if latencies else 0.0,
+        "p50_latency_ms": _p_latency(latencies, 50.0),
+        "p95_latency_ms": _p_latency(latencies, 95.0),
+        "mean_tokens": round(statistics.fmean(tokens), 3) if tokens else 0.0,
+    }
+
+
+def summarize_agent_compare(
+    rows: List[AgentCompareRow],
+    *,
+    top_k: int = 5,
+    dataset_path: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Aggregate a compare run into the Phase 8 decision-gate report.
+
+    Returns a dict with:
+      - overall {off, on} stats
+      - per_difficulty[{easy, hard, impossible}] {off, on}
+      - agent_metrics (loop_recovery_rate[overall/hard], avg_cost_multiplier,
+        iter_count_mean, answer_recall_delta)
+      - stop_reason_distribution (loop=on only)
+      - latency_delta (p50/p95/mean deltas on-minus-off)
+      - decision inputs (numbers the gate checks against the rule)
+    """
+    from collections import Counter
+
+    from eval.harness.metrics import (
+        answer_recall_delta,
+        avg_cost_multiplier,
+        iter_count_mean,
+        loop_recovery_rate,
+    )
+
+    overall = {
+        "off": _bucket_stats(rows, "off"),
+        "on": _bucket_stats(rows, "on"),
+    }
+
+    per_difficulty: Dict[str, Dict[str, Any]] = {}
+    for tag in ("easy", "hard", "impossible"):
+        slice_rows = [r for r in rows if (r.difficulty or "").lower() == tag]
+        per_difficulty[tag] = {
+            "off": _bucket_stats(slice_rows, "off"),
+            "on": _bucket_stats(slice_rows, "on"),
+        }
+
+    hard_rows = [r for r in rows if (r.difficulty or "").lower() == "hard"]
+    agent_metrics = {
+        "loop_recovery_rate_overall": loop_recovery_rate(rows),
+        "loop_recovery_rate_hard": loop_recovery_rate(hard_rows),
+        "avg_cost_multiplier": avg_cost_multiplier(rows),
+        "iter_count_mean": iter_count_mean(rows),
+        "answer_recall_delta": answer_recall_delta(rows),
+    }
+
+    stop_counter: Counter = Counter()
+    for r in rows:
+        if r.stop_reason:
+            stop_counter[r.stop_reason] += 1
+    stop_total = sum(stop_counter.values())
+    stop_distribution = {
+        reason: {
+            "count": int(count),
+            "fraction": round(count / stop_total, 4) if stop_total else 0.0,
+        }
+        for reason, count in stop_counter.most_common()
+    }
+
+    # Latency deltas: loop_on - loop_off. p95 delta is what the gate checks
+    # (<= 8s budget).
+    latency_delta = {
+        "mean_ms": round(
+            overall["on"]["mean_latency_ms"] - overall["off"]["mean_latency_ms"],
+            3,
+        ),
+        "p50_ms": round(
+            overall["on"]["p50_latency_ms"] - overall["off"]["p50_latency_ms"],
+            3,
+        ),
+        "p95_ms": round(
+            overall["on"]["p95_latency_ms"] - overall["off"]["p95_latency_ms"],
+            3,
+        ),
+    }
+
+    return {
+        "dataset_path": dataset_path or "<inline>",
+        "row_count": len(rows),
+        "error_count": sum(1 for r in rows if r.error is not None),
+        "top_k": int(top_k),
+        "overall": overall,
+        "per_difficulty": per_difficulty,
+        "agent_metrics": agent_metrics,
+        "stop_reason_distribution": stop_distribution,
+        "latency_delta": latency_delta,
+    }

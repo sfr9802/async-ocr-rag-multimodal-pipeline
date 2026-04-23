@@ -116,6 +116,13 @@ def _build_parser() -> argparse.ArgumentParser:
                      help="Skip the live ragmeta/FAISS stack and build an "
                           "in-memory retriever from this JSONL corpus. Uses "
                           "the configured embedding model but no Postgres.")
+    rag.add_argument("--agent-mode", type=str, default=None,
+                     choices=["compare"],
+                     help="If set to 'compare', run each row twice (agent loop "
+                          "off vs on) and emit the Phase 8 decision-gate "
+                          "report alongside a per-row compare CSV. Requires "
+                          "the dataset to carry a 'difficulty' field for "
+                          "per-difficulty aggregation.")
     rag.add_argument("--no-csv", action="store_true",
                      help="Skip CSV output.")
 
@@ -195,6 +202,17 @@ def _run_rag_cli(args: argparse.Namespace) -> int:
     dataset = load_jsonl(args.dataset)
     top_k = int(args.top_k) if args.top_k is not None else int(settings.rag_top_k)
 
+    if args.agent_mode == "compare":
+        return _run_rag_compare_cli(
+            args,
+            dataset=dataset,
+            retriever=retriever,
+            generator=generator,
+            settings=settings,
+            top_k=top_k,
+            offline_info=offline_info,
+        )
+
     summary, rows = run_rag_eval(
         dataset,
         retriever=retriever,
@@ -218,6 +236,149 @@ def _run_rag_cli(args: argparse.Namespace) -> int:
             out_csv,
             [rag_row_to_dict(r) for r in rows],
             columns=_rag_csv_columns(),
+        )
+    return 0
+
+
+def _run_rag_compare_cli(
+    args: argparse.Namespace,
+    *,
+    dataset: List[Mapping[str, Any]],
+    retriever: Any,
+    generator: Any,
+    settings: Any,
+    top_k: int,
+    offline_info: Optional[Any],
+) -> int:
+    """Run the loop-off vs loop-on compare harness over ``dataset``.
+
+    Builds a live AgentLoopController + RuleCritic + NoOpQueryRewriter
+    stack using the same retriever + generator the regular RAG eval
+    uses. This matches what the worker actually runs when the LLM
+    backend is unavailable (the production registry degrades to
+    RuleCritic + NoOpQueryRewriter in that case) — exactly the
+    scenario the Phase 8 decision gate needs to measure.
+    """
+    from app.capabilities.agent.critic import RuleCritic
+    from app.capabilities.agent.loop import AgentLoopController, LoopBudget
+    from app.capabilities.agent.rewriter import NoOpQueryRewriter
+    from app.capabilities.agent.synthesizer import AgentSynthesizer
+    from app.capabilities.rag.query_parser import RegexQueryParser
+
+    from eval.harness.io_utils import write_csv_report, write_json_report
+    from eval.harness.rag_eval import (
+        AgentRunResult,
+        agent_compare_row_to_dict,
+        run_agent_compare_eval,
+        summarize_agent_compare,
+    )
+
+    parser = RegexQueryParser()
+    critic = RuleCritic()
+    rewriter = NoOpQueryRewriter()
+    synthesizer = AgentSynthesizer(generator)
+    budget = LoopBudget(
+        max_iter=int(settings.agent_max_iter),
+        max_total_ms=int(settings.agent_max_total_ms),
+        max_llm_tokens=int(settings.agent_max_llm_tokens),
+        min_confidence_to_stop=float(settings.agent_min_stop_confidence),
+    )
+    controller = AgentLoopController(
+        critic=critic,
+        rewriter=rewriter,
+        parser=parser,
+        budget=budget,
+    )
+
+    def agent_run_fn(query: str, loop_enabled: bool) -> AgentRunResult:
+        import time as _t
+
+        start = _t.perf_counter()
+        parsed = parser.parse(query)
+        if not loop_enabled:
+            report = retriever.retrieve(parsed.normalized or query)
+            chunks = list(report.results)
+            answer = generator.generate(query, chunks)
+            elapsed_ms = round((_t.perf_counter() - start) * 1000.0, 3)
+            # loop=off rough token approximation: characters / 4, floor 1.
+            tokens = max(1, len(answer) // 4)
+            doc_ids = list(dict.fromkeys(c.doc_id for c in chunks))
+            return AgentRunResult(
+                answer=answer,
+                retrieved_doc_ids=doc_ids,
+                tokens_used=tokens,
+                elapsed_ms=elapsed_ms,
+                iter_count=1,
+                stop_reason="loop_off",
+            )
+
+        def execute_fn(pq: Any) -> tuple:
+            q = pq.normalized or pq.original or query
+            rep = retriever.retrieve(q)
+            chunks = list(rep.results)
+            ans = generator.generate(query, chunks)
+            # Rule critic has no LLM token cost; approximate execute
+            # tokens from generator output so the token budget math in
+            # the loop behaves realistically.
+            return ans, chunks, max(1, len(ans) // 4)
+
+        outcome = controller.run(
+            question=query,
+            initial_parsed_query=parsed,
+            execute_fn=execute_fn,
+        )
+        final_answer = synthesizer.synthesize(query, outcome)
+        elapsed_ms = round((_t.perf_counter() - start) * 1000.0, 3)
+        agg_doc_ids = list(
+            dict.fromkeys(c.doc_id for c in outcome.aggregated_chunks)
+        )
+        # Approximate final-answer synthesis tokens the same way as
+        # iter0 so cost multiplier math is meaningful even though
+        # offline runs use a deterministic extractive generator.
+        total_tokens = outcome.total_llm_tokens + max(1, len(final_answer) // 4)
+        return AgentRunResult(
+            answer=final_answer,
+            retrieved_doc_ids=agg_doc_ids,
+            tokens_used=total_tokens,
+            elapsed_ms=elapsed_ms,
+            iter_count=len(outcome.steps),
+            stop_reason=outcome.stop_reason,
+        )
+
+    compare_rows = run_agent_compare_eval(
+        dataset,
+        agent_run_fn=agent_run_fn,
+        dataset_path=str(args.dataset),
+        top_k=top_k,
+    )
+    compare_summary = summarize_agent_compare(
+        compare_rows, top_k=top_k, dataset_path=str(args.dataset)
+    )
+
+    # Write reports BEFORE the console pretty-print so a stray Unicode
+    # character (cp949 consoles on Windows) can't cost us the data.
+    out_json = args.out_json or _default_report_path("rag-compare", "json")
+    write_json_report(
+        out_json,
+        summary=compare_summary,
+        rows=[agent_compare_row_to_dict(r) for r in compare_rows],
+        metadata=_rag_compare_metadata(
+            settings, top_k, budget, offline_info=offline_info
+        ),
+    )
+    if not args.no_csv:
+        out_csv = args.out_csv or _default_report_path("rag-compare", "csv")
+        write_csv_report(
+            out_csv,
+            [agent_compare_row_to_dict(r) for r in compare_rows],
+            columns=_rag_compare_csv_columns(),
+        )
+    try:
+        _print_agent_compare_summary(compare_summary)
+    except UnicodeEncodeError as ex:  # pragma: no cover — win-cp949 fallback
+        log.warning(
+            "Pretty summary print failed (%s); reports already written "
+            "to %s", ex, out_json,
         )
     return 0
 
@@ -345,6 +506,111 @@ def _rag_csv_columns() -> List[str]:
         "notes",
         "error",
     ]
+
+
+def _rag_compare_metadata(
+    settings: Any,
+    top_k: int,
+    budget: Any,
+    *,
+    offline_info: Optional[Any] = None,
+) -> Dict[str, Any]:
+    payload: Dict[str, Any] = {
+        "harness": "rag-agent-compare",
+        "embedding_model": settings.rag_embedding_model,
+        "rag_index_dir": str(settings.rag_index_dir),
+        "top_k": top_k,
+        "reranker": settings.rag_reranker,
+        "candidate_k": settings.rag_candidate_k,
+        "agent_critic": "rule",
+        "agent_rewriter": "noop",
+        "agent_budget": {
+            "max_iter": budget.max_iter,
+            "max_total_ms": budget.max_total_ms,
+            "max_llm_tokens": budget.max_llm_tokens,
+            "min_confidence_to_stop": budget.min_confidence_to_stop,
+        },
+        "run_at": datetime.now().isoformat(timespec="seconds"),
+    }
+    if offline_info is not None:
+        payload["offline_corpus"] = {
+            "path": offline_info.corpus_path,
+            "document_count": offline_info.document_count,
+            "chunk_count": offline_info.chunk_count,
+            "index_version": offline_info.index_version,
+            "dimension": offline_info.dimension,
+        }
+    return payload
+
+
+def _rag_compare_csv_columns() -> List[str]:
+    return [
+        "query",
+        "difficulty",
+        "expected_doc_ids",
+        "expected_keywords",
+        "iter0_retrieved_doc_ids",
+        "iter0_recall_at_k",
+        "iter0_reciprocal_rank",
+        "iter0_keyword_coverage",
+        "iter0_tokens",
+        "iter0_ms",
+        "final_retrieved_doc_ids",
+        "final_recall_at_k",
+        "final_reciprocal_rank",
+        "final_keyword_coverage",
+        "total_tokens",
+        "total_ms",
+        "iter_count",
+        "stop_reason",
+        "notes",
+        "error",
+    ]
+
+
+def _print_agent_compare_summary(summary: Dict[str, Any]) -> None:
+    print()
+    print(f"Agent compare eval - {summary['dataset_path']}")
+    print(f"  rows evaluated : {summary['row_count']} (errors={summary['error_count']})")
+    print(f"  top_k          : {summary['top_k']}")
+
+    def _fmt_bucket(label: str, bucket: Dict[str, Any]) -> None:
+        print(
+            f"    {label:<6} n={bucket['row_count']:>2}  "
+            f"recall@k={_fmt(bucket['mean_recall_at_k'])}  "
+            f"mrr={_fmt(bucket['mrr'])}  "
+            f"kw_cov={_fmt(bucket['mean_keyword_coverage'])}  "
+            f"p50_ms={bucket['p50_latency_ms']:.1f}  "
+            f"p95_ms={bucket['p95_latency_ms']:.1f}  "
+            f"mean_tokens={bucket['mean_tokens']:.1f}"
+        )
+
+    print("  overall:")
+    _fmt_bucket("off", summary["overall"]["off"])
+    _fmt_bucket("on",  summary["overall"]["on"])
+
+    print("  per_difficulty:")
+    for tag in ("easy", "hard", "impossible"):
+        print(f"    {tag}:")
+        _fmt_bucket("off", summary["per_difficulty"][tag]["off"])
+        _fmt_bucket("on",  summary["per_difficulty"][tag]["on"])
+
+    am = summary["agent_metrics"]
+    print("  agent metrics:")
+    print(f"    loop_recovery_rate_overall : {_fmt(am['loop_recovery_rate_overall'])}")
+    print(f"    loop_recovery_rate_hard    : {_fmt(am['loop_recovery_rate_hard'])}")
+    print(f"    avg_cost_multiplier        : {_fmt(am['avg_cost_multiplier'])}")
+    print(f"    iter_count_mean            : {_fmt(am['iter_count_mean'])}")
+    print(f"    answer_recall_delta        : {_fmt(am['answer_recall_delta'])}")
+
+    ld = summary["latency_delta"]
+    print("  latency delta (on - off):")
+    print(f"    mean_ms={ld['mean_ms']:.1f}  p50_ms={ld['p50_ms']:.1f}  p95_ms={ld['p95_ms']:.1f}")
+
+    print("  stop_reason distribution (loop=on):")
+    for reason, info in summary["stop_reason_distribution"].items():
+        print(f"    {reason:<14} count={info['count']:<3} frac={info['fraction']:.3f}")
+    print()
 
 
 def _print_rag_summary(summary: RagEvalSummary) -> None:

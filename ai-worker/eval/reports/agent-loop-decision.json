@@ -1,0 +1,1277 @@
+{
+  "metadata": {
+    "harness": "rag-agent-compare",
+    "embedding_model": "sentence-transformers/all-MiniLM-L6-v2",
+    "rag_index_dir": "../rag-data",
+    "top_k": 5,
+    "reranker": "none",
+    "candidate_k": 30,
+    "agent_critic": "rule",
+    "agent_rewriter": "noop",
+    "agent_budget": {
+      "max_iter": 3,
+      "max_total_ms": 15000,
+      "max_llm_tokens": 4000,
+      "min_confidence_to_stop": 0.75
+    },
+    "run_at": "2026-04-23T19:28:30",
+    "offline_corpus": {
+      "path": "fixtures\\kr_sample.jsonl",
+      "document_count": 10,
+      "chunk_count": 29,
+      "index_version": "offline-1776940100",
+      "dimension": 384
+    }
+  },
+  "summary": {
+    "dataset_path": "eval\\datasets\\rag_agent_fixture_kr.jsonl",
+    "row_count": 30,
+    "error_count": 0,
+    "top_k": 5,
+    "overall": {
+      "off": {
+        "row_count": 30,
+        "mean_recall_at_k": 0.85,
+        "mrr": 0.875,
+        "mean_keyword_coverage": 0.8667,
+        "mean_latency_ms": 4.47,
+        "p50_latency_ms": 3.896,
+        "p95_latency_ms": 7.28,
+        "mean_tokens": 265.267
+      },
+      "on": {
+        "row_count": 30,
+        "mean_recall_at_k": 0.85,
+        "mrr": 0.875,
+        "mean_keyword_coverage": 0.8667,
+        "mean_latency_ms": 12.738,
+        "p50_latency_ms": 12.496,
+        "p95_latency_ms": 14.684,
+        "mean_tokens": 1061.067
+      }
+    },
+    "per_difficulty": {
+      "easy": {
+        "off": {
+          "row_count": 10,
+          "mean_recall_at_k": 0.9,
+          "mrr": 0.8,
+          "mean_keyword_coverage": 0.8,
+          "mean_latency_ms": 6.006,
+          "p50_latency_ms": 3.899,
+          "p95_latency_ms": 23.183,
+          "mean_tokens": 264.2
+        },
+        "on": {
+          "row_count": 10,
+          "mean_recall_at_k": 0.9,
+          "mrr": 0.8,
+          "mean_keyword_coverage": 0.8,
+          "mean_latency_ms": 12.68,
+          "p50_latency_ms": 12.496,
+          "p95_latency_ms": 14.598,
+          "mean_tokens": 1056.8
+        }
+      },
+      "hard": {
+        "off": {
+          "row_count": 10,
+          "mean_recall_at_k": 0.8,
+          "mrr": 0.95,
+          "mean_keyword_coverage": 0.8,
+          "mean_latency_ms": 3.617,
+          "p50_latency_ms": 3.242,
+          "p95_latency_ms": 4.222,
+          "mean_tokens": 269.6
+        },
+        "on": {
+          "row_count": 10,
+          "mean_recall_at_k": 0.8,
+          "mrr": 0.95,
+          "mean_keyword_coverage": 0.8,
+          "mean_latency_ms": 12.836,
+          "p50_latency_ms": 12.185,
+          "p95_latency_ms": 14.771,
+          "mean_tokens": 1078.4
+        }
+      },
+      "impossible": {
+        "off": {
+          "row_count": 10,
+          "mean_recall_at_k": null,
+          "mrr": null,
+          "mean_keyword_coverage": 1.0,
+          "mean_latency_ms": 3.787,
+          "p50_latency_ms": 3.896,
+          "p95_latency_ms": 4.416,
+          "mean_tokens": 262.0
+        },
+        "on": {
+          "row_count": 10,
+          "mean_recall_at_k": null,
+          "mrr": null,
+          "mean_keyword_coverage": 1.0,
+          "mean_latency_ms": 12.697,
+          "p50_latency_ms": 11.916,
+          "p95_latency_ms": 14.684,
+          "mean_tokens": 1048.0
+        }
+      }
+    },
+    "agent_metrics": {
+      "loop_recovery_rate_overall": 0.0,
+      "loop_recovery_rate_hard": null,
+      "avg_cost_multiplier": 4.0,
+      "iter_count_mean": 3.0,
+      "answer_recall_delta": 0.0
+    },
+    "stop_reason_distribution": {
+      "iter_cap": {
+        "count": 30,
+        "fraction": 1.0
+      }
+    },
+    "latency_delta": {
+      "mean_ms": 8.268,
+      "p50_ms": 8.6,
+      "p95_ms": 7.404
+    }
+  },
+  "rows": [
+    {
+      "query": "CNCF가 정의한 클라우드 네이티브 아키텍처의 오케스트레이션 플랫폼은 무엇인가요?",
+      "difficulty": "easy",
+      "expected_doc_ids": [
+        "kr-001"
+      ],
+      "expected_keywords": [
+        "쿠버네티스"
+      ],
+      "iter0_answer": "**Query:** CNCF가 정의한 클라우드 네이티브 아키텍처의 오케스트레이션 플랫폼은 무엇인가요?\n\n**Short answer:** 클라우드 네이티브 아키텍처는 컨테이너, 마이크로서비스, 서비스 메시, 불변 인프라, 선언적 API를 활용하여 탄력적이고 관리 가능하며 관측 가능한 느슨하게 결합된 시스템을 구축하는 접근 방식이다.\n\n**Supporting passages:**\n1. [kr-001#overview] (score=0.552) 클라우드 네이티브 아키텍처는 컨테이너, 마이크로서비스, 서비스 메시, 불변 인프라, 선언적 API를 활용하여 탄력적이고 관리 가능하며 관측 가능한 느슨하게 결합된 시스템을 구축하는 접근 방식이다. CNCF(Cloud Native Computing Foundation)에서 정의한 이 접근 방식은 쿠버네티스를 오케스트레이션 플랫폼으로 사용하며, CI/CD 파이프라인을 통해 자동화된 배포를 수행한다.\n2. [kr-006#database_failover] (score=0.402) 데이터베이스 장애 발생 시 PgBouncer를 통한 자동 페일오버가 1분 이내에 수행된다. 수동 페일오버가 필요한 경우 pg_ctl promote 명령을 스탠바이 노드에서 실행한다. 페일오버 후에는 반드시 데이터 무결성 검증을 수행해야 한다. pg_rewind를 사용하여 이전 프라이머리를 스탠바이로 재구성할 수 있다.\n3. [kr-004#overview] (score=0.386) 신입 개발자가 팀에 합류한 후 첫 2주 동안 완료해야 하는 업무를 정리한 체크리스트이다. 개발 환경 설정, 코드 리뷰 프로세스 숙지, 팀 컨벤션 학습이 핵심 과제이다.\n4. [kr-002#password_policy] (score=0.384) 비밀번호는 최소 12자 이상이며, 대문자, 소문자, 숫자, 특수문자를 각각 1개 이상 포함해야 한다. 비밀번호는 90일마다 변경해야 하며, 최근 5개의 비밀번호를 재사용할 수 없다. 2단계 인증(MFA)은 VPN 접속, 클라우드 콘솔, 소스 코드 저장소 접근 시 필수이다.\n5. [kr-001#best_practices] (score=0.350) 12-Factor App 원칙을 준수하면 클라우드 환경에서의 이식성과 확장성이 크게 향상된다. 환경 변수를 통한 설정 관리, 로그의 이벤트 스트림 처리, 관리 프로세스의 일회성 실행 등이 핵심 원칙이다.\n\n**Sources:** kr-001, kr-002, kr-004, kr-006",
+      "iter0_retrieved_doc_ids": [
+        "kr-001",
+        "kr-006",
+        "kr-004",
+        "kr-002"
+      ],
+      "iter0_recall_at_k": 1.0,
+      "iter0_reciprocal_rank": 1.0,
+      "iter0_keyword_coverage": 1.0,
+      "iter0_tokens": 304,
+      "iter0_ms": 23.183,
+      "final_answer": "**Query:** CNCF가 정의한 클라우드 네이티브 아키텍처의 오케스트레이션 플랫폼은 무엇인가요?\n\n**Short answer:** 클라우드 네이티브 아키텍처는 컨테이너, 마이크로서비스, 서비스 메시, 불변 인프라, 선언적 API를 활용하여 탄력적이고 관리 가능하며 관측 가능한 느슨하게 결합된 시스템을 구축하는 접근 방식이다.\n\n**Supporting passages:**\n1. [kr-001#overview] (score=0.552) 클라우드 네이티브 아키텍처는 컨테이너, 마이크로서비스, 서비스 메시, 불변 인프라, 선언적 API를 활용하여 탄력적이고 관리 가능하며 관측 가능한 느슨하게 결합된 시스템을 구축하는 접근 방식이다. CNCF(Cloud Native Computing Foundation)에서 정의한 이 접근 방식은 쿠버네티스를 오케스트레이션 플랫폼으로 사용하며, CI/CD 파이프라인을 통해 자동화된 배포를 수행한다.\n2. [kr-006#database_failover] (score=0.402) 데이터베이스 장애 발생 시 PgBouncer를 통한 자동 페일오버가 1분 이내에 수행된다. 수동 페일오버가 필요한 경우 pg_ctl promote 명령을 스탠바이 노드에서 실행한다. 페일오버 후에는 반드시 데이터 무결성 검증을 수행해야 한다. pg_rewind를 사용하여 이전 프라이머리를 스탠바이로 재구성할 수 있다.\n3. [kr-004#overview] (score=0.386) 신입 개발자가 팀에 합류한 후 첫 2주 동안 완료해야 하는 업무를 정리한 체크리스트이다. 개발 환경 설정, 코드 리뷰 프로세스 숙지, 팀 컨벤션 학습이 핵심 과제이다.\n4. [kr-002#password_policy] (score=0.384) 비밀번호는 최소 12자 이상이며, 대문자, 소문자, 숫자, 특수문자를 각각 1개 이상 포함해야 한다. 비밀번호는 90일마다 변경해야 하며, 최근 5개의 비밀번호를 재사용할 수 없다. 2단계 인증(MFA)은 VPN 접속, 클라우드 콘솔, 소스 코드 저장소 접근 시 필수이다.\n5. [kr-001#best_practices] (score=0.350) 12-Factor App 원칙을 준수하면 클라우드 환경에서의 이식성과 확장성이 크게 향상된다. 환경 변수를 통한 설정 관리, 로그의 이벤트 스트림 처리, 관리 프로세스의 일회성 실행 등이 핵심 원칙이다.\n\n**Sources:** kr-001, kr-002, kr-004, kr-006",
+      "final_retrieved_doc_ids": [
+        "kr-001",
+        "kr-006",
+        "kr-004",
+        "kr-002"
+      ],
+      "final_recall_at_k": 1.0,
+      "final_reciprocal_rank": 1.0,
+      "final_keyword_coverage": 1.0,
+      "total_tokens": 1216,
+      "total_ms": 13.118,
+      "iter_count": 3,
+      "stop_reason": "iter_cap",
+      "notes": "단일 사실",
+      "error": null
+    },
+    {
+      "query": "사내 보안 정책에서 요구하는 비밀번호 최소 길이는 몇 자인가요?",
+      "difficulty": "easy",
+      "expected_doc_ids": [
+        "kr-002"
+      ],
+      "expected_keywords": [
+        "12자"
+      ],
+      "iter0_answer": "**Query:** 사내 보안 정책에서 요구하는 비밀번호 최소 길이는 몇 자인가요?\n\n**Short answer:** 이 런북은 프로덕션 환경에서 발생할 수 있는 주요 장애 시나리오와 대응 절차를 기술한 문서이다.\n\n**Supporting passages:**\n1. [kr-006#overview] (score=0.801) 이 런북은 프로덕션 환경에서 발생할 수 있는 주요 장애 시나리오와 대응 절차를 기술한 문서이다. 모든 온콜 엔지니어는 이 문서를 숙지하고 있어야 한다.\n2. [kr-002#overview] (score=0.781) 본 문서는 전 직원이 숙지해야 하는 정보보안 정책의 주요 사항을 질문과 답변 형식으로 정리한 것이다. 모든 직원은 입사 시 보안 서약서에 서명해야 하며, 연 1회 보안 교육을 이수해야 한다.\n3. [kr-004#overview] (score=0.613) 신입 개발자가 팀에 합류한 후 첫 2주 동안 완료해야 하는 업무를 정리한 체크리스트이다. 개발 환경 설정, 코드 리뷰 프로세스 숙지, 팀 컨벤션 학습이 핵심 과제이다.\n4. [kr-009#overview] (score=0.516) Grafana 기반 데이터 파이프라인 모니터링 대시보드의 구성 요소와 각 패널의 의미를 설명하는 가이드이다. 파이프라인 처리량, 지연 시간, 오류율을 실시간으로 확인할 수 있다.\n5. [kr-002#data_classification] (score=0.508) 데이터는 4단계로 분류한다: 공개(Public), 내부용(Internal), 기밀(Confidential), 극비(Top Secret). 기밀 이상 등급의 데이터는 암호화된 채널을 통해서만 전송할 수 있다.\n\n**Sources:** kr-002, kr-004, kr-006, kr-009",
+      "iter0_retrieved_doc_ids": [
+        "kr-006",
+        "kr-002",
+        "kr-004",
+        "kr-009"
+      ],
+      "iter0_recall_at_k": 1.0,
+      "iter0_reciprocal_rank": 0.5,
+      "iter0_keyword_coverage": 0.0,
+      "iter0_tokens": 219,
+      "iter0_ms": 3.899,
+      "final_answer": "**Query:** 사내 보안 정책에서 요구하는 비밀번호 최소 길이는 몇 자인가요?\n\n**Short answer:** 이 런북은 프로덕션 환경에서 발생할 수 있는 주요 장애 시나리오와 대응 절차를 기술한 문서이다.\n\n**Supporting passages:**\n1. [kr-006#overview] (score=0.801) 이 런북은 프로덕션 환경에서 발생할 수 있는 주요 장애 시나리오와 대응 절차를 기술한 문서이다. 모든 온콜 엔지니어는 이 문서를 숙지하고 있어야 한다.\n2. [kr-002#overview] (score=0.781) 본 문서는 전 직원이 숙지해야 하는 정보보안 정책의 주요 사항을 질문과 답변 형식으로 정리한 것이다. 모든 직원은 입사 시 보안 서약서에 서명해야 하며, 연 1회 보안 교육을 이수해야 한다.\n3. [kr-004#overview] (score=0.613) 신입 개발자가 팀에 합류한 후 첫 2주 동안 완료해야 하는 업무를 정리한 체크리스트이다. 개발 환경 설정, 코드 리뷰 프로세스 숙지, 팀 컨벤션 학습이 핵심 과제이다.\n4. [kr-009#overview] (score=0.516) Grafana 기반 데이터 파이프라인 모니터링 대시보드의 구성 요소와 각 패널의 의미를 설명하는 가이드이다. 파이프라인 처리량, 지연 시간, 오류율을 실시간으로 확인할 수 있다.\n5. [kr-002#data_classification] (score=0.508) 데이터는 4단계로 분류한다: 공개(Public), 내부용(Internal), 기밀(Confidential), 극비(Top Secret). 기밀 이상 등급의 데이터는 암호화된 채널을 통해서만 전송할 수 있다.\n\n**Sources:** kr-002, kr-004, kr-006, kr-009",
+      "final_retrieved_doc_ids": [
+        "kr-006",
+        "kr-002",
+        "kr-004",
+        "kr-009"
+      ],
+      "final_recall_at_k": 1.0,
+      "final_reciprocal_rank": 0.5,
+      "final_keyword_coverage": 0.0,
+      "total_tokens": 876,
+      "total_ms": 14.598,
+      "iter_count": 3,
+      "stop_reason": "iter_cap",
+      "notes": "단일 사실",
+      "error": null
+    },
+    {
+      "query": "PostgreSQL 18에서 shared_buffers는 총 메모리의 몇 퍼센트로 설정하는 것이 일반적인가요?",
+      "difficulty": "easy",
+      "expected_doc_ids": [
+        "kr-003"
+      ],
+      "expected_keywords": [
+        "25%"
+      ],
+      "iter0_answer": "**Query:** PostgreSQL 18에서 shared_buffers는 총 메모리의 몇 퍼센트로 설정하는 것이 일반적인가요?\n\n**Short answer:** shared_buffers는 총 메모리의 25%로 설정하는 것이 일반적이며, effective_cache_size는 총 메모리의 50~75%를 권장한다.\n\n**Supporting passages:**\n1. [kr-003#overview] (score=0.905) PostgreSQL 18에서는 병렬 쿼리 처리 성능이 크게 개선되었다. shared_buffers는 총 메모리의 25%로 설정하는 것이 일반적이며, effective_cache_size는 총 메모리의 50~75%를 권장한다.\n2. [kr-005#patterns] (score=0.340) Cache-Aside 패턴에서는 애플리케이션이 캐시를 먼저 조회하고, 캐시 미스 시 데이터베이스에서 읽어온 뒤 캐시에 저장한다. TTL(Time-To-Live)을 적절히 설정하여 데이터 일관성을 유지해야 한다. Write-Through 패턴은 쓰기 작업 시 캐시와 데이터베이스를 동시에 갱신한다. 데이터 일관성이 보장되지만, 쓰기 지연이 발생할 수 있다.\n3. [kr-006#database_failover] (score=0.331) 데이터베이스 장애 발생 시 PgBouncer를 통한 자동 페일오버가 1분 이내에 수행된다. 수동 페일오버가 필요한 경우 pg_ctl promote 명령을 스탠바이 노드에서 실행한다. 페일오버 후에는 반드시 데이터 무결성 검증을 수행해야 한다. pg_rewind를 사용하여 이전 프라이머리를 스탠바이로 재구성할 수 있다.\n4. [kr-005#overview] (score=0.308) Redis를 애플리케이션 캐시로 활용할 때의 전략과 주의사항을 정리한 가이드이다. Cache-Aside, Write-Through, Write-Behind 세 가지 패턴 중 상황에 맞는 전략을 선택해야 한다.\n5. [kr-004#dev_environment] (score=0.303) 개발 환경은 Docker Compose를 기반으로 구성한다. docker-compose up 명령으로 PostgreSQL, Redis, MinIO가 자동으로 프로비저닝된다. JDK 21과 Python 3.12는 미리 설치되어 있어야 한다. IDE는 IntelliJ IDEA Ultimate 또는 VS Code를 권장한다. .editorconfig 파일을 통해 들여쓰기, 인코딩, 줄 바꿈 설정이 통일된다.\n\n**Sources:** kr-003, kr-004, kr-005, kr-006",
+      "iter0_retrieved_doc_ids": [
+        "kr-003",
+        "kr-005",
+        "kr-006",
+        "kr-004"
+      ],
+      "iter0_recall_at_k": 1.0,
+      "iter0_reciprocal_rank": 1.0,
+      "iter0_keyword_coverage": 1.0,
+      "iter0_tokens": 321,
+      "iter0_ms": 4.466,
+      "final_answer": "**Query:** PostgreSQL 18에서 shared_buffers는 총 메모리의 몇 퍼센트로 설정하는 것이 일반적인가요?\n\n**Short answer:** shared_buffers는 총 메모리의 25%로 설정하는 것이 일반적이며, effective_cache_size는 총 메모리의 50~75%를 권장한다.\n\n**Supporting passages:**\n1. [kr-003#overview] (score=0.905) PostgreSQL 18에서는 병렬 쿼리 처리 성능이 크게 개선되었다. shared_buffers는 총 메모리의 25%로 설정하는 것이 일반적이며, effective_cache_size는 총 메모리의 50~75%를 권장한다.\n2. [kr-005#patterns] (score=0.340) Cache-Aside 패턴에서는 애플리케이션이 캐시를 먼저 조회하고, 캐시 미스 시 데이터베이스에서 읽어온 뒤 캐시에 저장한다. TTL(Time-To-Live)을 적절히 설정하여 데이터 일관성을 유지해야 한다. Write-Through 패턴은 쓰기 작업 시 캐시와 데이터베이스를 동시에 갱신한다. 데이터 일관성이 보장되지만, 쓰기 지연이 발생할 수 있다.\n3. [kr-006#database_failover] (score=0.331) 데이터베이스 장애 발생 시 PgBouncer를 통한 자동 페일오버가 1분 이내에 수행된다. 수동 페일오버가 필요한 경우 pg_ctl promote 명령을 스탠바이 노드에서 실행한다. 페일오버 후에는 반드시 데이터 무결성 검증을 수행해야 한다. pg_rewind를 사용하여 이전 프라이머리를 스탠바이로 재구성할 수 있다.\n4. [kr-005#overview] (score=0.308) Redis를 애플리케이션 캐시로 활용할 때의 전략과 주의사항을 정리한 가이드이다. Cache-Aside, Write-Through, Write-Behind 세 가지 패턴 중 상황에 맞는 전략을 선택해야 한다.\n5. [kr-004#dev_environment] (score=0.303) 개발 환경은 Docker Compose를 기반으로 구성한다. docker-compose up 명령으로 PostgreSQL, Redis, MinIO가 자동으로 프로비저닝된다. JDK 21과 Python 3.12는 미리 설치되어 있어야 한다. IDE는 IntelliJ IDEA Ultimate 또는 VS Code를 권장한다. .editorconfig 파일을 통해 들여쓰기, 인코딩, 줄 바꿈 설정이 통일된다.\n\n**Sources:** kr-003, kr-004, kr-005, kr-006",
+      "final_retrieved_doc_ids": [
+        "kr-003",
+        "kr-005",
+        "kr-006",
+        "kr-004"
+      ],
+      "final_recall_at_k": 1.0,
+      "final_reciprocal_rank": 1.0,
+      "final_keyword_coverage": 1.0,
+      "total_tokens": 1284,
+      "total_ms": 12.496,
+      "iter_count": 3,
+      "stop_reason": "iter_cap",
+      "notes": "단일 사실",
+      "error": null
+    },
+    {
+      "query": "PR을 머지하려면 몇 명의 리뷰어 승인이 필요한가요?",
+      "difficulty": "easy",
+      "expected_doc_ids": [
+        "kr-004"
+      ],
+      "expected_keywords": [
+        "1명"
+      ],
+      "iter0_answer": "**Query:** PR을 머지하려면 몇 명의 리뷰어 승인이 필요한가요?\n\n**Short answer:** 신입 개발자가 팀에 합류한 후 첫 2주 동안 완료해야 하는 업무를 정리한 체크리스트이다.\n\n**Supporting passages:**\n1. [kr-004#overview] (score=0.651) 신입 개발자가 팀에 합류한 후 첫 2주 동안 완료해야 하는 업무를 정리한 체크리스트이다. 개발 환경 설정, 코드 리뷰 프로세스 숙지, 팀 컨벤션 학습이 핵심 과제이다.\n2. [kr-004#code_review] (score=0.586) PR(Pull Request)은 최소 1명의 리뷰어 승인을 받아야 머지할 수 있다. 리뷰 요청 후 24시간 이내에 첫 번째 리뷰가 완료되어야 한다. 리뷰어는 코드 스타일, 테스트 커버리지, 보안 취약점을 확인한다.\n3. [kr-002#overview] (score=0.541) 본 문서는 전 직원이 숙지해야 하는 정보보안 정책의 주요 사항을 질문과 답변 형식으로 정리한 것이다. 모든 직원은 입사 시 보안 서약서에 서명해야 하며, 연 1회 보안 교육을 이수해야 한다.\n4. [kr-006#overview] (score=0.525) 이 런북은 프로덕션 환경에서 발생할 수 있는 주요 장애 시나리오와 대응 절차를 기술한 문서이다. 모든 온콜 엔지니어는 이 문서를 숙지하고 있어야 한다.\n5. [kr-001#overview] (score=0.499) 클라우드 네이티브 아키텍처는 컨테이너, 마이크로서비스, 서비스 메시, 불변 인프라, 선언적 API를 활용하여 탄력적이고 관리 가능하며 관측 가능한 느슨하게 결합된 시스템을 구축하는 접근 방식이다. CNCF(Cloud Native Computing Foundation)에서 정의한 이 접근 방식은 쿠버네티스를 오케스트레이션 플랫폼으로 사용하며, CI/CD 파이프라인을 통해 자동화된 배포를 수행한다.\n\n**Sources:** kr-001, kr-002, kr-004, kr-006",
+      "iter0_retrieved_doc_ids": [
+        "kr-004",
+        "kr-002",
+        "kr-006",
+        "kr-001"
+      ],
+      "iter0_recall_at_k": 1.0,
+      "iter0_reciprocal_rank": 1.0,
+      "iter0_keyword_coverage": 1.0,
+      "iter0_tokens": 246,
+      "iter0_ms": 4.018,
+      "final_answer": "**Query:** PR을 머지하려면 몇 명의 리뷰어 승인이 필요한가요?\n\n**Short answer:** 신입 개발자가 팀에 합류한 후 첫 2주 동안 완료해야 하는 업무를 정리한 체크리스트이다.\n\n**Supporting passages:**\n1. [kr-004#overview] (score=0.651) 신입 개발자가 팀에 합류한 후 첫 2주 동안 완료해야 하는 업무를 정리한 체크리스트이다. 개발 환경 설정, 코드 리뷰 프로세스 숙지, 팀 컨벤션 학습이 핵심 과제이다.\n2. [kr-004#code_review] (score=0.586) PR(Pull Request)은 최소 1명의 리뷰어 승인을 받아야 머지할 수 있다. 리뷰 요청 후 24시간 이내에 첫 번째 리뷰가 완료되어야 한다. 리뷰어는 코드 스타일, 테스트 커버리지, 보안 취약점을 확인한다.\n3. [kr-002#overview] (score=0.541) 본 문서는 전 직원이 숙지해야 하는 정보보안 정책의 주요 사항을 질문과 답변 형식으로 정리한 것이다. 모든 직원은 입사 시 보안 서약서에 서명해야 하며, 연 1회 보안 교육을 이수해야 한다.\n4. [kr-006#overview] (score=0.525) 이 런북은 프로덕션 환경에서 발생할 수 있는 주요 장애 시나리오와 대응 절차를 기술한 문서이다. 모든 온콜 엔지니어는 이 문서를 숙지하고 있어야 한다.\n5. [kr-001#overview] (score=0.499) 클라우드 네이티브 아키텍처는 컨테이너, 마이크로서비스, 서비스 메시, 불변 인프라, 선언적 API를 활용하여 탄력적이고 관리 가능하며 관측 가능한 느슨하게 결합된 시스템을 구축하는 접근 방식이다. CNCF(Cloud Native Computing Foundation)에서 정의한 이 접근 방식은 쿠버네티스를 오케스트레이션 플랫폼으로 사용하며, CI/CD 파이프라인을 통해 자동화된 배포를 수행한다.\n\n**Sources:** kr-001, kr-002, kr-004, kr-006",
+      "final_retrieved_doc_ids": [
+        "kr-004",
+        "kr-002",
+        "kr-006",
+        "kr-001"
+      ],
+      "final_recall_at_k": 1.0,
+      "final_reciprocal_rank": 1.0,
+      "final_keyword_coverage": 1.0,
+      "total_tokens": 984,
+      "total_ms": 13.812,
+      "iter_count": 3,
+      "stop_reason": "iter_cap",
+      "notes": "단일 사실",
+      "error": null
+    },
+    {
+      "query": "Cache-Aside 패턴에서 캐시 미스가 발생하면 어디에서 데이터를 읽어오나요?",
+      "difficulty": "easy",
+      "expected_doc_ids": [
+        "kr-005"
+      ],
+      "expected_keywords": [
+        "데이터베이스"
+      ],
+      "iter0_answer": "**Query:** Cache-Aside 패턴에서 캐시 미스가 발생하면 어디에서 데이터를 읽어오나요?\n\n**Short answer:** Cache-Aside 패턴에서는 애플리케이션이 캐시를 먼저 조회하고, 캐시 미스 시 데이터베이스에서 읽어온 뒤 캐시에 저장한다.\n\n**Supporting passages:**\n1. [kr-005#patterns] (score=0.648) Cache-Aside 패턴에서는 애플리케이션이 캐시를 먼저 조회하고, 캐시 미스 시 데이터베이스에서 읽어온 뒤 캐시에 저장한다. TTL(Time-To-Live)을 적절히 설정하여 데이터 일관성을 유지해야 한다. Write-Through 패턴은 쓰기 작업 시 캐시와 데이터베이스를 동시에 갱신한다. 데이터 일관성이 보장되지만, 쓰기 지연이 발생할 수 있다.\n2. [kr-005#overview] (score=0.615) Redis를 애플리케이션 캐시로 활용할 때의 전략과 주의사항을 정리한 가이드이다. Cache-Aside, Write-Through, Write-Behind 세 가지 패턴 중 상황에 맞는 전략을 선택해야 한다.\n3. [kr-003#overview] (score=0.545) PostgreSQL 18에서는 병렬 쿼리 처리 성능이 크게 개선되었다. shared_buffers는 총 메모리의 25%로 설정하는 것이 일반적이며, effective_cache_size는 총 메모리의 50~75%를 권장한다.\n4. [kr-004#overview] (score=0.352) 신입 개발자가 팀에 합류한 후 첫 2주 동안 완료해야 하는 업무를 정리한 체크리스트이다. 개발 환경 설정, 코드 리뷰 프로세스 숙지, 팀 컨벤션 학습이 핵심 과제이다.\n5. [kr-001#overview] (score=0.332) 클라우드 네이티브 아키텍처는 컨테이너, 마이크로서비스, 서비스 메시, 불변 인프라, 선언적 API를 활용하여 탄력적이고 관리 가능하며 관측 가능한 느슨하게 결합된 시스템을 구축하는 접근 방식이다. CNCF(Cloud Native Computing Foundation)에서 정의한 이 접근 방식은 쿠버네티스를 오케스트레이션 플랫폼으로 사용하며, CI/CD 파이프라인을 통해 자동화된 배포를 수행한다.\n\n**Sources:** kr-001, kr-003, kr-004, kr-005",
+      "iter0_retrieved_doc_ids": [
+        "kr-005",
+        "kr-003",
+        "kr-004",
+        "kr-001"
+      ],
+      "iter0_recall_at_k": 1.0,
+      "iter0_reciprocal_rank": 1.0,
+      "iter0_keyword_coverage": 1.0,
+      "iter0_tokens": 288,
+      "iter0_ms": 3.79,
+      "final_answer": "**Query:** Cache-Aside 패턴에서 캐시 미스가 발생하면 어디에서 데이터를 읽어오나요?\n\n**Short answer:** Cache-Aside 패턴에서는 애플리케이션이 캐시를 먼저 조회하고, 캐시 미스 시 데이터베이스에서 읽어온 뒤 캐시에 저장한다.\n\n**Supporting passages:**\n1. [kr-005#patterns] (score=0.648) Cache-Aside 패턴에서는 애플리케이션이 캐시를 먼저 조회하고, 캐시 미스 시 데이터베이스에서 읽어온 뒤 캐시에 저장한다. TTL(Time-To-Live)을 적절히 설정하여 데이터 일관성을 유지해야 한다. Write-Through 패턴은 쓰기 작업 시 캐시와 데이터베이스를 동시에 갱신한다. 데이터 일관성이 보장되지만, 쓰기 지연이 발생할 수 있다.\n2. [kr-005#overview] (score=0.615) Redis를 애플리케이션 캐시로 활용할 때의 전략과 주의사항을 정리한 가이드이다. Cache-Aside, Write-Through, Write-Behind 세 가지 패턴 중 상황에 맞는 전략을 선택해야 한다.\n3. [kr-003#overview] (score=0.545) PostgreSQL 18에서는 병렬 쿼리 처리 성능이 크게 개선되었다. shared_buffers는 총 메모리의 25%로 설정하는 것이 일반적이며, effective_cache_size는 총 메모리의 50~75%를 권장한다.\n4. [kr-004#overview] (score=0.352) 신입 개발자가 팀에 합류한 후 첫 2주 동안 완료해야 하는 업무를 정리한 체크리스트이다. 개발 환경 설정, 코드 리뷰 프로세스 숙지, 팀 컨벤션 학습이 핵심 과제이다.\n5. [kr-001#overview] (score=0.332) 클라우드 네이티브 아키텍처는 컨테이너, 마이크로서비스, 서비스 메시, 불변 인프라, 선언적 API를 활용하여 탄력적이고 관리 가능하며 관측 가능한 느슨하게 결합된 시스템을 구축하는 접근 방식이다. CNCF(Cloud Native Computing Foundation)에서 정의한 이 접근 방식은 쿠버네티스를 오케스트레이션 플랫폼으로 사용하며, CI/CD 파이프라인을 통해 자동화된 배포를 수행한다.\n\n**Sources:** kr-001, kr-003, kr-004, kr-005",
+      "final_retrieved_doc_ids": [
+        "kr-005",
+        "kr-003",
+        "kr-004",
+        "kr-001"
+      ],
+      "final_recall_at_k": 1.0,
+      "final_reciprocal_rank": 1.0,
+      "final_keyword_coverage": 1.0,
+      "total_tokens": 1152,
+      "total_ms": 10.39,
+      "iter_count": 3,
+      "stop_reason": "iter_cap",
+      "notes": "단일 사실",
+      "error": null
+    },
+    {
+      "query": "PgBouncer를 통한 자동 페일오버는 몇 분 이내에 수행되나요?",
+      "difficulty": "easy",
+      "expected_doc_ids": [
+        "kr-006"
+      ],
+      "expected_keywords": [
+        "1분"
+      ],
+      "iter0_answer": "**Query:** PgBouncer를 통한 자동 페일오버는 몇 분 이내에 수행되나요?\n\n**Short answer:** 데이터베이스 장애 발생 시 PgBouncer를 통한 자동 페일오버가 1분 이내에 수행된다.\n\n**Supporting passages:**\n1. [kr-006#database_failover] (score=0.644) 데이터베이스 장애 발생 시 PgBouncer를 통한 자동 페일오버가 1분 이내에 수행된다. 수동 페일오버가 필요한 경우 pg_ctl promote 명령을 스탠바이 노드에서 실행한다. 페일오버 후에는 반드시 데이터 무결성 검증을 수행해야 한다. pg_rewind를 사용하여 이전 프라이머리를 스탠바이로 재구성할 수 있다.\n2. [kr-004#overview] (score=0.445) 신입 개발자가 팀에 합류한 후 첫 2주 동안 완료해야 하는 업무를 정리한 체크리스트이다. 개발 환경 설정, 코드 리뷰 프로세스 숙지, 팀 컨벤션 학습이 핵심 과제이다.\n3. [kr-002#overview] (score=0.407) 본 문서는 전 직원이 숙지해야 하는 정보보안 정책의 주요 사항을 질문과 답변 형식으로 정리한 것이다. 모든 직원은 입사 시 보안 서약서에 서명해야 하며, 연 1회 보안 교육을 이수해야 한다.\n4. [kr-006#overview] (score=0.382) 이 런북은 프로덕션 환경에서 발생할 수 있는 주요 장애 시나리오와 대응 절차를 기술한 문서이다. 모든 온콜 엔지니어는 이 문서를 숙지하고 있어야 한다.\n5. [kr-003#indexing] (score=0.377) B-Tree 인덱스는 범위 검색과 정렬에 최적화되어 있으며, GIN 인덱스는 전문 검색(Full-Text Search)과 JSONB 필드 검색에 적합하다. BRIN 인덱스는 시계열 데이터와 같이 물리적으로 정렬된 대규모 테이블에서 탁월한 성능을 발휘한다. 파티션 테이블에서는 파티션 키에 대한 인덱스가 자동으로 각 파티션에 생성된다. 파티션 프루닝(Partition Pruning)을 통해 불필요한 파티션 스캔을 건너뛸 수 있다.\n\n**Sources:** kr-002, kr-003, kr-004, kr-006",
+      "iter0_retrieved_doc_ids": [
+        "kr-006",
+        "kr-004",
+        "kr-002",
+        "kr-003"
+      ],
+      "iter0_recall_at_k": 1.0,
+      "iter0_reciprocal_rank": 1.0,
+      "iter0_keyword_coverage": 1.0,
+      "iter0_tokens": 269,
+      "iter0_ms": 4.005,
+      "final_answer": "**Query:** PgBouncer를 통한 자동 페일오버는 몇 분 이내에 수행되나요?\n\n**Short answer:** 데이터베이스 장애 발생 시 PgBouncer를 통한 자동 페일오버가 1분 이내에 수행된다.\n\n**Supporting passages:**\n1. [kr-006#database_failover] (score=0.644) 데이터베이스 장애 발생 시 PgBouncer를 통한 자동 페일오버가 1분 이내에 수행된다. 수동 페일오버가 필요한 경우 pg_ctl promote 명령을 스탠바이 노드에서 실행한다. 페일오버 후에는 반드시 데이터 무결성 검증을 수행해야 한다. pg_rewind를 사용하여 이전 프라이머리를 스탠바이로 재구성할 수 있다.\n2. [kr-004#overview] (score=0.445) 신입 개발자가 팀에 합류한 후 첫 2주 동안 완료해야 하는 업무를 정리한 체크리스트이다. 개발 환경 설정, 코드 리뷰 프로세스 숙지, 팀 컨벤션 학습이 핵심 과제이다.\n3. [kr-002#overview] (score=0.407) 본 문서는 전 직원이 숙지해야 하는 정보보안 정책의 주요 사항을 질문과 답변 형식으로 정리한 것이다. 모든 직원은 입사 시 보안 서약서에 서명해야 하며, 연 1회 보안 교육을 이수해야 한다.\n4. [kr-006#overview] (score=0.382) 이 런북은 프로덕션 환경에서 발생할 수 있는 주요 장애 시나리오와 대응 절차를 기술한 문서이다. 모든 온콜 엔지니어는 이 문서를 숙지하고 있어야 한다.\n5. [kr-003#indexing] (score=0.377) B-Tree 인덱스는 범위 검색과 정렬에 최적화되어 있으며, GIN 인덱스는 전문 검색(Full-Text Search)과 JSONB 필드 검색에 적합하다. BRIN 인덱스는 시계열 데이터와 같이 물리적으로 정렬된 대규모 테이블에서 탁월한 성능을 발휘한다. 파티션 테이블에서는 파티션 키에 대한 인덱스가 자동으로 각 파티션에 생성된다. 파티션 프루닝(Partition Pruning)을 통해 불필요한 파티션 스캔을 건너뛸 수 있다.\n\n**Sources:** kr-002, kr-003, kr-004, kr-006",
+      "final_retrieved_doc_ids": [
+        "kr-006",
+        "kr-004",
+        "kr-002",
+        "kr-003"
+      ],
+      "final_recall_at_k": 1.0,
+      "final_reciprocal_rank": 1.0,
+      "final_keyword_coverage": 1.0,
+      "total_tokens": 1076,
+      "total_ms": 13.463,
+      "iter_count": 3,
+      "stop_reason": "iter_cap",
+      "notes": "단일 사실",
+      "error": null
+    },
+    {
+      "query": "REST API URL 경로에 사용하는 케이스 스타일은 무엇인가요?",
+      "difficulty": "easy",
+      "expected_doc_ids": [
+        "kr-007"
+      ],
+      "expected_keywords": [
+        "kebab-case"
+      ],
+      "iter0_answer": "**Query:** REST API URL 경로에 사용하는 케이스 스타일은 무엇인가요?\n\n**Short answer:** REST API를 설계할 때 준수해야 하는 팀 내 표준을 정의한 가이드이다.\n\n**Supporting passages:**\n1. [kr-007#overview] (score=0.883) REST API를 설계할 때 준수해야 하는 팀 내 표준을 정의한 가이드이다. 일관된 URL 구조, HTTP 메서드 사용, 에러 응답 형식, 버전 관리 전략을 포함한다.\n2. [kr-007#url_convention] (score=0.552) 리소스 URL은 복수형 명사를 사용한다 (예: /api/v1/users, /api/v1/orders). 하위 리소스는 중첩하여 표현한다 (예: /api/v1/users/{id}/orders). URL 경로는 소문자 케밥 케이스(kebab-case)를 사용한다.\n3. [kr-004#overview] (score=0.326) 신입 개발자가 팀에 합류한 후 첫 2주 동안 완료해야 하는 업무를 정리한 체크리스트이다. 개발 환경 설정, 코드 리뷰 프로세스 숙지, 팀 컨벤션 학습이 핵심 과제이다.\n4. [kr-006#overview] (score=0.306) 이 런북은 프로덕션 환경에서 발생할 수 있는 주요 장애 시나리오와 대응 절차를 기술한 문서이다. 모든 온콜 엔지니어는 이 문서를 숙지하고 있어야 한다.\n5. [kr-002#overview] (score=0.289) 본 문서는 전 직원이 숙지해야 하는 정보보안 정책의 주요 사항을 질문과 답변 형식으로 정리한 것이다. 모든 직원은 입사 시 보안 서약서에 서명해야 하며, 연 1회 보안 교육을 이수해야 한다.\n\n**Sources:** kr-002, kr-004, kr-006, kr-007",
+      "iter0_retrieved_doc_ids": [
+        "kr-007",
+        "kr-004",
+        "kr-006",
+        "kr-002"
+      ],
+      "iter0_recall_at_k": 1.0,
+      "iter0_reciprocal_rank": 1.0,
+      "iter0_keyword_coverage": 1.0,
+      "iter0_tokens": 222,
+      "iter0_ms": 3.17,
+      "final_answer": "**Query:** REST API URL 경로에 사용하는 케이스 스타일은 무엇인가요?\n\n**Short answer:** REST API를 설계할 때 준수해야 하는 팀 내 표준을 정의한 가이드이다.\n\n**Supporting passages:**\n1. [kr-007#overview] (score=0.883) REST API를 설계할 때 준수해야 하는 팀 내 표준을 정의한 가이드이다. 일관된 URL 구조, HTTP 메서드 사용, 에러 응답 형식, 버전 관리 전략을 포함한다.\n2. [kr-007#url_convention] (score=0.552) 리소스 URL은 복수형 명사를 사용한다 (예: /api/v1/users, /api/v1/orders). 하위 리소스는 중첩하여 표현한다 (예: /api/v1/users/{id}/orders). URL 경로는 소문자 케밥 케이스(kebab-case)를 사용한다.\n3. [kr-004#overview] (score=0.326) 신입 개발자가 팀에 합류한 후 첫 2주 동안 완료해야 하는 업무를 정리한 체크리스트이다. 개발 환경 설정, 코드 리뷰 프로세스 숙지, 팀 컨벤션 학습이 핵심 과제이다.\n4. [kr-006#overview] (score=0.306) 이 런북은 프로덕션 환경에서 발생할 수 있는 주요 장애 시나리오와 대응 절차를 기술한 문서이다. 모든 온콜 엔지니어는 이 문서를 숙지하고 있어야 한다.\n5. [kr-002#overview] (score=0.289) 본 문서는 전 직원이 숙지해야 하는 정보보안 정책의 주요 사항을 질문과 답변 형식으로 정리한 것이다. 모든 직원은 입사 시 보안 서약서에 서명해야 하며, 연 1회 보안 교육을 이수해야 한다.\n\n**Sources:** kr-002, kr-004, kr-006, kr-007",
+      "final_retrieved_doc_ids": [
+        "kr-007",
+        "kr-004",
+        "kr-006",
+        "kr-002"
+      ],
+      "final_recall_at_k": 1.0,
+      "final_reciprocal_rank": 1.0,
+      "final_keyword_coverage": 1.0,
+      "total_tokens": 888,
+      "total_ms": 11.243,
+      "iter_count": 3,
+      "stop_reason": "iter_cap",
+      "notes": "단일 사실",
+      "error": null
+    },
+    {
+      "query": "CrashLoopBackOff 상태의 Pod에서 컨테이너 로그를 확인하는 명령어는 무엇인가요?",
+      "difficulty": "easy",
+      "expected_doc_ids": [
+        "kr-008"
+      ],
+      "expected_keywords": [
+        "kubectl logs"
+      ],
+      "iter0_answer": "**Query:** CrashLoopBackOff 상태의 Pod에서 컨테이너 로그를 확인하는 명령어는 무엇인가요?\n\n**Short answer:** CrashLoopBackOff 상태의 Pod는 kubectl logs 명령으로 컨테이너 로그를 확인한다.\n\n**Supporting passages:**\n1. [kr-008#pod_issues] (score=0.618) CrashLoopBackOff 상태의 Pod는 kubectl logs 명령으로 컨테이너 로그를 확인한다. OOMKilled는 메모리 리밋이 부족하다는 의미이며, resources.limits.memory를 상향 조정해야 한다. ImagePullBackOff는 컨테이너 이미지를 가져올 수 없는 상태이다. 이미지 레지스트리 인증 정보(imagePullSecrets)를 확인하고, 이미지 태그가 정확한지 검증한다.\n2. [kr-008#overview] (score=0.547) Kubernetes 클러스터에서 흔히 발생하는 문제와 진단 방법을 정리한 가이드이다. Pod 상태 이상, 네트워크 문제, 리소스 부족 시나리오를 다룬다.\n3. [kr-010#overview] (score=0.338) 팀에서 사용하는 Git 브랜치 전략과 워크플로우를 정의한 가이드이다. GitHub Flow를 기반으로 하되, 릴리스 브랜치를 추가하여 안정적인 배포 프로세스를 유지한다.\n4. [kr-004#dev_environment] (score=0.331) 개발 환경은 Docker Compose를 기반으로 구성한다. docker-compose up 명령으로 PostgreSQL, Redis, MinIO가 자동으로 프로비저닝된다. JDK 21과 Python 3.12는 미리 설치되어 있어야 한다. IDE는 IntelliJ IDEA Ultimate 또는 VS Code를 권장한다. .editorconfig 파일을 통해 들여쓰기, 인코딩, 줄 바꿈 설정이 통일된다.\n5. [kr-004#overview] (score=0.325) 신입 개발자가 팀에 합류한 후 첫 2주 동안 완료해야 하는 업무를 정리한 체크리스트이다. 개발 환경 설정, 코드 리뷰 프로세스 숙지, 팀 컨벤션 학습이 핵심 과제이다.\n\n**Sources:** kr-004, kr-008, kr-010",
+      "iter0_retrieved_doc_ids": [
+        "kr-008",
+        "kr-010",
+        "kr-004"
+      ],
+      "iter0_recall_at_k": 1.0,
+      "iter0_reciprocal_rank": 1.0,
+      "iter0_keyword_coverage": 1.0,
+      "iter0_tokens": 280,
+      "iter0_ms": 7.28,
+      "final_answer": "**Query:** CrashLoopBackOff 상태의 Pod에서 컨테이너 로그를 확인하는 명령어는 무엇인가요?\n\n**Short answer:** CrashLoopBackOff 상태의 Pod는 kubectl logs 명령으로 컨테이너 로그를 확인한다.\n\n**Supporting passages:**\n1. [kr-008#pod_issues] (score=0.618) CrashLoopBackOff 상태의 Pod는 kubectl logs 명령으로 컨테이너 로그를 확인한다. OOMKilled는 메모리 리밋이 부족하다는 의미이며, resources.limits.memory를 상향 조정해야 한다. ImagePullBackOff는 컨테이너 이미지를 가져올 수 없는 상태이다. 이미지 레지스트리 인증 정보(imagePullSecrets)를 확인하고, 이미지 태그가 정확한지 검증한다.\n2. [kr-008#overview] (score=0.547) Kubernetes 클러스터에서 흔히 발생하는 문제와 진단 방법을 정리한 가이드이다. Pod 상태 이상, 네트워크 문제, 리소스 부족 시나리오를 다룬다.\n3. [kr-010#overview] (score=0.338) 팀에서 사용하는 Git 브랜치 전략과 워크플로우를 정의한 가이드이다. GitHub Flow를 기반으로 하되, 릴리스 브랜치를 추가하여 안정적인 배포 프로세스를 유지한다.\n4. [kr-004#dev_environment] (score=0.331) 개발 환경은 Docker Compose를 기반으로 구성한다. docker-compose up 명령으로 PostgreSQL, Redis, MinIO가 자동으로 프로비저닝된다. JDK 21과 Python 3.12는 미리 설치되어 있어야 한다. IDE는 IntelliJ IDEA Ultimate 또는 VS Code를 권장한다. .editorconfig 파일을 통해 들여쓰기, 인코딩, 줄 바꿈 설정이 통일된다.\n5. [kr-004#overview] (score=0.325) 신입 개발자가 팀에 합류한 후 첫 2주 동안 완료해야 하는 업무를 정리한 체크리스트이다. 개발 환경 설정, 코드 리뷰 프로세스 숙지, 팀 컨벤션 학습이 핵심 과제이다.\n\n**Sources:** kr-004, kr-008, kr-010",
+      "final_retrieved_doc_ids": [
+        "kr-008",
+        "kr-010",
+        "kr-004"
+      ],
+      "final_recall_at_k": 1.0,
+      "final_reciprocal_rank": 1.0,
+      "final_keyword_coverage": 1.0,
+      "total_tokens": 1120,
+      "total_ms": 12.118,
+      "iter_count": 3,
+      "stop_reason": "iter_cap",
+      "notes": "단일 사실",
+      "error": null
+    },
+    {
+      "query": "데이터 파이프라인 오류율이 몇 퍼센트를 넘으면 PagerDuty 경보가 트리거되나요?",
+      "difficulty": "easy",
+      "expected_doc_ids": [
+        "kr-009"
+      ],
+      "expected_keywords": [
+        "1%"
+      ],
+      "iter0_answer": "**Query:** 데이터 파이프라인 오류율이 몇 퍼센트를 넘으면 PagerDuty 경보가 트리거되나요?\n\n**Short answer:** 신입 개발자가 팀에 합류한 후 첫 2주 동안 완료해야 하는 업무를 정리한 체크리스트이다.\n\n**Supporting passages:**\n1. [kr-004#overview] (score=0.548) 신입 개발자가 팀에 합류한 후 첫 2주 동안 완료해야 하는 업무를 정리한 체크리스트이다. 개발 환경 설정, 코드 리뷰 프로세스 숙지, 팀 컨벤션 학습이 핵심 과제이다.\n2. [kr-009#key_metrics] (score=0.506) 처리량(Throughput)은 초당 처리된 메시지 수를 나타내며, 정상 범위는 500~2000 msg/s이다. p99 지연 시간이 500ms를 초과하면 경고 알림이 발생한다. 오류율(Error Rate)은 전체 처리 대비 실패한 메시지의 비율이다. 1%를 초과하면 PagerDuty 경보가 트리거된다. 오류 유형별(파싱 오류, 타임아웃, 스키마 불일치) 분류 패널을 통해 원인을 빠르게 파악할 수 있다.\n3. [kr-010#overview] (score=0.482) 팀에서 사용하는 Git 브랜치 전략과 워크플로우를 정의한 가이드이다. GitHub Flow를 기반으로 하되, 릴리스 브랜치를 추가하여 안정적인 배포 프로세스를 유지한다.\n4. [kr-006#database_failover] (score=0.478) 데이터베이스 장애 발생 시 PgBouncer를 통한 자동 페일오버가 1분 이내에 수행된다. 수동 페일오버가 필요한 경우 pg_ctl promote 명령을 스탠바이 노드에서 실행한다. 페일오버 후에는 반드시 데이터 무결성 검증을 수행해야 한다. pg_rewind를 사용하여 이전 프라이머리를 스탠바이로 재구성할 수 있다.\n5. [kr-002#overview] (score=0.451) 본 문서는 전 직원이 숙지해야 하는 정보보안 정책의 주요 사항을 질문과 답변 형식으로 정리한 것이다. 모든 직원은 입사 시 보안 서약서에 서명해야 하며, 연 1회 보안 교육을 이수해야 한다.\n\n**Sources:** kr-002, kr-004, kr-006, kr-009, kr-010",
+      "iter0_retrieved_doc_ids": [
+        "kr-004",
+        "kr-009",
+        "kr-010",
+        "kr-006",
+        "kr-002"
+      ],
+      "iter0_recall_at_k": 1.0,
+      "iter0_reciprocal_rank": 0.5,
+      "iter0_keyword_coverage": 1.0,
+      "iter0_tokens": 273,
+      "iter0_ms": 3.256,
+      "final_answer": "**Query:** 데이터 파이프라인 오류율이 몇 퍼센트를 넘으면 PagerDuty 경보가 트리거되나요?\n\n**Short answer:** 신입 개발자가 팀에 합류한 후 첫 2주 동안 완료해야 하는 업무를 정리한 체크리스트이다.\n\n**Supporting passages:**\n1. [kr-004#overview] (score=0.548) 신입 개발자가 팀에 합류한 후 첫 2주 동안 완료해야 하는 업무를 정리한 체크리스트이다. 개발 환경 설정, 코드 리뷰 프로세스 숙지, 팀 컨벤션 학습이 핵심 과제이다.\n2. [kr-009#key_metrics] (score=0.506) 처리량(Throughput)은 초당 처리된 메시지 수를 나타내며, 정상 범위는 500~2000 msg/s이다. p99 지연 시간이 500ms를 초과하면 경고 알림이 발생한다. 오류율(Error Rate)은 전체 처리 대비 실패한 메시지의 비율이다. 1%를 초과하면 PagerDuty 경보가 트리거된다. 오류 유형별(파싱 오류, 타임아웃, 스키마 불일치) 분류 패널을 통해 원인을 빠르게 파악할 수 있다.\n3. [kr-010#overview] (score=0.482) 팀에서 사용하는 Git 브랜치 전략과 워크플로우를 정의한 가이드이다. GitHub Flow를 기반으로 하되, 릴리스 브랜치를 추가하여 안정적인 배포 프로세스를 유지한다.\n4. [kr-006#database_failover] (score=0.478) 데이터베이스 장애 발생 시 PgBouncer를 통한 자동 페일오버가 1분 이내에 수행된다. 수동 페일오버가 필요한 경우 pg_ctl promote 명령을 스탠바이 노드에서 실행한다. 페일오버 후에는 반드시 데이터 무결성 검증을 수행해야 한다. pg_rewind를 사용하여 이전 프라이머리를 스탠바이로 재구성할 수 있다.\n5. [kr-002#overview] (score=0.451) 본 문서는 전 직원이 숙지해야 하는 정보보안 정책의 주요 사항을 질문과 답변 형식으로 정리한 것이다. 모든 직원은 입사 시 보안 서약서에 서명해야 하며, 연 1회 보안 교육을 이수해야 한다.\n\n**Sources:** kr-002, kr-004, kr-006, kr-009, kr-010",
+      "final_retrieved_doc_ids": [
+        "kr-004",
+        "kr-009",
+        "kr-010",
+        "kr-006",
+        "kr-002"
+      ],
+      "final_recall_at_k": 1.0,
+      "final_reciprocal_rank": 0.5,
+      "final_keyword_coverage": 1.0,
+      "total_tokens": 1092,
+      "total_ms": 11.614,
+      "iter_count": 3,
+      "stop_reason": "iter_cap",
+      "notes": "단일 사실",
+      "error": null
+    },
+    {
+      "query": "PR 머지 시 기본으로 사용하는 머지 방식은 무엇인가요?",
+      "difficulty": "easy",
+      "expected_doc_ids": [
+        "kr-010"
+      ],
+      "expected_keywords": [
+        "Squash"
+      ],
+      "iter0_answer": "**Query:** PR 머지 시 기본으로 사용하는 머지 방식은 무엇인가요?\n\n**Short answer:** PR(Pull Request)은 최소 1명의 리뷰어 승인을 받아야 머지할 수 있다.\n\n**Supporting passages:**\n1. [kr-004#code_review] (score=0.691) PR(Pull Request)은 최소 1명의 리뷰어 승인을 받아야 머지할 수 있다. 리뷰 요청 후 24시간 이내에 첫 번째 리뷰가 완료되어야 한다. 리뷰어는 코드 스타일, 테스트 커버리지, 보안 취약점을 확인한다.\n2. [kr-006#overview] (score=0.593) 이 런북은 프로덕션 환경에서 발생할 수 있는 주요 장애 시나리오와 대응 절차를 기술한 문서이다. 모든 온콜 엔지니어는 이 문서를 숙지하고 있어야 한다.\n3. [kr-002#overview] (score=0.592) 본 문서는 전 직원이 숙지해야 하는 정보보안 정책의 주요 사항을 질문과 답변 형식으로 정리한 것이다. 모든 직원은 입사 시 보안 서약서에 서명해야 하며, 연 1회 보안 교육을 이수해야 한다.\n4. [kr-004#overview] (score=0.559) 신입 개발자가 팀에 합류한 후 첫 2주 동안 완료해야 하는 업무를 정리한 체크리스트이다. 개발 환경 설정, 코드 리뷰 프로세스 숙지, 팀 컨벤션 학습이 핵심 과제이다.\n5. [kr-002#data_classification] (score=0.494) 데이터는 4단계로 분류한다: 공개(Public), 내부용(Internal), 기밀(Confidential), 극비(Top Secret). 기밀 이상 등급의 데이터는 암호화된 채널을 통해서만 전송할 수 있다.\n\n**Sources:** kr-002, kr-004, kr-006",
+      "iter0_retrieved_doc_ids": [
+        "kr-004",
+        "kr-006",
+        "kr-002"
+      ],
+      "iter0_recall_at_k": 0.0,
+      "iter0_reciprocal_rank": 0.0,
+      "iter0_keyword_coverage": 0.0,
+      "iter0_tokens": 220,
+      "iter0_ms": 2.992,
+      "final_answer": "**Query:** PR 머지 시 기본으로 사용하는 머지 방식은 무엇인가요?\n\n**Short answer:** PR(Pull Request)은 최소 1명의 리뷰어 승인을 받아야 머지할 수 있다.\n\n**Supporting passages:**\n1. [kr-004#code_review] (score=0.691) PR(Pull Request)은 최소 1명의 리뷰어 승인을 받아야 머지할 수 있다. 리뷰 요청 후 24시간 이내에 첫 번째 리뷰가 완료되어야 한다. 리뷰어는 코드 스타일, 테스트 커버리지, 보안 취약점을 확인한다.\n2. [kr-006#overview] (score=0.593) 이 런북은 프로덕션 환경에서 발생할 수 있는 주요 장애 시나리오와 대응 절차를 기술한 문서이다. 모든 온콜 엔지니어는 이 문서를 숙지하고 있어야 한다.\n3. [kr-002#overview] (score=0.592) 본 문서는 전 직원이 숙지해야 하는 정보보안 정책의 주요 사항을 질문과 답변 형식으로 정리한 것이다. 모든 직원은 입사 시 보안 서약서에 서명해야 하며, 연 1회 보안 교육을 이수해야 한다.\n4. [kr-004#overview] (score=0.559) 신입 개발자가 팀에 합류한 후 첫 2주 동안 완료해야 하는 업무를 정리한 체크리스트이다. 개발 환경 설정, 코드 리뷰 프로세스 숙지, 팀 컨벤션 학습이 핵심 과제이다.\n5. [kr-002#data_classification] (score=0.494) 데이터는 4단계로 분류한다: 공개(Public), 내부용(Internal), 기밀(Confidential), 극비(Top Secret). 기밀 이상 등급의 데이터는 암호화된 채널을 통해서만 전송할 수 있다.\n\n**Sources:** kr-002, kr-004, kr-006",
+      "final_retrieved_doc_ids": [
+        "kr-004",
+        "kr-006",
+        "kr-002"
+      ],
+      "final_recall_at_k": 0.0,
+      "final_reciprocal_rank": 0.0,
+      "final_keyword_coverage": 0.0,
+      "total_tokens": 880,
+      "total_ms": 13.944,
+      "iter_count": 3,
+      "stop_reason": "iter_cap",
+      "notes": "단일 사실",
+      "error": null
+    },
+    {
+      "query": "MFA가 필수로 적용되는 세 가지 접근 대상을 모두 알려주세요.",
+      "difficulty": "hard",
+      "expected_doc_ids": [
+        "kr-002"
+      ],
+      "expected_keywords": [
+        "VPN",
+        "클라우드 콘솔",
+        "소스 코드"
+      ],
+      "iter0_answer": "**Query:** MFA가 필수로 적용되는 세 가지 접근 대상을 모두 알려주세요.\n\n**Short answer:** 신입 개발자가 팀에 합류한 후 첫 2주 동안 완료해야 하는 업무를 정리한 체크리스트이다.\n\n**Supporting passages:**\n1. [kr-004#overview] (score=0.622) 신입 개발자가 팀에 합류한 후 첫 2주 동안 완료해야 하는 업무를 정리한 체크리스트이다. 개발 환경 설정, 코드 리뷰 프로세스 숙지, 팀 컨벤션 학습이 핵심 과제이다.\n2. [kr-002#password_policy] (score=0.535) 비밀번호는 최소 12자 이상이며, 대문자, 소문자, 숫자, 특수문자를 각각 1개 이상 포함해야 한다. 비밀번호는 90일마다 변경해야 하며, 최근 5개의 비밀번호를 재사용할 수 없다. 2단계 인증(MFA)은 VPN 접속, 클라우드 콘솔, 소스 코드 저장소 접근 시 필수이다.\n3. [kr-006#overview] (score=0.506) 이 런북은 프로덕션 환경에서 발생할 수 있는 주요 장애 시나리오와 대응 절차를 기술한 문서이다. 모든 온콜 엔지니어는 이 문서를 숙지하고 있어야 한다.\n4. [kr-001#overview] (score=0.490) 클라우드 네이티브 아키텍처는 컨테이너, 마이크로서비스, 서비스 메시, 불변 인프라, 선언적 API를 활용하여 탄력적이고 관리 가능하며 관측 가능한 느슨하게 결합된 시스템을 구축하는 접근 방식이다. CNCF(Cloud Native Computing Foundation)에서 정의한 이 접근 방식은 쿠버네티스를 오케스트레이션 플랫폼으로 사용하며, CI/CD 파이프라인을 통해 자동화된 배포를 수행한다.\n5. [kr-002#overview] (score=0.470) 본 문서는 전 직원이 숙지해야 하는 정보보안 정책의 주요 사항을 질문과 답변 형식으로 정리한 것이다. 모든 직원은 입사 시 보안 서약서에 서명해야 하며, 연 1회 보안 교육을 이수해야 한다.\n\n**Sources:** kr-001, kr-002, kr-004, kr-006",
+      "iter0_retrieved_doc_ids": [
+        "kr-004",
+        "kr-002",
+        "kr-006",
+        "kr-001"
+      ],
+      "iter0_recall_at_k": 1.0,
+      "iter0_reciprocal_rank": 0.5,
+      "iter0_keyword_coverage": 1.0,
+      "iter0_tokens": 257,
+      "iter0_ms": 4.193,
+      "final_answer": "**Query:** MFA가 필수로 적용되는 세 가지 접근 대상을 모두 알려주세요.\n\n**Short answer:** 신입 개발자가 팀에 합류한 후 첫 2주 동안 완료해야 하는 업무를 정리한 체크리스트이다.\n\n**Supporting passages:**\n1. [kr-004#overview] (score=0.622) 신입 개발자가 팀에 합류한 후 첫 2주 동안 완료해야 하는 업무를 정리한 체크리스트이다. 개발 환경 설정, 코드 리뷰 프로세스 숙지, 팀 컨벤션 학습이 핵심 과제이다.\n2. [kr-002#password_policy] (score=0.535) 비밀번호는 최소 12자 이상이며, 대문자, 소문자, 숫자, 특수문자를 각각 1개 이상 포함해야 한다. 비밀번호는 90일마다 변경해야 하며, 최근 5개의 비밀번호를 재사용할 수 없다. 2단계 인증(MFA)은 VPN 접속, 클라우드 콘솔, 소스 코드 저장소 접근 시 필수이다.\n3. [kr-006#overview] (score=0.506) 이 런북은 프로덕션 환경에서 발생할 수 있는 주요 장애 시나리오와 대응 절차를 기술한 문서이다. 모든 온콜 엔지니어는 이 문서를 숙지하고 있어야 한다.\n4. [kr-001#overview] (score=0.490) 클라우드 네이티브 아키텍처는 컨테이너, 마이크로서비스, 서비스 메시, 불변 인프라, 선언적 API를 활용하여 탄력적이고 관리 가능하며 관측 가능한 느슨하게 결합된 시스템을 구축하는 접근 방식이다. CNCF(Cloud Native Computing Foundation)에서 정의한 이 접근 방식은 쿠버네티스를 오케스트레이션 플랫폼으로 사용하며, CI/CD 파이프라인을 통해 자동화된 배포를 수행한다.\n5. [kr-002#overview] (score=0.470) 본 문서는 전 직원이 숙지해야 하는 정보보안 정책의 주요 사항을 질문과 답변 형식으로 정리한 것이다. 모든 직원은 입사 시 보안 서약서에 서명해야 하며, 연 1회 보안 교육을 이수해야 한다.\n\n**Sources:** kr-001, kr-002, kr-004, kr-006",
+      "final_retrieved_doc_ids": [
+        "kr-004",
+        "kr-002",
+        "kr-006",
+        "kr-001"
+      ],
+      "final_recall_at_k": 1.0,
+      "final_reciprocal_rank": 0.5,
+      "final_keyword_coverage": 1.0,
+      "total_tokens": 1028,
+      "total_ms": 11.424,
+      "iter_count": 3,
+      "stop_reason": "iter_cap",
+      "notes": "동일 섹션 다중 사실",
+      "error": null
+    },
+    {
+      "query": "B-Tree, GIN, BRIN 인덱스는 각각 어떤 용도에 적합한가요?",
+      "difficulty": "hard",
+      "expected_doc_ids": [
+        "kr-003"
+      ],
+      "expected_keywords": [
+        "B-Tree",
+        "GIN",
+        "BRIN"
+      ],
+      "iter0_answer": "**Query:** B-Tree, GIN, BRIN 인덱스는 각각 어떤 용도에 적합한가요?\n\n**Short answer:** BRIN 인덱스는 시계열 데이터와 같이 물리적으로 정렬된 대규모 테이블에서 탁월한 성능을 발휘한다.\n\n**Supporting passages:**\n1. [kr-003#indexing] (score=0.703) B-Tree 인덱스는 범위 검색과 정렬에 최적화되어 있으며, GIN 인덱스는 전문 검색(Full-Text Search)과 JSONB 필드 검색에 적합하다. BRIN 인덱스는 시계열 데이터와 같이 물리적으로 정렬된 대규모 테이블에서 탁월한 성능을 발휘한다. 파티션 테이블에서는 파티션 키에 대한 인덱스가 자동으로 각 파티션에 생성된다. 파티션 프루닝(Partition Pruning)을 통해 불필요한 파티션 스캔을 건너뛸 수 있다.\n2. [kr-009#overview] (score=0.349) Grafana 기반 데이터 파이프라인 모니터링 대시보드의 구성 요소와 각 패널의 의미를 설명하는 가이드이다. 파이프라인 처리량, 지연 시간, 오류율을 실시간으로 확인할 수 있다.\n3. [kr-004#overview] (score=0.344) 신입 개발자가 팀에 합류한 후 첫 2주 동안 완료해야 하는 업무를 정리한 체크리스트이다. 개발 환경 설정, 코드 리뷰 프로세스 숙지, 팀 컨벤션 학습이 핵심 과제이다.\n4. [kr-010#overview] (score=0.337) 팀에서 사용하는 Git 브랜치 전략과 워크플로우를 정의한 가이드이다. GitHub Flow를 기반으로 하되, 릴리스 브랜치를 추가하여 안정적인 배포 프로세스를 유지한다.\n5. [kr-002#overview] (score=0.336) 본 문서는 전 직원이 숙지해야 하는 정보보안 정책의 주요 사항을 질문과 답변 형식으로 정리한 것이다. 모든 직원은 입사 시 보안 서약서에 서명해야 하며, 연 1회 보안 교육을 이수해야 한다.\n\n**Sources:** kr-002, kr-003, kr-004, kr-009, kr-010",
+      "iter0_retrieved_doc_ids": [
+        "kr-003",
+        "kr-009",
+        "kr-004",
+        "kr-010",
+        "kr-002"
+      ],
+      "iter0_recall_at_k": 1.0,
+      "iter0_reciprocal_rank": 1.0,
+      "iter0_keyword_coverage": 1.0,
+      "iter0_tokens": 254,
+      "iter0_ms": 3.114,
+      "final_answer": "**Query:** B-Tree, GIN, BRIN 인덱스는 각각 어떤 용도에 적합한가요?\n\n**Short answer:** BRIN 인덱스는 시계열 데이터와 같이 물리적으로 정렬된 대규모 테이블에서 탁월한 성능을 발휘한다.\n\n**Supporting passages:**\n1. [kr-003#indexing] (score=0.703) B-Tree 인덱스는 범위 검색과 정렬에 최적화되어 있으며, GIN 인덱스는 전문 검색(Full-Text Search)과 JSONB 필드 검색에 적합하다. BRIN 인덱스는 시계열 데이터와 같이 물리적으로 정렬된 대규모 테이블에서 탁월한 성능을 발휘한다. 파티션 테이블에서는 파티션 키에 대한 인덱스가 자동으로 각 파티션에 생성된다. 파티션 프루닝(Partition Pruning)을 통해 불필요한 파티션 스캔을 건너뛸 수 있다.\n2. [kr-009#overview] (score=0.349) Grafana 기반 데이터 파이프라인 모니터링 대시보드의 구성 요소와 각 패널의 의미를 설명하는 가이드이다. 파이프라인 처리량, 지연 시간, 오류율을 실시간으로 확인할 수 있다.\n3. [kr-004#overview] (score=0.344) 신입 개발자가 팀에 합류한 후 첫 2주 동안 완료해야 하는 업무를 정리한 체크리스트이다. 개발 환경 설정, 코드 리뷰 프로세스 숙지, 팀 컨벤션 학습이 핵심 과제이다.\n4. [kr-010#overview] (score=0.337) 팀에서 사용하는 Git 브랜치 전략과 워크플로우를 정의한 가이드이다. GitHub Flow를 기반으로 하되, 릴리스 브랜치를 추가하여 안정적인 배포 프로세스를 유지한다.\n5. [kr-002#overview] (score=0.336) 본 문서는 전 직원이 숙지해야 하는 정보보안 정책의 주요 사항을 질문과 답변 형식으로 정리한 것이다. 모든 직원은 입사 시 보안 서약서에 서명해야 하며, 연 1회 보안 교육을 이수해야 한다.\n\n**Sources:** kr-002, kr-003, kr-004, kr-009, kr-010",
+      "final_retrieved_doc_ids": [
+        "kr-003",
+        "kr-009",
+        "kr-004",
+        "kr-010",
+        "kr-002"
+      ],
+      "final_recall_at_k": 1.0,
+      "final_reciprocal_rank": 1.0,
+      "final_keyword_coverage": 1.0,
+      "total_tokens": 1016,
+      "total_ms": 14.62,
+      "iter_count": 3,
+      "stop_reason": "iter_cap",
+      "notes": "비교형 질의",
+      "error": null
+    },
+    {
+      "query": "Cache-Aside 패턴과 Write-Through 패턴의 동작 차이를 설명해주세요.",
+      "difficulty": "hard",
+      "expected_doc_ids": [
+        "kr-005"
+      ],
+      "expected_keywords": [
+        "Cache-Aside",
+        "Write-Through",
+        "데이터베이스"
+      ],
+      "iter0_answer": "**Query:** Cache-Aside 패턴과 Write-Through 패턴의 동작 차이를 설명해주세요.\n\n**Short answer:** Redis를 애플리케이션 캐시로 활용할 때의 전략과 주의사항을 정리한 가이드이다.\n\n**Supporting passages:**\n1. [kr-005#overview] (score=0.755) Redis를 애플리케이션 캐시로 활용할 때의 전략과 주의사항을 정리한 가이드이다. Cache-Aside, Write-Through, Write-Behind 세 가지 패턴 중 상황에 맞는 전략을 선택해야 한다.\n2. [kr-005#patterns] (score=0.708) Cache-Aside 패턴에서는 애플리케이션이 캐시를 먼저 조회하고, 캐시 미스 시 데이터베이스에서 읽어온 뒤 캐시에 저장한다. TTL(Time-To-Live)을 적절히 설정하여 데이터 일관성을 유지해야 한다. Write-Through 패턴은 쓰기 작업 시 캐시와 데이터베이스를 동시에 갱신한다. 데이터 일관성이 보장되지만, 쓰기 지연이 발생할 수 있다.\n3. [kr-003#overview] (score=0.509) PostgreSQL 18에서는 병렬 쿼리 처리 성능이 크게 개선되었다. shared_buffers는 총 메모리의 25%로 설정하는 것이 일반적이며, effective_cache_size는 총 메모리의 50~75%를 권장한다.\n4. [kr-004#dev_environment] (score=0.339) 개발 환경은 Docker Compose를 기반으로 구성한다. docker-compose up 명령으로 PostgreSQL, Redis, MinIO가 자동으로 프로비저닝된다. JDK 21과 Python 3.12는 미리 설치되어 있어야 한다. IDE는 IntelliJ IDEA Ultimate 또는 VS Code를 권장한다. .editorconfig 파일을 통해 들여쓰기, 인코딩, 줄 바꿈 설정이 통일된다.\n5. [kr-005#eviction] (score=0.287) 메모리가 maxmemory 한도에 도달하면 Redis는 설정된 정책에 따라 키를 제거한다. allkeys-lru는 가장 오래 사용되지 않은 키를 제거하며, volatile-ttl은 TTL이 가장 짧은 키를 우선 제거한다.\n\n**Sources:** kr-003, kr-004, kr-005",
+      "iter0_retrieved_doc_ids": [
+        "kr-005",
+        "kr-003",
+        "kr-004"
+      ],
+      "iter0_recall_at_k": 1.0,
+      "iter0_reciprocal_rank": 1.0,
+      "iter0_keyword_coverage": 1.0,
+      "iter0_tokens": 290,
+      "iter0_ms": 4.138,
+      "final_answer": "**Query:** Cache-Aside 패턴과 Write-Through 패턴의 동작 차이를 설명해주세요.\n\n**Short answer:** Redis를 애플리케이션 캐시로 활용할 때의 전략과 주의사항을 정리한 가이드이다.\n\n**Supporting passages:**\n1. [kr-005#overview] (score=0.755) Redis를 애플리케이션 캐시로 활용할 때의 전략과 주의사항을 정리한 가이드이다. Cache-Aside, Write-Through, Write-Behind 세 가지 패턴 중 상황에 맞는 전략을 선택해야 한다.\n2. [kr-005#patterns] (score=0.708) Cache-Aside 패턴에서는 애플리케이션이 캐시를 먼저 조회하고, 캐시 미스 시 데이터베이스에서 읽어온 뒤 캐시에 저장한다. TTL(Time-To-Live)을 적절히 설정하여 데이터 일관성을 유지해야 한다. Write-Through 패턴은 쓰기 작업 시 캐시와 데이터베이스를 동시에 갱신한다. 데이터 일관성이 보장되지만, 쓰기 지연이 발생할 수 있다.\n3. [kr-003#overview] (score=0.509) PostgreSQL 18에서는 병렬 쿼리 처리 성능이 크게 개선되었다. shared_buffers는 총 메모리의 25%로 설정하는 것이 일반적이며, effective_cache_size는 총 메모리의 50~75%를 권장한다.\n4. [kr-004#dev_environment] (score=0.339) 개발 환경은 Docker Compose를 기반으로 구성한다. docker-compose up 명령으로 PostgreSQL, Redis, MinIO가 자동으로 프로비저닝된다. JDK 21과 Python 3.12는 미리 설치되어 있어야 한다. IDE는 IntelliJ IDEA Ultimate 또는 VS Code를 권장한다. .editorconfig 파일을 통해 들여쓰기, 인코딩, 줄 바꿈 설정이 통일된다.\n5. [kr-005#eviction] (score=0.287) 메모리가 maxmemory 한도에 도달하면 Redis는 설정된 정책에 따라 키를 제거한다. allkeys-lru는 가장 오래 사용되지 않은 키를 제거하며, volatile-ttl은 TTL이 가장 짧은 키를 우선 제거한다.\n\n**Sources:** kr-003, kr-004, kr-005",
+      "final_retrieved_doc_ids": [
+        "kr-005",
+        "kr-003",
+        "kr-004"
+      ],
+      "final_recall_at_k": 1.0,
+      "final_reciprocal_rank": 1.0,
+      "final_keyword_coverage": 1.0,
+      "total_tokens": 1160,
+      "total_ms": 10.494,
+      "iter_count": 3,
+      "stop_reason": "iter_cap",
+      "notes": "비교형 질의",
+      "error": null
+    },
+    {
+      "query": "Redis 메모리 정책 allkeys-lru와 volatile-ttl은 각각 어떤 키를 제거하나요?",
+      "difficulty": "hard",
+      "expected_doc_ids": [
+        "kr-005"
+      ],
+      "expected_keywords": [
+        "allkeys-lru",
+        "volatile-ttl"
+      ],
+      "iter0_answer": "**Query:** Redis 메모리 정책 allkeys-lru와 volatile-ttl은 각각 어떤 키를 제거하나요?\n\n**Short answer:** allkeys-lru는 가장 오래 사용되지 않은 키를 제거하며, volatile-ttl은 TTL이 가장 짧은 키를 우선 제거한다.\n\n**Supporting passages:**\n1. [kr-005#eviction] (score=0.766) 메모리가 maxmemory 한도에 도달하면 Redis는 설정된 정책에 따라 키를 제거한다. allkeys-lru는 가장 오래 사용되지 않은 키를 제거하며, volatile-ttl은 TTL이 가장 짧은 키를 우선 제거한다.\n2. [kr-005#overview] (score=0.494) Redis를 애플리케이션 캐시로 활용할 때의 전략과 주의사항을 정리한 가이드이다. Cache-Aside, Write-Through, Write-Behind 세 가지 패턴 중 상황에 맞는 전략을 선택해야 한다.\n3. [kr-005#patterns] (score=0.419) Cache-Aside 패턴에서는 애플리케이션이 캐시를 먼저 조회하고, 캐시 미스 시 데이터베이스에서 읽어온 뒤 캐시에 저장한다. TTL(Time-To-Live)을 적절히 설정하여 데이터 일관성을 유지해야 한다. Write-Through 패턴은 쓰기 작업 시 캐시와 데이터베이스를 동시에 갱신한다. 데이터 일관성이 보장되지만, 쓰기 지연이 발생할 수 있다.\n4. [kr-006#redis_outage] (score=0.325) Redis 장애 시 애플리케이션은 캐시 미스 모드로 자동 전환되어 데이터베이스를 직접 조회한다. Sentinel 구성에서는 자동 마스터 승격이 수행된다. 장애 복구 후 캐시 워밍(warming)을 수행하여 hit rate를 회복한다.\n5. [kr-006#database_failover] (score=0.309) 데이터베이스 장애 발생 시 PgBouncer를 통한 자동 페일오버가 1분 이내에 수행된다. 수동 페일오버가 필요한 경우 pg_ctl promote 명령을 스탠바이 노드에서 실행한다. 페일오버 후에는 반드시 데이터 무결성 검증을 수행해야 한다. pg_rewind를 사용하여 이전 프라이머리를 스탠바이로 재구성할 수 있다.\n\n**Sources:** kr-005, kr-006",
+      "iter0_retrieved_doc_ids": [
+        "kr-005",
+        "kr-006"
+      ],
+      "iter0_recall_at_k": 1.0,
+      "iter0_reciprocal_rank": 1.0,
+      "iter0_keyword_coverage": 1.0,
+      "iter0_tokens": 287,
+      "iter0_ms": 3.896,
+      "final_answer": "**Query:** Redis 메모리 정책 allkeys-lru와 volatile-ttl은 각각 어떤 키를 제거하나요?\n\n**Short answer:** allkeys-lru는 가장 오래 사용되지 않은 키를 제거하며, volatile-ttl은 TTL이 가장 짧은 키를 우선 제거한다.\n\n**Supporting passages:**\n1. [kr-005#eviction] (score=0.766) 메모리가 maxmemory 한도에 도달하면 Redis는 설정된 정책에 따라 키를 제거한다. allkeys-lru는 가장 오래 사용되지 않은 키를 제거하며, volatile-ttl은 TTL이 가장 짧은 키를 우선 제거한다.\n2. [kr-005#overview] (score=0.494) Redis를 애플리케이션 캐시로 활용할 때의 전략과 주의사항을 정리한 가이드이다. Cache-Aside, Write-Through, Write-Behind 세 가지 패턴 중 상황에 맞는 전략을 선택해야 한다.\n3. [kr-005#patterns] (score=0.419) Cache-Aside 패턴에서는 애플리케이션이 캐시를 먼저 조회하고, 캐시 미스 시 데이터베이스에서 읽어온 뒤 캐시에 저장한다. TTL(Time-To-Live)을 적절히 설정하여 데이터 일관성을 유지해야 한다. Write-Through 패턴은 쓰기 작업 시 캐시와 데이터베이스를 동시에 갱신한다. 데이터 일관성이 보장되지만, 쓰기 지연이 발생할 수 있다.\n4. [kr-006#redis_outage] (score=0.325) Redis 장애 시 애플리케이션은 캐시 미스 모드로 자동 전환되어 데이터베이스를 직접 조회한다. Sentinel 구성에서는 자동 마스터 승격이 수행된다. 장애 복구 후 캐시 워밍(warming)을 수행하여 hit rate를 회복한다.\n5. [kr-006#database_failover] (score=0.309) 데이터베이스 장애 발생 시 PgBouncer를 통한 자동 페일오버가 1분 이내에 수행된다. 수동 페일오버가 필요한 경우 pg_ctl promote 명령을 스탠바이 노드에서 실행한다. 페일오버 후에는 반드시 데이터 무결성 검증을 수행해야 한다. pg_rewind를 사용하여 이전 프라이머리를 스탠바이로 재구성할 수 있다.\n\n**Sources:** kr-005, kr-006",
+      "final_retrieved_doc_ids": [
+        "kr-005",
+        "kr-006"
+      ],
+      "final_recall_at_k": 1.0,
+      "final_reciprocal_rank": 1.0,
+      "final_keyword_coverage": 1.0,
+      "total_tokens": 1148,
+      "total_ms": 14.167,
+      "iter_count": 3,
+      "stop_reason": "iter_cap",
+      "notes": "비교형 질의",
+      "error": null
+    },
+    {
+      "query": "데이터베이스 장애 복구에서 pg_ctl promote와 pg_rewind는 각각 어떤 역할을 하나요?",
+      "difficulty": "hard",
+      "expected_doc_ids": [
+        "kr-006"
+      ],
+      "expected_keywords": [
+        "pg_ctl",
+        "pg_rewind"
+      ],
+      "iter0_answer": "**Query:** 데이터베이스 장애 복구에서 pg_ctl promote와 pg_rewind는 각각 어떤 역할을 하나요?\n\n**Short answer:** 데이터베이스 장애 발생 시 PgBouncer를 통한 자동 페일오버가 1분 이내에 수행된다.\n\n**Supporting passages:**\n1. [kr-006#database_failover] (score=0.662) 데이터베이스 장애 발생 시 PgBouncer를 통한 자동 페일오버가 1분 이내에 수행된다. 수동 페일오버가 필요한 경우 pg_ctl promote 명령을 스탠바이 노드에서 실행한다. 페일오버 후에는 반드시 데이터 무결성 검증을 수행해야 한다. pg_rewind를 사용하여 이전 프라이머리를 스탠바이로 재구성할 수 있다.\n2. [kr-002#overview] (score=0.462) 본 문서는 전 직원이 숙지해야 하는 정보보안 정책의 주요 사항을 질문과 답변 형식으로 정리한 것이다. 모든 직원은 입사 시 보안 서약서에 서명해야 하며, 연 1회 보안 교육을 이수해야 한다.\n3. [kr-004#overview] (score=0.455) 신입 개발자가 팀에 합류한 후 첫 2주 동안 완료해야 하는 업무를 정리한 체크리스트이다. 개발 환경 설정, 코드 리뷰 프로세스 숙지, 팀 컨벤션 학습이 핵심 과제이다.\n4. [kr-006#overview] (score=0.432) 이 런북은 프로덕션 환경에서 발생할 수 있는 주요 장애 시나리오와 대응 절차를 기술한 문서이다. 모든 온콜 엔지니어는 이 문서를 숙지하고 있어야 한다.\n5. [kr-002#password_policy] (score=0.374) 비밀번호는 최소 12자 이상이며, 대문자, 소문자, 숫자, 특수문자를 각각 1개 이상 포함해야 한다. 비밀번호는 90일마다 변경해야 하며, 최근 5개의 비밀번호를 재사용할 수 없다. 2단계 인증(MFA)은 VPN 접속, 클라우드 콘솔, 소스 코드 저장소 접근 시 필수이다.\n\n**Sources:** kr-002, kr-004, kr-006",
+      "iter0_retrieved_doc_ids": [
+        "kr-006",
+        "kr-002",
+        "kr-004"
+      ],
+      "iter0_recall_at_k": 1.0,
+      "iter0_reciprocal_rank": 1.0,
+      "iter0_keyword_coverage": 1.0,
+      "iter0_tokens": 252,
+      "iter0_ms": 3.196,
+      "final_answer": "**Query:** 데이터베이스 장애 복구에서 pg_ctl promote와 pg_rewind는 각각 어떤 역할을 하나요?\n\n**Short answer:** 데이터베이스 장애 발생 시 PgBouncer를 통한 자동 페일오버가 1분 이내에 수행된다.\n\n**Supporting passages:**\n1. [kr-006#database_failover] (score=0.662) 데이터베이스 장애 발생 시 PgBouncer를 통한 자동 페일오버가 1분 이내에 수행된다. 수동 페일오버가 필요한 경우 pg_ctl promote 명령을 스탠바이 노드에서 실행한다. 페일오버 후에는 반드시 데이터 무결성 검증을 수행해야 한다. pg_rewind를 사용하여 이전 프라이머리를 스탠바이로 재구성할 수 있다.\n2. [kr-002#overview] (score=0.462) 본 문서는 전 직원이 숙지해야 하는 정보보안 정책의 주요 사항을 질문과 답변 형식으로 정리한 것이다. 모든 직원은 입사 시 보안 서약서에 서명해야 하며, 연 1회 보안 교육을 이수해야 한다.\n3. [kr-004#overview] (score=0.455) 신입 개발자가 팀에 합류한 후 첫 2주 동안 완료해야 하는 업무를 정리한 체크리스트이다. 개발 환경 설정, 코드 리뷰 프로세스 숙지, 팀 컨벤션 학습이 핵심 과제이다.\n4. [kr-006#overview] (score=0.432) 이 런북은 프로덕션 환경에서 발생할 수 있는 주요 장애 시나리오와 대응 절차를 기술한 문서이다. 모든 온콜 엔지니어는 이 문서를 숙지하고 있어야 한다.\n5. [kr-002#password_policy] (score=0.374) 비밀번호는 최소 12자 이상이며, 대문자, 소문자, 숫자, 특수문자를 각각 1개 이상 포함해야 한다. 비밀번호는 90일마다 변경해야 하며, 최근 5개의 비밀번호를 재사용할 수 없다. 2단계 인증(MFA)은 VPN 접속, 클라우드 콘솔, 소스 코드 저장소 접근 시 필수이다.\n\n**Sources:** kr-002, kr-004, kr-006",
+      "final_retrieved_doc_ids": [
+        "kr-006",
+        "kr-002",
+        "kr-004"
+      ],
+      "final_recall_at_k": 1.0,
+      "final_reciprocal_rank": 1.0,
+      "final_keyword_coverage": 1.0,
+      "total_tokens": 1008,
+      "total_ms": 12.185,
+      "iter_count": 3,
+      "stop_reason": "iter_cap",
+      "notes": "동일 섹션 다중 사실",
+      "error": null
+    },
+    {
+      "query": "쿠버네티스에서 CrashLoopBackOff와 OOMKilled는 각각 어떤 상황을 의미하나요?",
+      "difficulty": "hard",
+      "expected_doc_ids": [
+        "kr-008"
+      ],
+      "expected_keywords": [
+        "CrashLoopBackOff",
+        "OOMKilled"
+      ],
+      "iter0_answer": "**Query:** 쿠버네티스에서 CrashLoopBackOff와 OOMKilled는 각각 어떤 상황을 의미하나요?\n\n**Short answer:** OOMKilled는 메모리 리밋이 부족하다는 의미이며, resources.\n\n**Supporting passages:**\n1. [kr-008#pod_issues] (score=0.553) CrashLoopBackOff 상태의 Pod는 kubectl logs 명령으로 컨테이너 로그를 확인한다. OOMKilled는 메모리 리밋이 부족하다는 의미이며, resources.limits.memory를 상향 조정해야 한다. ImagePullBackOff는 컨테이너 이미지를 가져올 수 없는 상태이다. 이미지 레지스트리 인증 정보(imagePullSecrets)를 확인하고, 이미지 태그가 정확한지 검증한다.\n2. [kr-004#overview] (score=0.393) 신입 개발자가 팀에 합류한 후 첫 2주 동안 완료해야 하는 업무를 정리한 체크리스트이다. 개발 환경 설정, 코드 리뷰 프로세스 숙지, 팀 컨벤션 학습이 핵심 과제이다.\n3. [kr-006#overview] (score=0.363) 이 런북은 프로덕션 환경에서 발생할 수 있는 주요 장애 시나리오와 대응 절차를 기술한 문서이다. 모든 온콜 엔지니어는 이 문서를 숙지하고 있어야 한다.\n4. [kr-002#overview] (score=0.349) 본 문서는 전 직원이 숙지해야 하는 정보보안 정책의 주요 사항을 질문과 답변 형식으로 정리한 것이다. 모든 직원은 입사 시 보안 서약서에 서명해야 하며, 연 1회 보안 교육을 이수해야 한다.\n5. [kr-006#database_failover] (score=0.305) 데이터베이스 장애 발생 시 PgBouncer를 통한 자동 페일오버가 1분 이내에 수행된다. 수동 페일오버가 필요한 경우 pg_ctl promote 명령을 스탠바이 노드에서 실행한다. 페일오버 후에는 반드시 데이터 무결성 검증을 수행해야 한다. pg_rewind를 사용하여 이전 프라이머리를 스탠바이로 재구성할 수 있다.\n\n**Sources:** kr-002, kr-004, kr-006, kr-008",
+      "iter0_retrieved_doc_ids": [
+        "kr-008",
+        "kr-004",
+        "kr-006",
+        "kr-002"
+      ],
+      "iter0_recall_at_k": 1.0,
+      "iter0_reciprocal_rank": 1.0,
+      "iter0_keyword_coverage": 1.0,
+      "iter0_tokens": 269,
+      "iter0_ms": 4.062,
+      "final_answer": "**Query:** 쿠버네티스에서 CrashLoopBackOff와 OOMKilled는 각각 어떤 상황을 의미하나요?\n\n**Short answer:** OOMKilled는 메모리 리밋이 부족하다는 의미이며, resources.\n\n**Supporting passages:**\n1. [kr-008#pod_issues] (score=0.553) CrashLoopBackOff 상태의 Pod는 kubectl logs 명령으로 컨테이너 로그를 확인한다. OOMKilled는 메모리 리밋이 부족하다는 의미이며, resources.limits.memory를 상향 조정해야 한다. ImagePullBackOff는 컨테이너 이미지를 가져올 수 없는 상태이다. 이미지 레지스트리 인증 정보(imagePullSecrets)를 확인하고, 이미지 태그가 정확한지 검증한다.\n2. [kr-004#overview] (score=0.393) 신입 개발자가 팀에 합류한 후 첫 2주 동안 완료해야 하는 업무를 정리한 체크리스트이다. 개발 환경 설정, 코드 리뷰 프로세스 숙지, 팀 컨벤션 학습이 핵심 과제이다.\n3. [kr-006#overview] (score=0.363) 이 런북은 프로덕션 환경에서 발생할 수 있는 주요 장애 시나리오와 대응 절차를 기술한 문서이다. 모든 온콜 엔지니어는 이 문서를 숙지하고 있어야 한다.\n4. [kr-002#overview] (score=0.349) 본 문서는 전 직원이 숙지해야 하는 정보보안 정책의 주요 사항을 질문과 답변 형식으로 정리한 것이다. 모든 직원은 입사 시 보안 서약서에 서명해야 하며, 연 1회 보안 교육을 이수해야 한다.\n5. [kr-006#database_failover] (score=0.305) 데이터베이스 장애 발생 시 PgBouncer를 통한 자동 페일오버가 1분 이내에 수행된다. 수동 페일오버가 필요한 경우 pg_ctl promote 명령을 스탠바이 노드에서 실행한다. 페일오버 후에는 반드시 데이터 무결성 검증을 수행해야 한다. pg_rewind를 사용하여 이전 프라이머리를 스탠바이로 재구성할 수 있다.\n\n**Sources:** kr-002, kr-004, kr-006, kr-008",
+      "final_retrieved_doc_ids": [
+        "kr-008",
+        "kr-004",
+        "kr-006",
+        "kr-002"
+      ],
+      "final_recall_at_k": 1.0,
+      "final_reciprocal_rank": 1.0,
+      "final_keyword_coverage": 1.0,
+      "total_tokens": 1076,
+      "total_ms": 14.012,
+      "iter_count": 3,
+      "stop_reason": "iter_cap",
+      "notes": "비교형 질의",
+      "error": null
+    },
+    {
+      "query": "VPN 접속에 필요한 인증 방식과 데이터베이스 장애 시 자동 페일오버를 수행하는 도구는 각각 무엇인가요?",
+      "difficulty": "hard",
+      "expected_doc_ids": [
+        "kr-002",
+        "kr-006"
+      ],
+      "expected_keywords": [
+        "MFA",
+        "PgBouncer"
+      ],
+      "iter0_answer": "**Query:** VPN 접속에 필요한 인증 방식과 데이터베이스 장애 시 자동 페일오버를 수행하는 도구는 각각 무엇인가요?\n\n**Short answer:** 2단계 인증(MFA)은 VPN 접속, 클라우드 콘솔, 소스 코드 저장소 접근 시 필수이다.\n\n**Supporting passages:**\n1. [kr-002#password_policy] (score=0.666) 비밀번호는 최소 12자 이상이며, 대문자, 소문자, 숫자, 특수문자를 각각 1개 이상 포함해야 한다. 비밀번호는 90일마다 변경해야 하며, 최근 5개의 비밀번호를 재사용할 수 없다. 2단계 인증(MFA)은 VPN 접속, 클라우드 콘솔, 소스 코드 저장소 접근 시 필수이다.\n2. [kr-002#overview] (score=0.411) 본 문서는 전 직원이 숙지해야 하는 정보보안 정책의 주요 사항을 질문과 답변 형식으로 정리한 것이다. 모든 직원은 입사 시 보안 서약서에 서명해야 하며, 연 1회 보안 교육을 이수해야 한다.\n3. [kr-001#overview] (score=0.410) 클라우드 네이티브 아키텍처는 컨테이너, 마이크로서비스, 서비스 메시, 불변 인프라, 선언적 API를 활용하여 탄력적이고 관리 가능하며 관측 가능한 느슨하게 결합된 시스템을 구축하는 접근 방식이다. CNCF(Cloud Native Computing Foundation)에서 정의한 이 접근 방식은 쿠버네티스를 오케스트레이션 플랫폼으로 사용하며, CI/CD 파이프라인을 통해 자동화된 배포를 수행한다.\n4. [kr-002#data_classification] (score=0.392) 데이터는 4단계로 분류한다: 공개(Public), 내부용(Internal), 기밀(Confidential), 극비(Top Secret). 기밀 이상 등급의 데이터는 암호화된 채널을 통해서만 전송할 수 있다.\n5. [kr-004#overview] (score=0.384) 신입 개발자가 팀에 합류한 후 첫 2주 동안 완료해야 하는 업무를 정리한 체크리스트이다. 개발 환경 설정, 코드 리뷰 프로세스 숙지, 팀 컨벤션 학습이 핵심 과제이다.\n\n**Sources:** kr-001, kr-002, kr-004",
+      "iter0_retrieved_doc_ids": [
+        "kr-002",
+        "kr-001",
+        "kr-004"
+      ],
+      "iter0_recall_at_k": 0.5,
+      "iter0_reciprocal_rank": 1.0,
+      "iter0_keyword_coverage": 0.5,
+      "iter0_tokens": 272,
+      "iter0_ms": 3.242,
+      "final_answer": "**Query:** VPN 접속에 필요한 인증 방식과 데이터베이스 장애 시 자동 페일오버를 수행하는 도구는 각각 무엇인가요?\n\n**Short answer:** 2단계 인증(MFA)은 VPN 접속, 클라우드 콘솔, 소스 코드 저장소 접근 시 필수이다.\n\n**Supporting passages:**\n1. [kr-002#password_policy] (score=0.666) 비밀번호는 최소 12자 이상이며, 대문자, 소문자, 숫자, 특수문자를 각각 1개 이상 포함해야 한다. 비밀번호는 90일마다 변경해야 하며, 최근 5개의 비밀번호를 재사용할 수 없다. 2단계 인증(MFA)은 VPN 접속, 클라우드 콘솔, 소스 코드 저장소 접근 시 필수이다.\n2. [kr-002#overview] (score=0.411) 본 문서는 전 직원이 숙지해야 하는 정보보안 정책의 주요 사항을 질문과 답변 형식으로 정리한 것이다. 모든 직원은 입사 시 보안 서약서에 서명해야 하며, 연 1회 보안 교육을 이수해야 한다.\n3. [kr-001#overview] (score=0.410) 클라우드 네이티브 아키텍처는 컨테이너, 마이크로서비스, 서비스 메시, 불변 인프라, 선언적 API를 활용하여 탄력적이고 관리 가능하며 관측 가능한 느슨하게 결합된 시스템을 구축하는 접근 방식이다. CNCF(Cloud Native Computing Foundation)에서 정의한 이 접근 방식은 쿠버네티스를 오케스트레이션 플랫폼으로 사용하며, CI/CD 파이프라인을 통해 자동화된 배포를 수행한다.\n4. [kr-002#data_classification] (score=0.392) 데이터는 4단계로 분류한다: 공개(Public), 내부용(Internal), 기밀(Confidential), 극비(Top Secret). 기밀 이상 등급의 데이터는 암호화된 채널을 통해서만 전송할 수 있다.\n5. [kr-004#overview] (score=0.384) 신입 개발자가 팀에 합류한 후 첫 2주 동안 완료해야 하는 업무를 정리한 체크리스트이다. 개발 환경 설정, 코드 리뷰 프로세스 숙지, 팀 컨벤션 학습이 핵심 과제이다.\n\n**Sources:** kr-001, kr-002, kr-004",
+      "final_retrieved_doc_ids": [
+        "kr-002",
+        "kr-001",
+        "kr-004"
+      ],
+      "final_recall_at_k": 0.5,
+      "final_reciprocal_rank": 1.0,
+      "final_keyword_coverage": 0.5,
+      "total_tokens": 1088,
+      "total_ms": 12.023,
+      "iter_count": 3,
+      "stop_reason": "iter_cap",
+      "notes": "교차 문서",
+      "error": null
+    },
+    {
+      "query": "신입 개발자가 사용해야 하는 JDK 버전과 에러 응답에 적용되는 RFC 규격은 무엇인가요?",
+      "difficulty": "hard",
+      "expected_doc_ids": [
+        "kr-004",
+        "kr-007"
+      ],
+      "expected_keywords": [
+        "JDK 21",
+        "RFC 7807"
+      ],
+      "iter0_answer": "**Query:** 신입 개발자가 사용해야 하는 JDK 버전과 에러 응답에 적용되는 RFC 규격은 무엇인가요?\n\n**Short answer:** 에러 응답은 RFC 7807 Problem Details 형식을 따른다.\n\n**Supporting passages:**\n1. [kr-007#error_response] (score=0.519) 에러 응답은 RFC 7807 Problem Details 형식을 따른다. type, title, status, detail, instance 필드를 포함하며, 추가 필드를 확장할 수 있다. 4xx 에러에는 사용자가 수정할 수 있는 구체적인 안내 메시지를 포함한다.\n2. [kr-002#password_policy] (score=0.437) 비밀번호는 최소 12자 이상이며, 대문자, 소문자, 숫자, 특수문자를 각각 1개 이상 포함해야 한다. 비밀번호는 90일마다 변경해야 하며, 최근 5개의 비밀번호를 재사용할 수 없다. 2단계 인증(MFA)은 VPN 접속, 클라우드 콘솔, 소스 코드 저장소 접근 시 필수이다.\n3. [kr-008#networking] (score=0.428) 서비스 간 통신 문제는 kubectl exec를 이용한 컨테이너 내부 DNS 확인(nslookup, dig)으로 진단한다. NetworkPolicy가 트래픽을 차단하고 있는지 확인하고, kube-proxy 로그를 검토한다.\n4. [kr-007#overview] (score=0.418) REST API를 설계할 때 준수해야 하는 팀 내 표준을 정의한 가이드이다. 일관된 URL 구조, HTTP 메서드 사용, 에러 응답 형식, 버전 관리 전략을 포함한다.\n5. [kr-007#url_convention] (score=0.384) 리소스 URL은 복수형 명사를 사용한다 (예: /api/v1/users, /api/v1/orders). 하위 리소스는 중첩하여 표현한다 (예: /api/v1/users/{id}/orders). URL 경로는 소문자 케밥 케이스(kebab-case)를 사용한다.\n\n**Sources:** kr-002, kr-007, kr-008",
+      "iter0_retrieved_doc_ids": [
+        "kr-007",
+        "kr-002",
+        "kr-008"
+      ],
+      "iter0_recall_at_k": 0.5,
+      "iter0_reciprocal_rank": 1.0,
+      "iter0_keyword_coverage": 0.5,
+      "iter0_tokens": 261,
+      "iter0_ms": 2.986,
+      "final_answer": "**Query:** 신입 개발자가 사용해야 하는 JDK 버전과 에러 응답에 적용되는 RFC 규격은 무엇인가요?\n\n**Short answer:** 에러 응답은 RFC 7807 Problem Details 형식을 따른다.\n\n**Supporting passages:**\n1. [kr-007#error_response] (score=0.519) 에러 응답은 RFC 7807 Problem Details 형식을 따른다. type, title, status, detail, instance 필드를 포함하며, 추가 필드를 확장할 수 있다. 4xx 에러에는 사용자가 수정할 수 있는 구체적인 안내 메시지를 포함한다.\n2. [kr-002#password_policy] (score=0.437) 비밀번호는 최소 12자 이상이며, 대문자, 소문자, 숫자, 특수문자를 각각 1개 이상 포함해야 한다. 비밀번호는 90일마다 변경해야 하며, 최근 5개의 비밀번호를 재사용할 수 없다. 2단계 인증(MFA)은 VPN 접속, 클라우드 콘솔, 소스 코드 저장소 접근 시 필수이다.\n3. [kr-008#networking] (score=0.428) 서비스 간 통신 문제는 kubectl exec를 이용한 컨테이너 내부 DNS 확인(nslookup, dig)으로 진단한다. NetworkPolicy가 트래픽을 차단하고 있는지 확인하고, kube-proxy 로그를 검토한다.\n4. [kr-007#overview] (score=0.418) REST API를 설계할 때 준수해야 하는 팀 내 표준을 정의한 가이드이다. 일관된 URL 구조, HTTP 메서드 사용, 에러 응답 형식, 버전 관리 전략을 포함한다.\n5. [kr-007#url_convention] (score=0.384) 리소스 URL은 복수형 명사를 사용한다 (예: /api/v1/users, /api/v1/orders). 하위 리소스는 중첩하여 표현한다 (예: /api/v1/users/{id}/orders). URL 경로는 소문자 케밥 케이스(kebab-case)를 사용한다.\n\n**Sources:** kr-002, kr-007, kr-008",
+      "final_retrieved_doc_ids": [
+        "kr-007",
+        "kr-002",
+        "kr-008"
+      ],
+      "final_recall_at_k": 0.5,
+      "final_reciprocal_rank": 1.0,
+      "final_keyword_coverage": 0.5,
+      "total_tokens": 1044,
+      "total_ms": 13.635,
+      "iter_count": 3,
+      "stop_reason": "iter_cap",
+      "notes": "교차 문서",
+      "error": null
+    },
+    {
+      "query": "Write-Through 패턴의 단점과 BRIN 인덱스가 가장 잘 동작하는 데이터 유형은 무엇인가요?",
+      "difficulty": "hard",
+      "expected_doc_ids": [
+        "kr-005",
+        "kr-003"
+      ],
+      "expected_keywords": [
+        "쓰기 지연",
+        "시계열"
+      ],
+      "iter0_answer": "**Query:** Write-Through 패턴의 단점과 BRIN 인덱스가 가장 잘 동작하는 데이터 유형은 무엇인가요?\n\n**Short answer:** Redis를 애플리케이션 캐시로 활용할 때의 전략과 주의사항을 정리한 가이드이다.\n\n**Supporting passages:**\n1. [kr-005#overview] (score=0.576) Redis를 애플리케이션 캐시로 활용할 때의 전략과 주의사항을 정리한 가이드이다. Cache-Aside, Write-Through, Write-Behind 세 가지 패턴 중 상황에 맞는 전략을 선택해야 한다.\n2. [kr-005#patterns] (score=0.524) Cache-Aside 패턴에서는 애플리케이션이 캐시를 먼저 조회하고, 캐시 미스 시 데이터베이스에서 읽어온 뒤 캐시에 저장한다. TTL(Time-To-Live)을 적절히 설정하여 데이터 일관성을 유지해야 한다. Write-Through 패턴은 쓰기 작업 시 캐시와 데이터베이스를 동시에 갱신한다. 데이터 일관성이 보장되지만, 쓰기 지연이 발생할 수 있다.\n3. [kr-002#overview] (score=0.397) 본 문서는 전 직원이 숙지해야 하는 정보보안 정책의 주요 사항을 질문과 답변 형식으로 정리한 것이다. 모든 직원은 입사 시 보안 서약서에 서명해야 하며, 연 1회 보안 교육을 이수해야 한다.\n4. [kr-004#overview] (score=0.390) 신입 개발자가 팀에 합류한 후 첫 2주 동안 완료해야 하는 업무를 정리한 체크리스트이다. 개발 환경 설정, 코드 리뷰 프로세스 숙지, 팀 컨벤션 학습이 핵심 과제이다.\n5. [kr-009#key_metrics] (score=0.384) 처리량(Throughput)은 초당 처리된 메시지 수를 나타내며, 정상 범위는 500~2000 msg/s이다. p99 지연 시간이 500ms를 초과하면 경고 알림이 발생한다. 오류율(Error Rate)은 전체 처리 대비 실패한 메시지의 비율이다. 1%를 초과하면 PagerDuty 경보가 트리거된다. 오류 유형별(파싱 오류, 타임아웃, 스키마 불일치) 분류 패널을 통해 원인을 빠르게 파악할 수 있다.\n\n**Sources:** kr-002, kr-004, kr-005, kr-009",
+      "iter0_retrieved_doc_ids": [
+        "kr-005",
+        "kr-002",
+        "kr-004",
+        "kr-009"
+      ],
+      "iter0_recall_at_k": 0.5,
+      "iter0_reciprocal_rank": 1.0,
+      "iter0_keyword_coverage": 0.5,
+      "iter0_tokens": 281,
+      "iter0_ms": 4.222,
+      "final_answer": "**Query:** Write-Through 패턴의 단점과 BRIN 인덱스가 가장 잘 동작하는 데이터 유형은 무엇인가요?\n\n**Short answer:** Redis를 애플리케이션 캐시로 활용할 때의 전략과 주의사항을 정리한 가이드이다.\n\n**Supporting passages:**\n1. [kr-005#overview] (score=0.576) Redis를 애플리케이션 캐시로 활용할 때의 전략과 주의사항을 정리한 가이드이다. Cache-Aside, Write-Through, Write-Behind 세 가지 패턴 중 상황에 맞는 전략을 선택해야 한다.\n2. [kr-005#patterns] (score=0.524) Cache-Aside 패턴에서는 애플리케이션이 캐시를 먼저 조회하고, 캐시 미스 시 데이터베이스에서 읽어온 뒤 캐시에 저장한다. TTL(Time-To-Live)을 적절히 설정하여 데이터 일관성을 유지해야 한다. Write-Through 패턴은 쓰기 작업 시 캐시와 데이터베이스를 동시에 갱신한다. 데이터 일관성이 보장되지만, 쓰기 지연이 발생할 수 있다.\n3. [kr-002#overview] (score=0.397) 본 문서는 전 직원이 숙지해야 하는 정보보안 정책의 주요 사항을 질문과 답변 형식으로 정리한 것이다. 모든 직원은 입사 시 보안 서약서에 서명해야 하며, 연 1회 보안 교육을 이수해야 한다.\n4. [kr-004#overview] (score=0.390) 신입 개발자가 팀에 합류한 후 첫 2주 동안 완료해야 하는 업무를 정리한 체크리스트이다. 개발 환경 설정, 코드 리뷰 프로세스 숙지, 팀 컨벤션 학습이 핵심 과제이다.\n5. [kr-009#key_metrics] (score=0.384) 처리량(Throughput)은 초당 처리된 메시지 수를 나타내며, 정상 범위는 500~2000 msg/s이다. p99 지연 시간이 500ms를 초과하면 경고 알림이 발생한다. 오류율(Error Rate)은 전체 처리 대비 실패한 메시지의 비율이다. 1%를 초과하면 PagerDuty 경보가 트리거된다. 오류 유형별(파싱 오류, 타임아웃, 스키마 불일치) 분류 패널을 통해 원인을 빠르게 파악할 수 있다.\n\n**Sources:** kr-002, kr-004, kr-005, kr-009",
+      "final_retrieved_doc_ids": [
+        "kr-005",
+        "kr-002",
+        "kr-004",
+        "kr-009"
+      ],
+      "final_recall_at_k": 0.5,
+      "final_reciprocal_rank": 1.0,
+      "final_keyword_coverage": 0.5,
+      "total_tokens": 1124,
+      "total_ms": 11.032,
+      "iter_count": 3,
+      "stop_reason": "iter_cap",
+      "notes": "교차 문서",
+      "error": null
+    },
+    {
+      "query": "핫픽스 브랜치 네이밍 규칙과 Prometheus Alertmanager에서 관리되는 심각도 단계는 각각 무엇인가요?",
+      "difficulty": "hard",
+      "expected_doc_ids": [
+        "kr-010",
+        "kr-009"
+      ],
+      "expected_keywords": [
+        "hotfix/",
+        "critical"
+      ],
+      "iter0_answer": "**Query:** 핫픽스 브랜치 네이밍 규칙과 Prometheus Alertmanager에서 관리되는 심각도 단계는 각각 무엇인가요?\n\n**Short answer:** 알림 규칙은 Prometheus Alertmanager를 통해 관리된다.\n\n**Supporting passages:**\n1. [kr-009#alerting] (score=0.838) 알림 규칙은 Prometheus Alertmanager를 통해 관리된다. 심각도는 info, warning, critical 세 단계로 분류하며, critical 알림은 Slack 채널과 PagerDuty로 동시에 전송된다.\n2. [kr-006#redis_outage] (score=0.317) Redis 장애 시 애플리케이션은 캐시 미스 모드로 자동 전환되어 데이터베이스를 직접 조회한다. Sentinel 구성에서는 자동 마스터 승격이 수행된다. 장애 복구 후 캐시 워밍(warming)을 수행하여 hit rate를 회복한다.\n3. [kr-002#data_classification] (score=0.301) 데이터는 4단계로 분류한다: 공개(Public), 내부용(Internal), 기밀(Confidential), 극비(Top Secret). 기밀 이상 등급의 데이터는 암호화된 채널을 통해서만 전송할 수 있다.\n4. [kr-004#overview] (score=0.288) 신입 개발자가 팀에 합류한 후 첫 2주 동안 완료해야 하는 업무를 정리한 체크리스트이다. 개발 환경 설정, 코드 리뷰 프로세스 숙지, 팀 컨벤션 학습이 핵심 과제이다.\n5. [kr-009#key_metrics] (score=0.273) 처리량(Throughput)은 초당 처리된 메시지 수를 나타내며, 정상 범위는 500~2000 msg/s이다. p99 지연 시간이 500ms를 초과하면 경고 알림이 발생한다. 오류율(Error Rate)은 전체 처리 대비 실패한 메시지의 비율이다. 1%를 초과하면 PagerDuty 경보가 트리거된다. 오류 유형별(파싱 오류, 타임아웃, 스키마 불일치) 분류 패널을 통해 원인을 빠르게 파악할 수 있다.\n\n**Sources:** kr-002, kr-004, kr-006, kr-009",
+      "iter0_retrieved_doc_ids": [
+        "kr-009",
+        "kr-006",
+        "kr-002",
+        "kr-004"
+      ],
+      "iter0_recall_at_k": 0.5,
+      "iter0_reciprocal_rank": 1.0,
+      "iter0_keyword_coverage": 0.5,
+      "iter0_tokens": 273,
+      "iter0_ms": 3.119,
+      "final_answer": "**Query:** 핫픽스 브랜치 네이밍 규칙과 Prometheus Alertmanager에서 관리되는 심각도 단계는 각각 무엇인가요?\n\n**Short answer:** 알림 규칙은 Prometheus Alertmanager를 통해 관리된다.\n\n**Supporting passages:**\n1. [kr-009#alerting] (score=0.838) 알림 규칙은 Prometheus Alertmanager를 통해 관리된다. 심각도는 info, warning, critical 세 단계로 분류하며, critical 알림은 Slack 채널과 PagerDuty로 동시에 전송된다.\n2. [kr-006#redis_outage] (score=0.317) Redis 장애 시 애플리케이션은 캐시 미스 모드로 자동 전환되어 데이터베이스를 직접 조회한다. Sentinel 구성에서는 자동 마스터 승격이 수행된다. 장애 복구 후 캐시 워밍(warming)을 수행하여 hit rate를 회복한다.\n3. [kr-002#data_classification] (score=0.301) 데이터는 4단계로 분류한다: 공개(Public), 내부용(Internal), 기밀(Confidential), 극비(Top Secret). 기밀 이상 등급의 데이터는 암호화된 채널을 통해서만 전송할 수 있다.\n4. [kr-004#overview] (score=0.288) 신입 개발자가 팀에 합류한 후 첫 2주 동안 완료해야 하는 업무를 정리한 체크리스트이다. 개발 환경 설정, 코드 리뷰 프로세스 숙지, 팀 컨벤션 학습이 핵심 과제이다.\n5. [kr-009#key_metrics] (score=0.273) 처리량(Throughput)은 초당 처리된 메시지 수를 나타내며, 정상 범위는 500~2000 msg/s이다. p99 지연 시간이 500ms를 초과하면 경고 알림이 발생한다. 오류율(Error Rate)은 전체 처리 대비 실패한 메시지의 비율이다. 1%를 초과하면 PagerDuty 경보가 트리거된다. 오류 유형별(파싱 오류, 타임아웃, 스키마 불일치) 분류 패널을 통해 원인을 빠르게 파악할 수 있다.\n\n**Sources:** kr-002, kr-004, kr-006, kr-009",
+      "final_retrieved_doc_ids": [
+        "kr-009",
+        "kr-006",
+        "kr-002",
+        "kr-004"
+      ],
+      "final_recall_at_k": 0.5,
+      "final_reciprocal_rank": 1.0,
+      "final_keyword_coverage": 0.5,
+      "total_tokens": 1092,
+      "total_ms": 14.771,
+      "iter_count": 3,
+      "stop_reason": "iter_cap",
+      "notes": "교차 문서",
+      "error": null
+    },
+    {
+      "query": "Kafka Streams의 exactly-once 처리 보장 원리는 무엇인가요?",
+      "difficulty": "impossible",
+      "expected_doc_ids": [],
+      "expected_keywords": [
+        "exactly-once",
+        "Kafka Streams"
+      ],
+      "iter0_answer": "**Query:** Kafka Streams의 exactly-once 처리 보장 원리는 무엇인가요?\n\n**Short answer:** 서비스 간 통신 문제는 kubectl exec를 이용한 컨테이너 내부 DNS 확인(nslookup, dig)으로 진단한다.\n\n**Supporting passages:**\n1. [kr-008#networking] (score=0.303) 서비스 간 통신 문제는 kubectl exec를 이용한 컨테이너 내부 DNS 확인(nslookup, dig)으로 진단한다. NetworkPolicy가 트래픽을 차단하고 있는지 확인하고, kube-proxy 로그를 검토한다.\n2. [kr-005#patterns] (score=0.294) Cache-Aside 패턴에서는 애플리케이션이 캐시를 먼저 조회하고, 캐시 미스 시 데이터베이스에서 읽어온 뒤 캐시에 저장한다. TTL(Time-To-Live)을 적절히 설정하여 데이터 일관성을 유지해야 한다. Write-Through 패턴은 쓰기 작업 시 캐시와 데이터베이스를 동시에 갱신한다. 데이터 일관성이 보장되지만, 쓰기 지연이 발생할 수 있다.\n3. [kr-005#overview] (score=0.279) Redis를 애플리케이션 캐시로 활용할 때의 전략과 주의사항을 정리한 가이드이다. Cache-Aside, Write-Through, Write-Behind 세 가지 패턴 중 상황에 맞는 전략을 선택해야 한다.\n4. [kr-002#overview] (score=0.276) 본 문서는 전 직원이 숙지해야 하는 정보보안 정책의 주요 사항을 질문과 답변 형식으로 정리한 것이다. 모든 직원은 입사 시 보안 서약서에 서명해야 하며, 연 1회 보안 교육을 이수해야 한다.\n5. [kr-002#password_policy] (score=0.269) 비밀번호는 최소 12자 이상이며, 대문자, 소문자, 숫자, 특수문자를 각각 1개 이상 포함해야 한다. 비밀번호는 90일마다 변경해야 하며, 최근 5개의 비밀번호를 재사용할 수 없다. 2단계 인증(MFA)은 VPN 접속, 클라우드 콘솔, 소스 코드 저장소 접근 시 필수이다.\n\n**Sources:** kr-002, kr-005, kr-008",
+      "iter0_retrieved_doc_ids": [
+        "kr-008",
+        "kr-005",
+        "kr-002"
+      ],
+      "iter0_recall_at_k": null,
+      "iter0_reciprocal_rank": null,
+      "iter0_keyword_coverage": 1.0,
+      "iter0_tokens": 272,
+      "iter0_ms": 4.416,
+      "final_answer": "**Query:** Kafka Streams의 exactly-once 처리 보장 원리는 무엇인가요?\n\n**Short answer:** 서비스 간 통신 문제는 kubectl exec를 이용한 컨테이너 내부 DNS 확인(nslookup, dig)으로 진단한다.\n\n**Supporting passages:**\n1. [kr-008#networking] (score=0.303) 서비스 간 통신 문제는 kubectl exec를 이용한 컨테이너 내부 DNS 확인(nslookup, dig)으로 진단한다. NetworkPolicy가 트래픽을 차단하고 있는지 확인하고, kube-proxy 로그를 검토한다.\n2. [kr-005#patterns] (score=0.294) Cache-Aside 패턴에서는 애플리케이션이 캐시를 먼저 조회하고, 캐시 미스 시 데이터베이스에서 읽어온 뒤 캐시에 저장한다. TTL(Time-To-Live)을 적절히 설정하여 데이터 일관성을 유지해야 한다. Write-Through 패턴은 쓰기 작업 시 캐시와 데이터베이스를 동시에 갱신한다. 데이터 일관성이 보장되지만, 쓰기 지연이 발생할 수 있다.\n3. [kr-005#overview] (score=0.279) Redis를 애플리케이션 캐시로 활용할 때의 전략과 주의사항을 정리한 가이드이다. Cache-Aside, Write-Through, Write-Behind 세 가지 패턴 중 상황에 맞는 전략을 선택해야 한다.\n4. [kr-002#overview] (score=0.276) 본 문서는 전 직원이 숙지해야 하는 정보보안 정책의 주요 사항을 질문과 답변 형식으로 정리한 것이다. 모든 직원은 입사 시 보안 서약서에 서명해야 하며, 연 1회 보안 교육을 이수해야 한다.\n5. [kr-002#password_policy] (score=0.269) 비밀번호는 최소 12자 이상이며, 대문자, 소문자, 숫자, 특수문자를 각각 1개 이상 포함해야 한다. 비밀번호는 90일마다 변경해야 하며, 최근 5개의 비밀번호를 재사용할 수 없다. 2단계 인증(MFA)은 VPN 접속, 클라우드 콘솔, 소스 코드 저장소 접근 시 필수이다.\n\n**Sources:** kr-002, kr-005, kr-008",
+      "final_retrieved_doc_ids": [
+        "kr-008",
+        "kr-005",
+        "kr-002"
+      ],
+      "final_recall_at_k": null,
+      "final_reciprocal_rank": null,
+      "final_keyword_coverage": 1.0,
+      "total_tokens": 1088,
+      "total_ms": 10.063,
+      "iter_count": 3,
+      "stop_reason": "iter_cap",
+      "notes": "코퍼스에 없음",
+      "error": null
+    },
+    {
+      "query": "TypeScript 5.9에서 decorator 스펙이 어떻게 변경되었나요?",
+      "difficulty": "impossible",
+      "expected_doc_ids": [],
+      "expected_keywords": [
+        "TypeScript",
+        "decorator"
+      ],
+      "iter0_answer": "**Query:** TypeScript 5.9에서 decorator 스펙이 어떻게 변경되었나요?\n\n**Short answer:** Redis를 애플리케이션 캐시로 활용할 때의 전략과 주의사항을 정리한 가이드이다.\n\n**Supporting passages:**\n1. [kr-005#overview] (score=0.312) Redis를 애플리케이션 캐시로 활용할 때의 전략과 주의사항을 정리한 가이드이다. Cache-Aside, Write-Through, Write-Behind 세 가지 패턴 중 상황에 맞는 전략을 선택해야 한다.\n2. [kr-002#data_classification] (score=0.270) 데이터는 4단계로 분류한다: 공개(Public), 내부용(Internal), 기밀(Confidential), 극비(Top Secret). 기밀 이상 등급의 데이터는 암호화된 채널을 통해서만 전송할 수 있다.\n3. [kr-004#overview] (score=0.268) 신입 개발자가 팀에 합류한 후 첫 2주 동안 완료해야 하는 업무를 정리한 체크리스트이다. 개발 환경 설정, 코드 리뷰 프로세스 숙지, 팀 컨벤션 학습이 핵심 과제이다.\n4. [kr-004#dev_environment] (score=0.266) 개발 환경은 Docker Compose를 기반으로 구성한다. docker-compose up 명령으로 PostgreSQL, Redis, MinIO가 자동으로 프로비저닝된다. JDK 21과 Python 3.12는 미리 설치되어 있어야 한다. IDE는 IntelliJ IDEA Ultimate 또는 VS Code를 권장한다. .editorconfig 파일을 통해 들여쓰기, 인코딩, 줄 바꿈 설정이 통일된다.\n5. [kr-010#overview] (score=0.265) 팀에서 사용하는 Git 브랜치 전략과 워크플로우를 정의한 가이드이다. GitHub Flow를 기반으로 하되, 릴리스 브랜치를 추가하여 안정적인 배포 프로세스를 유지한다.\n\n**Sources:** kr-002, kr-004, kr-005, kr-010",
+      "iter0_retrieved_doc_ids": [
+        "kr-005",
+        "kr-002",
+        "kr-004",
+        "kr-010"
+      ],
+      "iter0_recall_at_k": null,
+      "iter0_reciprocal_rank": null,
+      "iter0_keyword_coverage": 1.0,
+      "iter0_tokens": 257,
+      "iter0_ms": 4.338,
+      "final_answer": "**Query:** TypeScript 5.9에서 decorator 스펙이 어떻게 변경되었나요?\n\n**Short answer:** Redis를 애플리케이션 캐시로 활용할 때의 전략과 주의사항을 정리한 가이드이다.\n\n**Supporting passages:**\n1. [kr-005#overview] (score=0.312) Redis를 애플리케이션 캐시로 활용할 때의 전략과 주의사항을 정리한 가이드이다. Cache-Aside, Write-Through, Write-Behind 세 가지 패턴 중 상황에 맞는 전략을 선택해야 한다.\n2. [kr-002#data_classification] (score=0.270) 데이터는 4단계로 분류한다: 공개(Public), 내부용(Internal), 기밀(Confidential), 극비(Top Secret). 기밀 이상 등급의 데이터는 암호화된 채널을 통해서만 전송할 수 있다.\n3. [kr-004#overview] (score=0.268) 신입 개발자가 팀에 합류한 후 첫 2주 동안 완료해야 하는 업무를 정리한 체크리스트이다. 개발 환경 설정, 코드 리뷰 프로세스 숙지, 팀 컨벤션 학습이 핵심 과제이다.\n4. [kr-004#dev_environment] (score=0.266) 개발 환경은 Docker Compose를 기반으로 구성한다. docker-compose up 명령으로 PostgreSQL, Redis, MinIO가 자동으로 프로비저닝된다. JDK 21과 Python 3.12는 미리 설치되어 있어야 한다. IDE는 IntelliJ IDEA Ultimate 또는 VS Code를 권장한다. .editorconfig 파일을 통해 들여쓰기, 인코딩, 줄 바꿈 설정이 통일된다.\n5. [kr-010#overview] (score=0.265) 팀에서 사용하는 Git 브랜치 전략과 워크플로우를 정의한 가이드이다. GitHub Flow를 기반으로 하되, 릴리스 브랜치를 추가하여 안정적인 배포 프로세스를 유지한다.\n\n**Sources:** kr-002, kr-004, kr-005, kr-010",
+      "final_retrieved_doc_ids": [
+        "kr-005",
+        "kr-002",
+        "kr-004",
+        "kr-010"
+      ],
+      "final_recall_at_k": null,
+      "final_reciprocal_rank": null,
+      "final_keyword_coverage": 1.0,
+      "total_tokens": 1028,
+      "total_ms": 14.013,
+      "iter_count": 3,
+      "stop_reason": "iter_cap",
+      "notes": "코퍼스에 없음",
+      "error": null
+    },
+    {
+      "query": "Rust의 Tokio와 async-std 런타임의 성능 차이를 비교해주세요.",
+      "difficulty": "impossible",
+      "expected_doc_ids": [],
+      "expected_keywords": [
+        "Tokio",
+        "async-std"
+      ],
+      "iter0_answer": "**Query:** Rust의 Tokio와 async-std 런타임의 성능 차이를 비교해주세요.\n\n**Short answer:** Redis를 애플리케이션 캐시로 활용할 때의 전략과 주의사항을 정리한 가이드이다.\n\n**Supporting passages:**\n1. [kr-005#overview] (score=0.331) Redis를 애플리케이션 캐시로 활용할 때의 전략과 주의사항을 정리한 가이드이다. Cache-Aside, Write-Through, Write-Behind 세 가지 패턴 중 상황에 맞는 전략을 선택해야 한다.\n2. [kr-008#pod_issues] (score=0.308) CrashLoopBackOff 상태의 Pod는 kubectl logs 명령으로 컨테이너 로그를 확인한다. OOMKilled는 메모리 리밋이 부족하다는 의미이며, resources.limits.memory를 상향 조정해야 한다. ImagePullBackOff는 컨테이너 이미지를 가져올 수 없는 상태이다. 이미지 레지스트리 인증 정보(imagePullSecrets)를 확인하고, 이미지 태그가 정확한지 검증한다.\n3. [kr-005#patterns] (score=0.303) Cache-Aside 패턴에서는 애플리케이션이 캐시를 먼저 조회하고, 캐시 미스 시 데이터베이스에서 읽어온 뒤 캐시에 저장한다. TTL(Time-To-Live)을 적절히 설정하여 데이터 일관성을 유지해야 한다. Write-Through 패턴은 쓰기 작업 시 캐시와 데이터베이스를 동시에 갱신한다. 데이터 일관성이 보장되지만, 쓰기 지연이 발생할 수 있다.\n4. [kr-004#dev_environment] (score=0.298) 개발 환경은 Docker Compose를 기반으로 구성한다. docker-compose up 명령으로 PostgreSQL, Redis, MinIO가 자동으로 프로비저닝된다. JDK 21과 Python 3.12는 미리 설치되어 있어야 한다. IDE는 IntelliJ IDEA Ultimate 또는 VS Code를 권장한다. .editorconfig 파일을 통해 들여쓰기, 인코딩, 줄 바꿈 설정이 통일된다.\n5. [kr-004#overview] (score=0.269) 신입 개발자가 팀에 합류한 후 첫 2주 동안 완료해야 하는 업무를 정리한 체크리스트이다. 개발 환경 설정, 코드 리뷰 프로세스 숙지, 팀 컨벤션 학습이 핵심 과제이다.\n\n**Sources:** kr-004, kr-005, kr-008",
+      "iter0_retrieved_doc_ids": [
+        "kr-005",
+        "kr-008",
+        "kr-004"
+      ],
+      "iter0_recall_at_k": null,
+      "iter0_reciprocal_rank": null,
+      "iter0_keyword_coverage": 1.0,
+      "iter0_tokens": 308,
+      "iter0_ms": 3.198,
+      "final_answer": "**Query:** Rust의 Tokio와 async-std 런타임의 성능 차이를 비교해주세요.\n\n**Short answer:** Redis를 애플리케이션 캐시로 활용할 때의 전략과 주의사항을 정리한 가이드이다.\n\n**Supporting passages:**\n1. [kr-005#overview] (score=0.331) Redis를 애플리케이션 캐시로 활용할 때의 전략과 주의사항을 정리한 가이드이다. Cache-Aside, Write-Through, Write-Behind 세 가지 패턴 중 상황에 맞는 전략을 선택해야 한다.\n2. [kr-008#pod_issues] (score=0.308) CrashLoopBackOff 상태의 Pod는 kubectl logs 명령으로 컨테이너 로그를 확인한다. OOMKilled는 메모리 리밋이 부족하다는 의미이며, resources.limits.memory를 상향 조정해야 한다. ImagePullBackOff는 컨테이너 이미지를 가져올 수 없는 상태이다. 이미지 레지스트리 인증 정보(imagePullSecrets)를 확인하고, 이미지 태그가 정확한지 검증한다.\n3. [kr-005#patterns] (score=0.303) Cache-Aside 패턴에서는 애플리케이션이 캐시를 먼저 조회하고, 캐시 미스 시 데이터베이스에서 읽어온 뒤 캐시에 저장한다. TTL(Time-To-Live)을 적절히 설정하여 데이터 일관성을 유지해야 한다. Write-Through 패턴은 쓰기 작업 시 캐시와 데이터베이스를 동시에 갱신한다. 데이터 일관성이 보장되지만, 쓰기 지연이 발생할 수 있다.\n4. [kr-004#dev_environment] (score=0.298) 개발 환경은 Docker Compose를 기반으로 구성한다. docker-compose up 명령으로 PostgreSQL, Redis, MinIO가 자동으로 프로비저닝된다. JDK 21과 Python 3.12는 미리 설치되어 있어야 한다. IDE는 IntelliJ IDEA Ultimate 또는 VS Code를 권장한다. .editorconfig 파일을 통해 들여쓰기, 인코딩, 줄 바꿈 설정이 통일된다.\n5. [kr-004#overview] (score=0.269) 신입 개발자가 팀에 합류한 후 첫 2주 동안 완료해야 하는 업무를 정리한 체크리스트이다. 개발 환경 설정, 코드 리뷰 프로세스 숙지, 팀 컨벤션 학습이 핵심 과제이다.\n\n**Sources:** kr-004, kr-005, kr-008",
+      "final_retrieved_doc_ids": [
+        "kr-005",
+        "kr-008",
+        "kr-004"
+      ],
+      "final_recall_at_k": null,
+      "final_reciprocal_rank": null,
+      "final_keyword_coverage": 1.0,
+      "total_tokens": 1232,
+      "total_ms": 11.916,
+      "iter_count": 3,
+      "stop_reason": "iter_cap",
+      "notes": "코퍼스에 없음",
+      "error": null
+    },
+    {
+      "query": "MongoDB 샤딩에서 샤드 키를 선택할 때 고려해야 하는 사항은 무엇인가요?",
+      "difficulty": "impossible",
+      "expected_doc_ids": [],
+      "expected_keywords": [
+        "MongoDB",
+        "샤드 키"
+      ],
+      "iter0_answer": "**Query:** MongoDB 샤딩에서 샤드 키를 선택할 때 고려해야 하는 사항은 무엇인가요?\n\n**Short answer:** REST API를 설계할 때 준수해야 하는 팀 내 표준을 정의한 가이드이다.\n\n**Supporting passages:**\n1. [kr-007#overview] (score=0.340) REST API를 설계할 때 준수해야 하는 팀 내 표준을 정의한 가이드이다. 일관된 URL 구조, HTTP 메서드 사용, 에러 응답 형식, 버전 관리 전략을 포함한다.\n2. [kr-002#overview] (score=0.294) 본 문서는 전 직원이 숙지해야 하는 정보보안 정책의 주요 사항을 질문과 답변 형식으로 정리한 것이다. 모든 직원은 입사 시 보안 서약서에 서명해야 하며, 연 1회 보안 교육을 이수해야 한다.\n3. [kr-006#overview] (score=0.281) 이 런북은 프로덕션 환경에서 발생할 수 있는 주요 장애 시나리오와 대응 절차를 기술한 문서이다. 모든 온콜 엔지니어는 이 문서를 숙지하고 있어야 한다.\n4. [kr-010#merge_policy] (score=0.273) PR 머지는 Squash and Merge 방식을 기본으로 한다. 커밋 메시지는 Conventional Commits 형식을 따르며, feat:, fix:, docs:, refactor: 접두사를 사용한다.\n5. [kr-002#data_classification] (score=0.257) 데이터는 4단계로 분류한다: 공개(Public), 내부용(Internal), 기밀(Confidential), 극비(Top Secret). 기밀 이상 등급의 데이터는 암호화된 채널을 통해서만 전송할 수 있다.\n\n**Sources:** kr-002, kr-006, kr-007, kr-010",
+      "iter0_retrieved_doc_ids": [
+        "kr-007",
+        "kr-002",
+        "kr-006",
+        "kr-010"
+      ],
+      "iter0_recall_at_k": null,
+      "iter0_reciprocal_rank": null,
+      "iter0_keyword_coverage": 1.0,
+      "iter0_tokens": 223,
+      "iter0_ms": 3.985,
+      "final_answer": "**Query:** MongoDB 샤딩에서 샤드 키를 선택할 때 고려해야 하는 사항은 무엇인가요?\n\n**Short answer:** REST API를 설계할 때 준수해야 하는 팀 내 표준을 정의한 가이드이다.\n\n**Supporting passages:**\n1. [kr-007#overview] (score=0.340) REST API를 설계할 때 준수해야 하는 팀 내 표준을 정의한 가이드이다. 일관된 URL 구조, HTTP 메서드 사용, 에러 응답 형식, 버전 관리 전략을 포함한다.\n2. [kr-002#overview] (score=0.294) 본 문서는 전 직원이 숙지해야 하는 정보보안 정책의 주요 사항을 질문과 답변 형식으로 정리한 것이다. 모든 직원은 입사 시 보안 서약서에 서명해야 하며, 연 1회 보안 교육을 이수해야 한다.\n3. [kr-006#overview] (score=0.281) 이 런북은 프로덕션 환경에서 발생할 수 있는 주요 장애 시나리오와 대응 절차를 기술한 문서이다. 모든 온콜 엔지니어는 이 문서를 숙지하고 있어야 한다.\n4. [kr-010#merge_policy] (score=0.273) PR 머지는 Squash and Merge 방식을 기본으로 한다. 커밋 메시지는 Conventional Commits 형식을 따르며, feat:, fix:, docs:, refactor: 접두사를 사용한다.\n5. [kr-002#data_classification] (score=0.257) 데이터는 4단계로 분류한다: 공개(Public), 내부용(Internal), 기밀(Confidential), 극비(Top Secret). 기밀 이상 등급의 데이터는 암호화된 채널을 통해서만 전송할 수 있다.\n\n**Sources:** kr-002, kr-006, kr-007, kr-010",
+      "final_retrieved_doc_ids": [
+        "kr-007",
+        "kr-002",
+        "kr-006",
+        "kr-010"
+      ],
+      "final_recall_at_k": null,
+      "final_reciprocal_rank": null,
+      "final_keyword_coverage": 1.0,
+      "total_tokens": 892,
+      "total_ms": 14.684,
+      "iter_count": 3,
+      "stop_reason": "iter_cap",
+      "notes": "코퍼스에 없음",
+      "error": null
+    },
+    {
+      "query": "Kubernetes HPA와 VPA의 동작 차이는 무엇인가요?",
+      "difficulty": "impossible",
+      "expected_doc_ids": [],
+      "expected_keywords": [
+        "HPA",
+        "VPA"
+      ],
+      "iter0_answer": "**Query:** Kubernetes HPA와 VPA의 동작 차이는 무엇인가요?\n\n**Short answer:** Kubernetes 클러스터에서 흔히 발생하는 문제와 진단 방법을 정리한 가이드이다.\n\n**Supporting passages:**\n1. [kr-008#overview] (score=0.684) Kubernetes 클러스터에서 흔히 발생하는 문제와 진단 방법을 정리한 가이드이다. Pod 상태 이상, 네트워크 문제, 리소스 부족 시나리오를 다룬다.\n2. [kr-008#pod_issues] (score=0.400) CrashLoopBackOff 상태의 Pod는 kubectl logs 명령으로 컨테이너 로그를 확인한다. OOMKilled는 메모리 리밋이 부족하다는 의미이며, resources.limits.memory를 상향 조정해야 한다. ImagePullBackOff는 컨테이너 이미지를 가져올 수 없는 상태이다. 이미지 레지스트리 인증 정보(imagePullSecrets)를 확인하고, 이미지 태그가 정확한지 검증한다.\n3. [kr-008#networking] (score=0.399) 서비스 간 통신 문제는 kubectl exec를 이용한 컨테이너 내부 DNS 확인(nslookup, dig)으로 진단한다. NetworkPolicy가 트래픽을 차단하고 있는지 확인하고, kube-proxy 로그를 검토한다.\n4. [kr-001#overview] (score=0.371) 클라우드 네이티브 아키텍처는 컨테이너, 마이크로서비스, 서비스 메시, 불변 인프라, 선언적 API를 활용하여 탄력적이고 관리 가능하며 관측 가능한 느슨하게 결합된 시스템을 구축하는 접근 방식이다. CNCF(Cloud Native Computing Foundation)에서 정의한 이 접근 방식은 쿠버네티스를 오케스트레이션 플랫폼으로 사용하며, CI/CD 파이프라인을 통해 자동화된 배포를 수행한다.\n5. [kr-002#password_policy] (score=0.362) 비밀번호는 최소 12자 이상이며, 대문자, 소문자, 숫자, 특수문자를 각각 1개 이상 포함해야 한다. 비밀번호는 90일마다 변경해야 하며, 최근 5개의 비밀번호를 재사용할 수 없다. 2단계 인증(MFA)은 VPN 접속, 클라우드 콘솔, 소스 코드 저장소 접근 시 필수이다.\n\n**Sources:** kr-001, kr-002, kr-008",
+      "iter0_retrieved_doc_ids": [
+        "kr-008",
+        "kr-001",
+        "kr-002"
+      ],
+      "iter0_recall_at_k": null,
+      "iter0_reciprocal_rank": null,
+      "iter0_keyword_coverage": 1.0,
+      "iter0_tokens": 294,
+      "iter0_ms": 3.068,
+      "final_answer": "**Query:** Kubernetes HPA와 VPA의 동작 차이는 무엇인가요?\n\n**Short answer:** Kubernetes 클러스터에서 흔히 발생하는 문제와 진단 방법을 정리한 가이드이다.\n\n**Supporting passages:**\n1. [kr-008#overview] (score=0.684) Kubernetes 클러스터에서 흔히 발생하는 문제와 진단 방법을 정리한 가이드이다. Pod 상태 이상, 네트워크 문제, 리소스 부족 시나리오를 다룬다.\n2. [kr-008#pod_issues] (score=0.400) CrashLoopBackOff 상태의 Pod는 kubectl logs 명령으로 컨테이너 로그를 확인한다. OOMKilled는 메모리 리밋이 부족하다는 의미이며, resources.limits.memory를 상향 조정해야 한다. ImagePullBackOff는 컨테이너 이미지를 가져올 수 없는 상태이다. 이미지 레지스트리 인증 정보(imagePullSecrets)를 확인하고, 이미지 태그가 정확한지 검증한다.\n3. [kr-008#networking] (score=0.399) 서비스 간 통신 문제는 kubectl exec를 이용한 컨테이너 내부 DNS 확인(nslookup, dig)으로 진단한다. NetworkPolicy가 트래픽을 차단하고 있는지 확인하고, kube-proxy 로그를 검토한다.\n4. [kr-001#overview] (score=0.371) 클라우드 네이티브 아키텍처는 컨테이너, 마이크로서비스, 서비스 메시, 불변 인프라, 선언적 API를 활용하여 탄력적이고 관리 가능하며 관측 가능한 느슨하게 결합된 시스템을 구축하는 접근 방식이다. CNCF(Cloud Native Computing Foundation)에서 정의한 이 접근 방식은 쿠버네티스를 오케스트레이션 플랫폼으로 사용하며, CI/CD 파이프라인을 통해 자동화된 배포를 수행한다.\n5. [kr-002#password_policy] (score=0.362) 비밀번호는 최소 12자 이상이며, 대문자, 소문자, 숫자, 특수문자를 각각 1개 이상 포함해야 한다. 비밀번호는 90일마다 변경해야 하며, 최근 5개의 비밀번호를 재사용할 수 없다. 2단계 인증(MFA)은 VPN 접속, 클라우드 콘솔, 소스 코드 저장소 접근 시 필수이다.\n\n**Sources:** kr-001, kr-002, kr-008",
+      "final_retrieved_doc_ids": [
+        "kr-008",
+        "kr-001",
+        "kr-002"
+      ],
+      "final_recall_at_k": null,
+      "final_reciprocal_rank": null,
+      "final_keyword_coverage": 1.0,
+      "total_tokens": 1176,
+      "total_ms": 11.317,
+      "iter_count": 3,
+      "stop_reason": "iter_cap",
+      "notes": "코퍼스에 없음",
+      "error": null
+    },
+    {
+      "query": "gRPC와 GraphQL의 성능 특성을 비교해주세요.",
+      "difficulty": "impossible",
+      "expected_doc_ids": [],
+      "expected_keywords": [
+        "gRPC",
+        "GraphQL"
+      ],
+      "iter0_answer": "**Query:** gRPC와 GraphQL의 성능 특성을 비교해주세요.\n\n**Short answer:** PostgreSQL 18에서는 병렬 쿼리 처리 성능이 크게 개선되었다.\n\n**Supporting passages:**\n1. [kr-003#overview] (score=0.296) PostgreSQL 18에서는 병렬 쿼리 처리 성능이 크게 개선되었다. shared_buffers는 총 메모리의 25%로 설정하는 것이 일반적이며, effective_cache_size는 총 메모리의 50~75%를 권장한다.\n2. [kr-001#overview] (score=0.252) 클라우드 네이티브 아키텍처는 컨테이너, 마이크로서비스, 서비스 메시, 불변 인프라, 선언적 API를 활용하여 탄력적이고 관리 가능하며 관측 가능한 느슨하게 결합된 시스템을 구축하는 접근 방식이다. CNCF(Cloud Native Computing Foundation)에서 정의한 이 접근 방식은 쿠버네티스를 오케스트레이션 플랫폼으로 사용하며, CI/CD 파이프라인을 통해 자동화된 배포를 수행한다.\n3. [kr-006#redis_outage] (score=0.184) Redis 장애 시 애플리케이션은 캐시 미스 모드로 자동 전환되어 데이터베이스를 직접 조회한다. Sentinel 구성에서는 자동 마스터 승격이 수행된다. 장애 복구 후 캐시 워밍(warming)을 수행하여 hit rate를 회복한다.\n4. [kr-001#best_practices] (score=0.182) 12-Factor App 원칙을 준수하면 클라우드 환경에서의 이식성과 확장성이 크게 향상된다. 환경 변수를 통한 설정 관리, 로그의 이벤트 스트림 처리, 관리 프로세스의 일회성 실행 등이 핵심 원칙이다.\n5. [kr-007#error_response] (score=0.180) 에러 응답은 RFC 7807 Problem Details 형식을 따른다. type, title, status, detail, instance 필드를 포함하며, 추가 필드를 확장할 수 있다. 4xx 에러에는 사용자가 수정할 수 있는 구체적인 안내 메시지를 포함한다.\n\n**Sources:** kr-001, kr-003, kr-006, kr-007",
+      "iter0_retrieved_doc_ids": [
+        "kr-003",
+        "kr-001",
+        "kr-006",
+        "kr-007"
+      ],
+      "iter0_recall_at_k": null,
+      "iter0_reciprocal_rank": null,
+      "iter0_keyword_coverage": 1.0,
+      "iter0_tokens": 275,
+      "iter0_ms": 3.105,
+      "final_answer": "**Query:** gRPC와 GraphQL의 성능 특성을 비교해주세요.\n\n**Short answer:** PostgreSQL 18에서는 병렬 쿼리 처리 성능이 크게 개선되었다.\n\n**Supporting passages:**\n1. [kr-003#overview] (score=0.296) PostgreSQL 18에서는 병렬 쿼리 처리 성능이 크게 개선되었다. shared_buffers는 총 메모리의 25%로 설정하는 것이 일반적이며, effective_cache_size는 총 메모리의 50~75%를 권장한다.\n2. [kr-001#overview] (score=0.252) 클라우드 네이티브 아키텍처는 컨테이너, 마이크로서비스, 서비스 메시, 불변 인프라, 선언적 API를 활용하여 탄력적이고 관리 가능하며 관측 가능한 느슨하게 결합된 시스템을 구축하는 접근 방식이다. CNCF(Cloud Native Computing Foundation)에서 정의한 이 접근 방식은 쿠버네티스를 오케스트레이션 플랫폼으로 사용하며, CI/CD 파이프라인을 통해 자동화된 배포를 수행한다.\n3. [kr-006#redis_outage] (score=0.184) Redis 장애 시 애플리케이션은 캐시 미스 모드로 자동 전환되어 데이터베이스를 직접 조회한다. Sentinel 구성에서는 자동 마스터 승격이 수행된다. 장애 복구 후 캐시 워밍(warming)을 수행하여 hit rate를 회복한다.\n4. [kr-001#best_practices] (score=0.182) 12-Factor App 원칙을 준수하면 클라우드 환경에서의 이식성과 확장성이 크게 향상된다. 환경 변수를 통한 설정 관리, 로그의 이벤트 스트림 처리, 관리 프로세스의 일회성 실행 등이 핵심 원칙이다.\n5. [kr-007#error_response] (score=0.180) 에러 응답은 RFC 7807 Problem Details 형식을 따른다. type, title, status, detail, instance 필드를 포함하며, 추가 필드를 확장할 수 있다. 4xx 에러에는 사용자가 수정할 수 있는 구체적인 안내 메시지를 포함한다.\n\n**Sources:** kr-001, kr-003, kr-006, kr-007",
+      "final_retrieved_doc_ids": [
+        "kr-003",
+        "kr-001",
+        "kr-006",
+        "kr-007"
+      ],
+      "final_recall_at_k": null,
+      "final_reciprocal_rank": null,
+      "final_keyword_coverage": 1.0,
+      "total_tokens": 1100,
+      "total_ms": 14.46,
+      "iter_count": 3,
+      "stop_reason": "iter_cap",
+      "notes": "코퍼스에 없음",
+      "error": null
+    },
+    {
+      "query": "Terraform state backend에서 잠금(locking) 전략은 어떻게 구성하나요?",
+      "difficulty": "impossible",
+      "expected_doc_ids": [],
+      "expected_keywords": [
+        "Terraform",
+        "locking"
+      ],
+      "iter0_answer": "**Query:** Terraform state backend에서 잠금(locking) 전략은 어떻게 구성하나요?\n\n**Short answer:** Redis를 애플리케이션 캐시로 활용할 때의 전략과 주의사항을 정리한 가이드이다.\n\n**Supporting passages:**\n1. [kr-005#overview] (score=0.346) Redis를 애플리케이션 캐시로 활용할 때의 전략과 주의사항을 정리한 가이드이다. Cache-Aside, Write-Through, Write-Behind 세 가지 패턴 중 상황에 맞는 전략을 선택해야 한다.\n2. [kr-010#merge_policy] (score=0.329) PR 머지는 Squash and Merge 방식을 기본으로 한다. 커밋 메시지는 Conventional Commits 형식을 따르며, feat:, fix:, docs:, refactor: 접두사를 사용한다.\n3. [kr-009#alerting] (score=0.321) 알림 규칙은 Prometheus Alertmanager를 통해 관리된다. 심각도는 info, warning, critical 세 단계로 분류하며, critical 알림은 Slack 채널과 PagerDuty로 동시에 전송된다.\n4. [kr-002#data_classification] (score=0.310) 데이터는 4단계로 분류한다: 공개(Public), 내부용(Internal), 기밀(Confidential), 극비(Top Secret). 기밀 이상 등급의 데이터는 암호화된 채널을 통해서만 전송할 수 있다.\n5. [kr-008#overview] (score=0.297) Kubernetes 클러스터에서 흔히 발생하는 문제와 진단 방법을 정리한 가이드이다. Pod 상태 이상, 네트워크 문제, 리소스 부족 시나리오를 다룬다.\n\n**Sources:** kr-002, kr-005, kr-008, kr-009, kr-010",
+      "iter0_retrieved_doc_ids": [
+        "kr-005",
+        "kr-010",
+        "kr-009",
+        "kr-002",
+        "kr-008"
+      ],
+      "iter0_recall_at_k": null,
+      "iter0_reciprocal_rank": null,
+      "iter0_keyword_coverage": 1.0,
+      "iter0_tokens": 239,
+      "iter0_ms": 3.896,
+      "final_answer": "**Query:** Terraform state backend에서 잠금(locking) 전략은 어떻게 구성하나요?\n\n**Short answer:** Redis를 애플리케이션 캐시로 활용할 때의 전략과 주의사항을 정리한 가이드이다.\n\n**Supporting passages:**\n1. [kr-005#overview] (score=0.346) Redis를 애플리케이션 캐시로 활용할 때의 전략과 주의사항을 정리한 가이드이다. Cache-Aside, Write-Through, Write-Behind 세 가지 패턴 중 상황에 맞는 전략을 선택해야 한다.\n2. [kr-010#merge_policy] (score=0.329) PR 머지는 Squash and Merge 방식을 기본으로 한다. 커밋 메시지는 Conventional Commits 형식을 따르며, feat:, fix:, docs:, refactor: 접두사를 사용한다.\n3. [kr-009#alerting] (score=0.321) 알림 규칙은 Prometheus Alertmanager를 통해 관리된다. 심각도는 info, warning, critical 세 단계로 분류하며, critical 알림은 Slack 채널과 PagerDuty로 동시에 전송된다.\n4. [kr-002#data_classification] (score=0.310) 데이터는 4단계로 분류한다: 공개(Public), 내부용(Internal), 기밀(Confidential), 극비(Top Secret). 기밀 이상 등급의 데이터는 암호화된 채널을 통해서만 전송할 수 있다.\n5. [kr-008#overview] (score=0.297) Kubernetes 클러스터에서 흔히 발생하는 문제와 진단 방법을 정리한 가이드이다. Pod 상태 이상, 네트워크 문제, 리소스 부족 시나리오를 다룬다.\n\n**Sources:** kr-002, kr-005, kr-008, kr-009, kr-010",
+      "final_retrieved_doc_ids": [
+        "kr-005",
+        "kr-010",
+        "kr-009",
+        "kr-002",
+        "kr-008"
+      ],
+      "final_recall_at_k": null,
+      "final_reciprocal_rank": null,
+      "final_keyword_coverage": 1.0,
+      "total_tokens": 956,
+      "total_ms": 11.634,
+      "iter_count": 3,
+      "stop_reason": "iter_cap",
+      "notes": "코퍼스에 없음",
+      "error": null
+    },
+    {
+      "query": "Istio 서비스 메시에서 mTLS를 활성화하는 절차는 무엇인가요?",
+      "difficulty": "impossible",
+      "expected_doc_ids": [],
+      "expected_keywords": [
+        "Istio",
+        "mTLS"
+      ],
+      "iter0_answer": "**Query:** Istio 서비스 메시에서 mTLS를 활성화하는 절차는 무엇인가요?\n\n**Short answer:** 신입 개발자가 팀에 합류한 후 첫 2주 동안 완료해야 하는 업무를 정리한 체크리스트이다.\n\n**Supporting passages:**\n1. [kr-004#overview] (score=0.415) 신입 개발자가 팀에 합류한 후 첫 2주 동안 완료해야 하는 업무를 정리한 체크리스트이다. 개발 환경 설정, 코드 리뷰 프로세스 숙지, 팀 컨벤션 학습이 핵심 과제이다.\n2. [kr-002#overview] (score=0.402) 본 문서는 전 직원이 숙지해야 하는 정보보안 정책의 주요 사항을 질문과 답변 형식으로 정리한 것이다. 모든 직원은 입사 시 보안 서약서에 서명해야 하며, 연 1회 보안 교육을 이수해야 한다.\n3. [kr-006#overview] (score=0.389) 이 런북은 프로덕션 환경에서 발생할 수 있는 주요 장애 시나리오와 대응 절차를 기술한 문서이다. 모든 온콜 엔지니어는 이 문서를 숙지하고 있어야 한다.\n4. [kr-005#eviction] (score=0.363) 메모리가 maxmemory 한도에 도달하면 Redis는 설정된 정책에 따라 키를 제거한다. allkeys-lru는 가장 오래 사용되지 않은 키를 제거하며, volatile-ttl은 TTL이 가장 짧은 키를 우선 제거한다.\n5. [kr-005#overview] (score=0.339) Redis를 애플리케이션 캐시로 활용할 때의 전략과 주의사항을 정리한 가이드이다. Cache-Aside, Write-Through, Write-Behind 세 가지 패턴 중 상황에 맞는 전략을 선택해야 한다.\n\n**Sources:** kr-002, kr-004, kr-005, kr-006",
+      "iter0_retrieved_doc_ids": [
+        "kr-004",
+        "kr-002",
+        "kr-006",
+        "kr-005"
+      ],
+      "iter0_recall_at_k": null,
+      "iter0_reciprocal_rank": null,
+      "iter0_keyword_coverage": 1.0,
+      "iter0_tokens": 222,
+      "iter0_ms": 4.108,
+      "final_answer": "**Query:** Istio 서비스 메시에서 mTLS를 활성화하는 절차는 무엇인가요?\n\n**Short answer:** 신입 개발자가 팀에 합류한 후 첫 2주 동안 완료해야 하는 업무를 정리한 체크리스트이다.\n\n**Supporting passages:**\n1. [kr-004#overview] (score=0.415) 신입 개발자가 팀에 합류한 후 첫 2주 동안 완료해야 하는 업무를 정리한 체크리스트이다. 개발 환경 설정, 코드 리뷰 프로세스 숙지, 팀 컨벤션 학습이 핵심 과제이다.\n2. [kr-002#overview] (score=0.402) 본 문서는 전 직원이 숙지해야 하는 정보보안 정책의 주요 사항을 질문과 답변 형식으로 정리한 것이다. 모든 직원은 입사 시 보안 서약서에 서명해야 하며, 연 1회 보안 교육을 이수해야 한다.\n3. [kr-006#overview] (score=0.389) 이 런북은 프로덕션 환경에서 발생할 수 있는 주요 장애 시나리오와 대응 절차를 기술한 문서이다. 모든 온콜 엔지니어는 이 문서를 숙지하고 있어야 한다.\n4. [kr-005#eviction] (score=0.363) 메모리가 maxmemory 한도에 도달하면 Redis는 설정된 정책에 따라 키를 제거한다. allkeys-lru는 가장 오래 사용되지 않은 키를 제거하며, volatile-ttl은 TTL이 가장 짧은 키를 우선 제거한다.\n5. [kr-005#overview] (score=0.339) Redis를 애플리케이션 캐시로 활용할 때의 전략과 주의사항을 정리한 가이드이다. Cache-Aside, Write-Through, Write-Behind 세 가지 패턴 중 상황에 맞는 전략을 선택해야 한다.\n\n**Sources:** kr-002, kr-004, kr-005, kr-006",
+      "final_retrieved_doc_ids": [
+        "kr-004",
+        "kr-002",
+        "kr-006",
+        "kr-005"
+      ],
+      "final_recall_at_k": null,
+      "final_reciprocal_rank": null,
+      "final_keyword_coverage": 1.0,
+      "total_tokens": 888,
+      "total_ms": 14.435,
+      "iter_count": 3,
+      "stop_reason": "iter_cap",
+      "notes": "코퍼스에 없음",
+      "error": null
+    },
+    {
+      "query": "PostgreSQL의 logical replication과 physical replication의 차이는 무엇인가요?",
+      "difficulty": "impossible",
+      "expected_doc_ids": [],
+      "expected_keywords": [
+        "logical replication",
+        "physical replication"
+      ],
+      "iter0_answer": "**Query:** PostgreSQL의 logical replication과 physical replication의 차이는 무엇인가요?\n\n**Short answer:** PostgreSQL 18에서는 병렬 쿼리 처리 성능이 크게 개선되었다.\n\n**Supporting passages:**\n1. [kr-003#overview] (score=0.394) PostgreSQL 18에서는 병렬 쿼리 처리 성능이 크게 개선되었다. shared_buffers는 총 메모리의 25%로 설정하는 것이 일반적이며, effective_cache_size는 총 메모리의 50~75%를 권장한다.\n2. [kr-002#overview] (score=0.362) 본 문서는 전 직원이 숙지해야 하는 정보보안 정책의 주요 사항을 질문과 답변 형식으로 정리한 것이다. 모든 직원은 입사 시 보안 서약서에 서명해야 하며, 연 1회 보안 교육을 이수해야 한다.\n3. [kr-006#overview] (score=0.358) 이 런북은 프로덕션 환경에서 발생할 수 있는 주요 장애 시나리오와 대응 절차를 기술한 문서이다. 모든 온콜 엔지니어는 이 문서를 숙지하고 있어야 한다.\n4. [kr-005#overview] (score=0.346) Redis를 애플리케이션 캐시로 활용할 때의 전략과 주의사항을 정리한 가이드이다. Cache-Aside, Write-Through, Write-Behind 세 가지 패턴 중 상황에 맞는 전략을 선택해야 한다.\n5. [kr-004#dev_environment] (score=0.311) 개발 환경은 Docker Compose를 기반으로 구성한다. docker-compose up 명령으로 PostgreSQL, Redis, MinIO가 자동으로 프로비저닝된다. JDK 21과 Python 3.12는 미리 설치되어 있어야 한다. IDE는 IntelliJ IDEA Ultimate 또는 VS Code를 권장한다. .editorconfig 파일을 통해 들여쓰기, 인코딩, 줄 바꿈 설정이 통일된다.\n\n**Sources:** kr-002, kr-003, kr-004, kr-005, kr-006",
+      "iter0_retrieved_doc_ids": [
+        "kr-003",
+        "kr-002",
+        "kr-006",
+        "kr-005",
+        "kr-004"
+      ],
+      "iter0_recall_at_k": null,
+      "iter0_reciprocal_rank": null,
+      "iter0_keyword_coverage": 1.0,
+      "iter0_tokens": 264,
+      "iter0_ms": 4.139,
+      "final_answer": "**Query:** PostgreSQL의 logical replication과 physical replication의 차이는 무엇인가요?\n\n**Short answer:** PostgreSQL 18에서는 병렬 쿼리 처리 성능이 크게 개선되었다.\n\n**Supporting passages:**\n1. [kr-003#overview] (score=0.394) PostgreSQL 18에서는 병렬 쿼리 처리 성능이 크게 개선되었다. shared_buffers는 총 메모리의 25%로 설정하는 것이 일반적이며, effective_cache_size는 총 메모리의 50~75%를 권장한다.\n2. [kr-002#overview] (score=0.362) 본 문서는 전 직원이 숙지해야 하는 정보보안 정책의 주요 사항을 질문과 답변 형식으로 정리한 것이다. 모든 직원은 입사 시 보안 서약서에 서명해야 하며, 연 1회 보안 교육을 이수해야 한다.\n3. [kr-006#overview] (score=0.358) 이 런북은 프로덕션 환경에서 발생할 수 있는 주요 장애 시나리오와 대응 절차를 기술한 문서이다. 모든 온콜 엔지니어는 이 문서를 숙지하고 있어야 한다.\n4. [kr-005#overview] (score=0.346) Redis를 애플리케이션 캐시로 활용할 때의 전략과 주의사항을 정리한 가이드이다. Cache-Aside, Write-Through, Write-Behind 세 가지 패턴 중 상황에 맞는 전략을 선택해야 한다.\n5. [kr-004#dev_environment] (score=0.311) 개발 환경은 Docker Compose를 기반으로 구성한다. docker-compose up 명령으로 PostgreSQL, Redis, MinIO가 자동으로 프로비저닝된다. JDK 21과 Python 3.12는 미리 설치되어 있어야 한다. IDE는 IntelliJ IDEA Ultimate 또는 VS Code를 권장한다. .editorconfig 파일을 통해 들여쓰기, 인코딩, 줄 바꿈 설정이 통일된다.\n\n**Sources:** kr-002, kr-003, kr-004, kr-005, kr-006",
+      "final_retrieved_doc_ids": [
+        "kr-003",
+        "kr-002",
+        "kr-006",
+        "kr-005",
+        "kr-004"
+      ],
+      "final_recall_at_k": null,
+      "final_reciprocal_rank": null,
+      "final_keyword_coverage": 1.0,
+      "total_tokens": 1056,
+      "total_ms": 10.212,
+      "iter_count": 3,
+      "stop_reason": "iter_cap",
+      "notes": "코퍼스에 없음",
+      "error": null
+    },
+    {
+      "query": "Apache Spark의 Catalyst 옵티마이저는 어떤 최적화 기법을 사용하나요?",
+      "difficulty": "impossible",
+      "expected_doc_ids": [],
+      "expected_keywords": [
+        "Spark",
+        "Catalyst"
+      ],
+      "iter0_answer": "**Query:** Apache Spark의 Catalyst 옵티마이저는 어떤 최적화 기법을 사용하나요?\n\n**Short answer:** Redis 장애 시 애플리케이션은 캐시 미스 모드로 자동 전환되어 데이터베이스를 직접 조회한다.\n\n**Supporting passages:**\n1. [kr-006#redis_outage] (score=0.214) Redis 장애 시 애플리케이션은 캐시 미스 모드로 자동 전환되어 데이터베이스를 직접 조회한다. Sentinel 구성에서는 자동 마스터 승격이 수행된다. 장애 복구 후 캐시 워밍(warming)을 수행하여 hit rate를 회복한다.\n2. [kr-004#overview] (score=0.191) 신입 개발자가 팀에 합류한 후 첫 2주 동안 완료해야 하는 업무를 정리한 체크리스트이다. 개발 환경 설정, 코드 리뷰 프로세스 숙지, 팀 컨벤션 학습이 핵심 과제이다.\n3. [kr-001#best_practices] (score=0.190) 12-Factor App 원칙을 준수하면 클라우드 환경에서의 이식성과 확장성이 크게 향상된다. 환경 변수를 통한 설정 관리, 로그의 이벤트 스트림 처리, 관리 프로세스의 일회성 실행 등이 핵심 원칙이다.\n4. [kr-005#patterns] (score=0.184) Cache-Aside 패턴에서는 애플리케이션이 캐시를 먼저 조회하고, 캐시 미스 시 데이터베이스에서 읽어온 뒤 캐시에 저장한다. TTL(Time-To-Live)을 적절히 설정하여 데이터 일관성을 유지해야 한다. Write-Through 패턴은 쓰기 작업 시 캐시와 데이터베이스를 동시에 갱신한다. 데이터 일관성이 보장되지만, 쓰기 지연이 발생할 수 있다.\n5. [kr-003#vacuum] (score=0.183) VACUUM ANALYZE는 데드 튜플을 정리하고 통계 정보를 갱신한다. autovacuum_vacuum_threshold와 autovacuum_vacuum_scale_factor 설정을 조정하여 자동 VACUUM 빈도를 최적화할 수 있다.\n\n**Sources:** kr-001, kr-003, kr-004, kr-005, kr-006",
+      "iter0_retrieved_doc_ids": [
+        "kr-006",
+        "kr-004",
+        "kr-001",
+        "kr-005",
+        "kr-003"
+      ],
+      "iter0_recall_at_k": null,
+      "iter0_reciprocal_rank": null,
+      "iter0_keyword_coverage": 1.0,
+      "iter0_tokens": 266,
+      "iter0_ms": 3.612,
+      "final_answer": "**Query:** Apache Spark의 Catalyst 옵티마이저는 어떤 최적화 기법을 사용하나요?\n\n**Short answer:** Redis 장애 시 애플리케이션은 캐시 미스 모드로 자동 전환되어 데이터베이스를 직접 조회한다.\n\n**Supporting passages:**\n1. [kr-006#redis_outage] (score=0.214) Redis 장애 시 애플리케이션은 캐시 미스 모드로 자동 전환되어 데이터베이스를 직접 조회한다. Sentinel 구성에서는 자동 마스터 승격이 수행된다. 장애 복구 후 캐시 워밍(warming)을 수행하여 hit rate를 회복한다.\n2. [kr-004#overview] (score=0.191) 신입 개발자가 팀에 합류한 후 첫 2주 동안 완료해야 하는 업무를 정리한 체크리스트이다. 개발 환경 설정, 코드 리뷰 프로세스 숙지, 팀 컨벤션 학습이 핵심 과제이다.\n3. [kr-001#best_practices] (score=0.190) 12-Factor App 원칙을 준수하면 클라우드 환경에서의 이식성과 확장성이 크게 향상된다. 환경 변수를 통한 설정 관리, 로그의 이벤트 스트림 처리, 관리 프로세스의 일회성 실행 등이 핵심 원칙이다.\n4. [kr-005#patterns] (score=0.184) Cache-Aside 패턴에서는 애플리케이션이 캐시를 먼저 조회하고, 캐시 미스 시 데이터베이스에서 읽어온 뒤 캐시에 저장한다. TTL(Time-To-Live)을 적절히 설정하여 데이터 일관성을 유지해야 한다. Write-Through 패턴은 쓰기 작업 시 캐시와 데이터베이스를 동시에 갱신한다. 데이터 일관성이 보장되지만, 쓰기 지연이 발생할 수 있다.\n5. [kr-003#vacuum] (score=0.183) VACUUM ANALYZE는 데드 튜플을 정리하고 통계 정보를 갱신한다. autovacuum_vacuum_threshold와 autovacuum_vacuum_scale_factor 설정을 조정하여 자동 VACUUM 빈도를 최적화할 수 있다.\n\n**Sources:** kr-001, kr-003, kr-004, kr-005, kr-006",
+      "final_retrieved_doc_ids": [
+        "kr-006",
+        "kr-004",
+        "kr-001",
+        "kr-005",
+        "kr-003"
+      ],
+      "final_recall_at_k": null,
+      "final_reciprocal_rank": null,
+      "final_keyword_coverage": 1.0,
+      "total_tokens": 1064,
+      "total_ms": 14.237,
+      "iter_count": 3,
+      "stop_reason": "iter_cap",
+      "notes": "코퍼스에 없음",
+      "error": null
+    }
+  ]
+}

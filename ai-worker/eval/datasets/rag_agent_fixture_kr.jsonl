@@ -1,0 +1,36 @@
+# Difficulty-stratified Korean RAG eval dataset for the agent loop A/B gate.
+# Targets the kr_sample.jsonl fixture. Schema matches rag_sample_kr.jsonl plus
+# a "difficulty" field in {"easy","hard","impossible"}.
+#   easy       : one-fact, should succeed at iter=0
+#   hard       : multi-fact / cross-section / cross-document; loop may help
+#   impossible : facts not present in the kr_sample corpus; expect early-stop
+{"query": "CNCF가 정의한 클라우드 네이티브 아키텍처의 오케스트레이션 플랫폼은 무엇인가요?", "difficulty": "easy", "expected_doc_ids": ["kr-001"], "expected_keywords": ["쿠버네티스"], "notes": "단일 사실"}
+{"query": "사내 보안 정책에서 요구하는 비밀번호 최소 길이는 몇 자인가요?", "difficulty": "easy", "expected_doc_ids": ["kr-002"], "expected_keywords": ["12자"], "notes": "단일 사실"}
+{"query": "PostgreSQL 18에서 shared_buffers는 총 메모리의 몇 퍼센트로 설정하는 것이 일반적인가요?", "difficulty": "easy", "expected_doc_ids": ["kr-003"], "expected_keywords": ["25%"], "notes": "단일 사실"}
+{"query": "PR을 머지하려면 몇 명의 리뷰어 승인이 필요한가요?", "difficulty": "easy", "expected_doc_ids": ["kr-004"], "expected_keywords": ["1명"], "notes": "단일 사실"}
+{"query": "Cache-Aside 패턴에서 캐시 미스가 발생하면 어디에서 데이터를 읽어오나요?", "difficulty": "easy", "expected_doc_ids": ["kr-005"], "expected_keywords": ["데이터베이스"], "notes": "단일 사실"}
+{"query": "PgBouncer를 통한 자동 페일오버는 몇 분 이내에 수행되나요?", "difficulty": "easy", "expected_doc_ids": ["kr-006"], "expected_keywords": ["1분"], "notes": "단일 사실"}
+{"query": "REST API URL 경로에 사용하는 케이스 스타일은 무엇인가요?", "difficulty": "easy", "expected_doc_ids": ["kr-007"], "expected_keywords": ["kebab-case"], "notes": "단일 사실"}
+{"query": "CrashLoopBackOff 상태의 Pod에서 컨테이너 로그를 확인하는 명령어는 무엇인가요?", "difficulty": "easy", "expected_doc_ids": ["kr-008"], "expected_keywords": ["kubectl logs"], "notes": "단일 사실"}
+{"query": "데이터 파이프라인 오류율이 몇 퍼센트를 넘으면 PagerDuty 경보가 트리거되나요?", "difficulty": "easy", "expected_doc_ids": ["kr-009"], "expected_keywords": ["1%"], "notes": "단일 사실"}
+{"query": "PR 머지 시 기본으로 사용하는 머지 방식은 무엇인가요?", "difficulty": "easy", "expected_doc_ids": ["kr-010"], "expected_keywords": ["Squash"], "notes": "단일 사실"}
+{"query": "MFA가 필수로 적용되는 세 가지 접근 대상을 모두 알려주세요.", "difficulty": "hard", "expected_doc_ids": ["kr-002"], "expected_keywords": ["VPN", "클라우드 콘솔", "소스 코드"], "notes": "동일 섹션 다중 사실"}
+{"query": "B-Tree, GIN, BRIN 인덱스는 각각 어떤 용도에 적합한가요?", "difficulty": "hard", "expected_doc_ids": ["kr-003"], "expected_keywords": ["B-Tree", "GIN", "BRIN"], "notes": "비교형 질의"}
+{"query": "Cache-Aside 패턴과 Write-Through 패턴의 동작 차이를 설명해주세요.", "difficulty": "hard", "expected_doc_ids": ["kr-005"], "expected_keywords": ["Cache-Aside", "Write-Through", "데이터베이스"], "notes": "비교형 질의"}
+{"query": "Redis 메모리 정책 allkeys-lru와 volatile-ttl은 각각 어떤 키를 제거하나요?", "difficulty": "hard", "expected_doc_ids": ["kr-005"], "expected_keywords": ["allkeys-lru", "volatile-ttl"], "notes": "비교형 질의"}
+{"query": "데이터베이스 장애 복구에서 pg_ctl promote와 pg_rewind는 각각 어떤 역할을 하나요?", "difficulty": "hard", "expected_doc_ids": ["kr-006"], "expected_keywords": ["pg_ctl", "pg_rewind"], "notes": "동일 섹션 다중 사실"}
+{"query": "쿠버네티스에서 CrashLoopBackOff와 OOMKilled는 각각 어떤 상황을 의미하나요?", "difficulty": "hard", "expected_doc_ids": ["kr-008"], "expected_keywords": ["CrashLoopBackOff", "OOMKilled"], "notes": "비교형 질의"}
+{"query": "VPN 접속에 필요한 인증 방식과 데이터베이스 장애 시 자동 페일오버를 수행하는 도구는 각각 무엇인가요?", "difficulty": "hard", "expected_doc_ids": ["kr-002", "kr-006"], "expected_keywords": ["MFA", "PgBouncer"], "notes": "교차 문서"}
+{"query": "신입 개발자가 사용해야 하는 JDK 버전과 에러 응답에 적용되는 RFC 규격은 무엇인가요?", "difficulty": "hard", "expected_doc_ids": ["kr-004", "kr-007"], "expected_keywords": ["JDK 21", "RFC 7807"], "notes": "교차 문서"}
+{"query": "Write-Through 패턴의 단점과 BRIN 인덱스가 가장 잘 동작하는 데이터 유형은 무엇인가요?", "difficulty": "hard", "expected_doc_ids": ["kr-005", "kr-003"], "expected_keywords": ["쓰기 지연", "시계열"], "notes": "교차 문서"}
+{"query": "핫픽스 브랜치 네이밍 규칙과 Prometheus Alertmanager에서 관리되는 심각도 단계는 각각 무엇인가요?", "difficulty": "hard", "expected_doc_ids": ["kr-010", "kr-009"], "expected_keywords": ["hotfix/", "critical"], "notes": "교차 문서"}
+{"query": "Kafka Streams의 exactly-once 처리 보장 원리는 무엇인가요?", "difficulty": "impossible", "expected_doc_ids": [], "expected_keywords": ["exactly-once", "Kafka Streams"], "notes": "코퍼스에 없음"}
+{"query": "TypeScript 5.9에서 decorator 스펙이 어떻게 변경되었나요?", "difficulty": "impossible", "expected_doc_ids": [], "expected_keywords": ["TypeScript", "decorator"], "notes": "코퍼스에 없음"}
+{"query": "Rust의 Tokio와 async-std 런타임의 성능 차이를 비교해주세요.", "difficulty": "impossible", "expected_doc_ids": [], "expected_keywords": ["Tokio", "async-std"], "notes": "코퍼스에 없음"}
+{"query": "MongoDB 샤딩에서 샤드 키를 선택할 때 고려해야 하는 사항은 무엇인가요?", "difficulty": "impossible", "expected_doc_ids": [], "expected_keywords": ["MongoDB", "샤드 키"], "notes": "코퍼스에 없음"}
+{"query": "Kubernetes HPA와 VPA의 동작 차이는 무엇인가요?", "difficulty": "impossible", "expected_doc_ids": [], "expected_keywords": ["HPA", "VPA"], "notes": "코퍼스에 없음"}
+{"query": "gRPC와 GraphQL의 성능 특성을 비교해주세요.", "difficulty": "impossible", "expected_doc_ids": [], "expected_keywords": ["gRPC", "GraphQL"], "notes": "코퍼스에 없음"}
+{"query": "Terraform state backend에서 잠금(locking) 전략은 어떻게 구성하나요?", "difficulty": "impossible", "expected_doc_ids": [], "expected_keywords": ["Terraform", "locking"], "notes": "코퍼스에 없음"}
+{"query": "Istio 서비스 메시에서 mTLS를 활성화하는 절차는 무엇인가요?", "difficulty": "impossible", "expected_doc_ids": [], "expected_keywords": ["Istio", "mTLS"], "notes": "코퍼스에 없음"}
+{"query": "PostgreSQL의 logical replication과 physical replication의 차이는 무엇인가요?", "difficulty": "impossible", "expected_doc_ids": [], "expected_keywords": ["logical replication", "physical replication"], "notes": "코퍼스에 없음"}
+{"query": "Apache Spark의 Catalyst 옵티마이저는 어떤 최적화 기법을 사용하나요?", "difficulty": "impossible", "expected_doc_ids": [], "expected_keywords": ["Spark", "Catalyst"], "notes": "코퍼스에 없음"}
