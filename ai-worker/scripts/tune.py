@@ -1,6 +1,6 @@
 """Optuna-driven hyperparameter tuning over the eval harness.
 
-Reads `ai-worker/eval/experiments/active.yaml`, drives a TPE study by
+Reads `eval/experiments/active.yaml` (cwd=ai-worker/), drives a TPE study by
 shelling out to `python -m eval.run_eval <mode> ...` once per trial,
 parses the JSON report, and records the primary / secondary metrics
 plus latency + cost onto each Optuna trial.

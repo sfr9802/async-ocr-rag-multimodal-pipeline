@@ -360,10 +360,11 @@ are explicit non-goals for v1 and are **not** implemented:
 - **Per-page captions are single-page in v1.** Multi-page PDFs get
   OCR on every page but only page 1 goes through the vision stage.
   Extending this is a config knob change + a loop in the capability.
-- **Multimodal evaluation is mostly manual.** The eval schema stub
-  in `ai-worker/eval/datasets/multimodal_sample.jsonl` is a
-  forward-looking placeholder. There is no multimodal harness yet —
-  that's the next-phase deliverable.
+- **Multimodal evaluation runs on the same harness shape as RAG/OCR.**
+  `ai-worker/eval/harness/multimodal_eval.py` runs against
+  `multimodal_sample.jsonl` (mixed EN/KR + Phase 9 anime posters) and
+  the Phase 9 `multimodal_anime_kr.jsonl` set. Both file paths and the
+  `domain` field on each row let reports split per-domain metrics.
 - **No VLM answer generation.** `FINAL_RESPONSE` is produced by the
   existing extractive generator, which consumes the fused OCR + vision
   context as a synthetic retrieval chunk. Plugging in a real LLM

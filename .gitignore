@@ -65,3 +65,17 @@ local-storage/
 infra/postgres/data/
 infra/redis/data/
 infra/minio/data/
+
+# ---- Phase 9 dataset artifacts (local-only) ----
+# The full 1,764-title namu-wiki sample lives outside the repo; if a
+# contributor stages it locally, keep it out of git. We commit only the
+# 300-title reservoir sample at fixtures/anime_corpus_kr.jsonl (~17 MB).
+ai-worker/fixtures/corpus_anime_full/
+# sample_check.py HTML reports + reviewer annotation JSONs are local.
+review/
+
+# ---- RAG build artifacts (local-only) ----
+# FAISS index + build manifest are rebuilt from fixtures via
+# scripts/build_rag_index.py; keep them out of git.
+rag-data/*.index
+rag-data/build.json
