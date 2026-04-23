@@ -151,16 +151,21 @@ class IngestService:
             if not doc_id:
                 continue
             title = str(raw.get("title") or raw.get("seed") or "")[:500]
+            category_raw = raw.get("category")
+            domain_raw = raw.get("domain")
+            language_raw = raw.get("language")
             docs.append(DocumentRow(
                 doc_id=doc_id,
                 title=title or None,
                 source=source_label,
-                category=None,
+                category=str(category_raw)[:32] if category_raw else None,
                 metadata={
                     k: raw.get(k)
                     for k in ("seed", "section_order", "created_at")
                     if raw.get(k) is not None
                 },
+                domain=str(domain_raw)[:32] if domain_raw else None,
+                language=str(language_raw)[:8] if language_raw else None,
             ))
 
             sections = raw.get("sections") or {}

@@ -266,14 +266,35 @@ _LLM_SYSTEM_PROMPT = (
     "'other'): what the user is actually trying to learn.\n"
     "  rewrites (array of strings, up to 3): alternate phrasings that would "
     "also retrieve relevant passages. Empty array is fine.\n"
+    "  filters (object): metadata filters that narrow the search space. "
+    "filters MAY ONLY contain these keys, and ONLY when the query makes "
+    "the value unambiguous; otherwise OMIT the key entirely (do not guess):\n"
+    "    domain   in {'anime', 'enterprise'}\n"
+    "    category in {'hr', 'finance', 'it', 'product', 'legal'}\n"
+    "    language in {'ko', 'en'}\n"
+    "  An empty object {} is the correct answer when no signal is strong.\n"
     "Return nothing except the JSON object."
 )
 
 _LLM_SCHEMA_HINT = (
     '{"normalized": string, "keywords": [string, ...], '
     '"intent": "definition"|"comparison"|"procedure"|"factoid"|"other", '
-    '"rewrites": [string, ...]}'
+    '"rewrites": [string, ...], '
+    '"filters": {"domain"?: "anime"|"enterprise", '
+    '"category"?: "hr"|"finance"|"it"|"product"|"legal", '
+    '"language"?: "ko"|"en"}}'
 )
+
+
+# The LLM is the ONLY parser that emits filters. Mirrors the SQL
+# whitelist on RagMetadataStore.doc_ids_matching: any value Claude
+# proposes outside these enums is silently dropped at materialize
+# time so a hallucinated "domain":"news" can't reach the SQL layer.
+_FILTER_WHITELIST: dict[str, frozenset[str]] = {
+    "domain":   frozenset({"anime", "enterprise"}),
+    "category": frozenset({"hr", "finance", "it", "product", "legal"}),
+    "language": frozenset({"ko", "en"}),
+}
 
 _LLM_KEYWORD_CAP = 10
 _LLM_REWRITE_CAP = 3
@@ -338,7 +359,7 @@ class LlmQueryParser(QueryParserProvider):
                 role="user",
                 content=(
                     f"Query: {query}\n\n"
-                    "Extract normalized + keywords + intent + rewrites."
+                    "Extract normalized + keywords + intent + rewrites + filters."
                 ),
             ),
         ]
@@ -424,12 +445,30 @@ class LlmQueryParser(QueryParserProvider):
             if len(rewrites) >= _LLM_REWRITE_CAP:
                 break
 
+        # Filters are optional. We accept ONLY keys/values that match the
+        # whitelist — any out-of-vocabulary value is silently dropped
+        # rather than falling back, since the parser already proved it
+        # could produce structured JSON. A whole-payload fallback would
+        # over-correct on a single noisy field.
+        raw_filters = data.get("filters", {}) or {}
+        if not isinstance(raw_filters, dict):
+            raise ValueError("'filters' must be an object (or omitted).")
+        filters: dict[str, str] = {}
+        for key, value in raw_filters.items():
+            if key not in _FILTER_WHITELIST:
+                continue
+            if not isinstance(value, str):
+                continue
+            value = value.strip().lower()
+            if value in _FILTER_WHITELIST[key]:
+                filters[key] = value
+
         return ParsedQuery(
             original=query,
             normalized=normalized,
             keywords=keywords,
             intent=intent,  # type: ignore[arg-type]
             rewrites=rewrites,
-            filters={},
+            filters=filters,
             parser_name="llm",
         )

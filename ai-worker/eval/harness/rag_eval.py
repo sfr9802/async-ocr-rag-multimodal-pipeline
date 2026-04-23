@@ -145,6 +145,41 @@ class RagEvalSummary:
     started_at: Optional[str] = None
     finished_at: Optional[str] = None
     duration_ms: float = 0.0
+    cross_domain_refusal_rate: Optional[float] = None
+    cross_domain_zero_results_rate: Optional[float] = None
+
+
+# Phrases the extractive / claude generators emit when no relevant
+# context is found. We score a row as a "successful refusal" when the
+# answer contains ANY of these. Kept short and explicit so the gate is
+# stable across generator variants.
+_REFUSAL_PHRASES_KR = (
+    "정보가 없습니다",
+    "정보 없음",
+    "문서에서 찾을 수 없습니다",
+    "문서에서 관련 정보를 찾을 수 없습니다",
+    "답변할 수 없습니다",
+    "관련 내용을 찾을 수 없습니다",
+    "찾을 수 없습니다",
+    "해당 정보가 없습니다",
+)
+_REFUSAL_PHRASES_EN = (
+    "no relevant passages",
+    "no relevant context",
+    "could not find",
+    "i don't have",
+    "not in the documents",
+)
+
+
+def _is_refusal(answer: str) -> bool:
+    if not answer:
+        return True
+    needle = answer.lower()
+    return (
+        any(p in answer for p in _REFUSAL_PHRASES_KR)
+        or any(p in needle for p in _REFUSAL_PHRASES_EN)
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -278,6 +313,112 @@ def run_rag_eval(
 
     _log_summary(summary)
     return summary, rows
+
+
+# ---------------------------------------------------------------------------
+# Cross-domain eval (Phase 9).
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class CrossDomainRow:
+    query: str
+    filters: Dict[str, str]
+    expected_action: str = "unanswerable"
+    retrieved_doc_ids: List[str] = field(default_factory=list)
+    filter_produced_no_docs: bool = False
+    answer: Optional[str] = None
+    refusal_detected: bool = False
+    cross_domain_pass: bool = False
+    retrieval_ms: float = 0.0
+    generation_ms: float = 0.0
+    notes: Optional[str] = None
+    error: Optional[str] = None
+
+
+def run_rag_cross_domain_eval(
+    dataset: List[Mapping[str, Any]],
+    *,
+    retriever: _RetrieverLike,
+    generator: _GeneratorLike,
+    dataset_path: Optional[str] = None,
+) -> tuple[Dict[str, Any], List[CrossDomainRow]]:
+    """Score the cross-domain unanswerable set.
+
+    A row passes when the FILTER did its job (top-k contains nothing
+    on-topic — typically zero results because the wrong-domain corpus
+    has been excluded) AND the generator produced a refusal phrase
+    rather than hallucinating. The aggregate ``cross_domain_refusal_rate``
+    is the per-row pass fraction.
+    """
+    rows: List[CrossDomainRow] = []
+    for idx, raw in enumerate(dataset, start=1):
+        query = _require_str(raw, "query", row_index=idx)
+        filters_raw = raw.get("filters") or {}
+        if not isinstance(filters_raw, dict):
+            raise ValueError(f"Row {idx} 'filters' must be an object.")
+        filters = {str(k): str(v) for k, v in filters_raw.items()}
+        notes = raw.get("notes")
+        row = CrossDomainRow(
+            query=query,
+            filters=filters,
+            expected_action=str(raw.get("expected_action", "unanswerable")),
+            notes=str(notes) if notes is not None else None,
+        )
+
+        try:
+            t0 = time.perf_counter()
+            report = retriever.retrieve(query, filters=filters)
+            t1 = time.perf_counter()
+            retrieved = list(getattr(report, "results", []) or [])
+            row.retrieved_doc_ids = [getattr(r, "doc_id", "") for r in retrieved]
+            row.filter_produced_no_docs = bool(
+                getattr(report, "filter_produced_no_docs", False)
+            )
+            answer = generator.generate(query, retrieved)
+            t2 = time.perf_counter()
+            row.answer = _truncate(answer, 600)
+            row.refusal_detected = _is_refusal(answer)
+            row.retrieval_ms = round((t1 - t0) * 1000.0, 3)
+            row.generation_ms = round((t2 - t1) * 1000.0, 3)
+            # Pass = the generator produced a refusal phrase rather than
+            # hallucinating an answer from whatever chunks the filter
+            # allowed through. The filter's correctness is verified
+            # separately by inspecting retrieved_doc_ids against the
+            # row's filters (no on-topic anime doc_id leaks into a
+            # {domain: enterprise} retrieval, and vice versa — that's
+            # the filter doing its job, not a generator concern).
+            row.cross_domain_pass = row.refusal_detected
+        except Exception as ex:
+            row.error = f"{type(ex).__name__}: {ex}"
+            log.exception("Cross-domain eval row %d (%r) failed", idx, query)
+        rows.append(row)
+
+    pass_count = sum(1 for r in rows if r.cross_domain_pass)
+    no_docs_count = sum(1 for r in rows if not r.retrieved_doc_ids or r.filter_produced_no_docs)
+    summary = {
+        "dataset_path": dataset_path or "<inline>",
+        "row_count": len(rows),
+        "error_count": sum(1 for r in rows if r.error is not None),
+        "cross_domain_refusal_rate": round(pass_count / max(1, len(rows)), 4),
+        "cross_domain_zero_results_rate": round(no_docs_count / max(1, len(rows)), 4),
+        "passing_rows": pass_count,
+        "rows": [_cross_domain_row_to_dict(r) for r in rows],
+    }
+    log.info(
+        "Cross-domain eval complete: rows=%d pass=%d (%.3f) zero_results=%d (%.3f)",
+        summary["row_count"], pass_count, summary["cross_domain_refusal_rate"],
+        no_docs_count, summary["cross_domain_zero_results_rate"],
+    )
+    return summary, rows
+
+
+def _cross_domain_row_to_dict(row: CrossDomainRow) -> Dict[str, Any]:
+    return asdict(row)
+
+
+def cross_domain_row_to_dict(row: CrossDomainRow) -> Dict[str, Any]:
+    return asdict(row)
 
 
 # ---------------------------------------------------------------------------

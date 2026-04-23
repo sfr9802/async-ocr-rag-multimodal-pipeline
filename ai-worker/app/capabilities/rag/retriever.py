@@ -26,7 +26,7 @@ selected chunk. ``use_mmr=False`` (default) reproduces Phase 1 exactly.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List, Optional
 
 from app.capabilities.rag.embeddings import EmbeddingProvider
@@ -62,6 +62,8 @@ class RetrievalReport:
     mmr_lambda: Optional[float] = None
     dup_rate: float = 0.0
     parsed_query: Optional[ParsedQuery] = None
+    filters: dict = field(default_factory=dict)
+    filter_produced_no_docs: bool = False
 
 
 class Retriever:
@@ -168,7 +170,11 @@ class Retriever:
             self._reranker.name,
         )
 
-    def retrieve(self, query: str) -> RetrievalReport:
+    def retrieve(
+        self,
+        query: str,
+        filters: Optional[dict] = None,
+    ) -> RetrievalReport:
         if self._info is None:
             raise RuntimeError("Retriever is not ready — call ensure_ready() first")
         parsed = self._parser.parse(query)
@@ -176,7 +182,58 @@ class Retriever:
         # collapses whitespace and strips unicode quotes here; NoOp passes through.
         embed_query = parsed.normalized or query
 
-        candidates = self._retrieve_candidates(embed_query)
+        # Compose effective filters: the caller's explicit dict wins over
+        # whatever the parser inferred, which matches the usual
+        # "caller-knows-best" ordering.
+        parsed_filters = dict(parsed.filters or {})
+        override = dict(filters or {})
+        effective_filters: dict = {**parsed_filters, **override}
+
+        # Resolve the doc_id allowlist BEFORE the FAISS search so we can
+        # short-circuit on a filter that matches no documents. At current
+        # corpus scale (<10k docs) the lookup is a millisecond or two.
+        # TODO: once chunk count exceeds ~100k, swap this post-filter for
+        # faiss.IDSelectorArray against chunk ids so we don't waste the
+        # candidate budget on docs that are about to be filtered out.
+        allowed_doc_ids: Optional[set[str]] = None
+        filter_produced_no_docs = False
+        if effective_filters:
+            try:
+                matched = self._metadata.doc_ids_matching(effective_filters)
+            except ValueError:
+                log.warning(
+                    "Retriever: rejecting unknown filter keys %s",
+                    sorted(effective_filters.keys()),
+                )
+                raise
+            allowed_doc_ids = {str(d) for d in matched}
+            if not allowed_doc_ids:
+                filter_produced_no_docs = True
+                log.info(
+                    "Retriever: filters=%s matched zero docs — short-circuit",
+                    effective_filters,
+                )
+                return RetrievalReport(
+                    query=query,
+                    top_k=self._top_k,
+                    index_version=self._info.index_version,
+                    embedding_model=self._info.embedding_model,
+                    results=[],
+                    reranker_name=self._reranker.name,
+                    candidate_k=self._candidate_k,
+                    topk_gap=None,
+                    topk_rel_gap=None,
+                    use_mmr=self._use_mmr,
+                    mmr_lambda=self._mmr_lambda if self._use_mmr else None,
+                    dup_rate=0.0,
+                    parsed_query=parsed,
+                    filters=effective_filters,
+                    filter_produced_no_docs=True,
+                )
+
+        candidates = self._retrieve_candidates(
+            embed_query, allowed_doc_ids=allowed_doc_ids,
+        )
 
         # Multi-query RRF: when the parser produced rewrites, run one
         # FAISS search per rewrite, merge their candidate lists with the
@@ -186,7 +243,7 @@ class Retriever:
         # single-query behaviour stays bit-for-bit identical.
         if parsed.rewrites:
             rewrite_candidates = [
-                self._retrieve_candidates(r)
+                self._retrieve_candidates(r, allowed_doc_ids=allowed_doc_ids)
                 for r in parsed.rewrites
             ]
             candidates = _rrf_merge(
@@ -210,6 +267,8 @@ class Retriever:
                 mmr_lambda=self._mmr_lambda if self._use_mmr else None,
                 dup_rate=0.0,
                 parsed_query=parsed,
+                filters=effective_filters,
+                filter_produced_no_docs=filter_produced_no_docs,
             )
 
         # When MMR is on, ask the reranker for its FULL candidate pool so
@@ -247,18 +306,33 @@ class Retriever:
             mmr_lambda=self._mmr_lambda if self._use_mmr else None,
             dup_rate=dup_rate_value,
             parsed_query=parsed,
+            filters=effective_filters,
+            filter_produced_no_docs=filter_produced_no_docs,
         )
 
-    def _retrieve_candidates(self, query: str) -> List[RetrievedChunk]:
+    def _retrieve_candidates(
+        self,
+        query: str,
+        *,
+        allowed_doc_ids: Optional[set[str]] = None,
+    ) -> List[RetrievedChunk]:
         """Run one FAISS search + metadata lookup, return candidate chunks.
 
         Factored out of ``retrieve`` so the multi-query RRF path can reuse
         it per rewrite without duplicating the embed/search/lookup glue.
         The returned list is ordered by bi-encoder score (descending) and
         capped at ``candidate_k``.
+
+        When ``allowed_doc_ids`` is provided, FAISS is asked for
+        ``candidate_k * 2`` candidates and the result is post-filtered
+        down to ``candidate_k`` matches against the allowlist. The 2x
+        over-fetch is a cheap hedge against the filter eliminating most
+        of the top-k; we could tune it later but at current scale the
+        extra lookup is negligible.
         """
+        overfetch = self._candidate_k * 2 if allowed_doc_ids is not None else self._candidate_k
         vectors = self._embedder.embed_queries([query])
-        hits = self._index.search(vectors, top_k=self._candidate_k)
+        hits = self._index.search(vectors, top_k=overfetch)
         if not hits or not hits[0]:
             return []
         row_ids = [row_id for row_id, _score in hits[0]]
@@ -268,6 +342,8 @@ class Retriever:
         score_by_row = {row_id: score for row_id, score in hits[0]}
         candidates: List[RetrievedChunk] = []
         for hit in looked_up:
+            if allowed_doc_ids is not None and hit.doc_id not in allowed_doc_ids:
+                continue
             candidates.append(RetrievedChunk(
                 chunk_id=hit.chunk_id,
                 doc_id=hit.doc_id,
@@ -275,6 +351,8 @@ class Retriever:
                 text=hit.text,
                 score=float(score_by_row.get(hit.faiss_row_id, 0.0)),
             ))
+            if len(candidates) >= self._candidate_k:
+                break
         return candidates
 
 

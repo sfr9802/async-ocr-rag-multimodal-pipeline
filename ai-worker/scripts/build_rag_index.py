@@ -36,6 +36,22 @@ from app.core.logging import configure_logging
 _FIXTURES_DIR = Path(__file__).resolve().parent.parent / "fixtures"
 DEFAULT_FIXTURE = _FIXTURES_DIR / "anime_sample.jsonl"
 KR_FIXTURE = _FIXTURES_DIR / "kr_sample.jsonl"
+ANIME_CORPUS_KR_FIXTURE = _FIXTURES_DIR / "anime_corpus_kr.jsonl"
+ANIME_KR_FIXTURE = _FIXTURES_DIR / "anime_kr.jsonl"
+ENTERPRISE_INDEX_FIXTURE = _FIXTURES_DIR / "corpus_kr" / "index.jsonl"
+
+
+# Per-fixture default (domain, language) applied when a row doesn't
+# already carry the field. B.1's constraint ("anime fixture CONTENT must
+# not change") forces us to inject these at ingest time instead of
+# rewriting the JSONL in place.
+_FIXTURE_DEFAULTS: dict[Path, dict[str, str]] = {
+    DEFAULT_FIXTURE:         {"domain": "anime",      "language": "en"},
+    KR_FIXTURE:              {"domain": "enterprise", "language": "ko"},
+    ANIME_CORPUS_KR_FIXTURE: {"domain": "anime",      "language": "ko"},
+    ANIME_KR_FIXTURE:        {"domain": "anime",      "language": "ko"},
+    ENTERPRISE_INDEX_FIXTURE: {"domain": "enterprise", "language": "ko"},
+}
 
 
 def main() -> int:
@@ -54,12 +70,20 @@ def main() -> int:
         nargs="?",
         const="en",
         default=None,
-        choices=["en", "kr", "both"],
+        choices=[
+            "en", "kr", "both", "anime_corpus_kr",
+            "anime", "enterprise", "all",
+        ],
         help=(
             "Use committed fixtures instead of --input. "
             "'en' = anime_sample.jsonl (default), "
             "'kr' = kr_sample.jsonl, "
-            "'both' = merge both into a single index."
+            "'both' = merge en + kr into a single index, "
+            "'anime_corpus_kr' = anime_corpus_kr.jsonl "
+            "(300-title Korean anime corpus sampled from port/rag), "
+            "'anime' (Phase 9) = anime_sample.jsonl + anime_kr.jsonl, "
+            "'enterprise' (Phase 9) = fixtures/corpus_kr/index.jsonl, "
+            "'all' (Phase 9) = anime_sample + anime_kr + corpus_kr/index.jsonl."
         ),
     )
     parser.add_argument(
@@ -90,10 +114,27 @@ def main() -> int:
     input_paths: list[Path] = []
     if args.fixture is not None:
         fixture_lang = args.fixture
-        if fixture_lang in ("en", "both"):
+        if fixture_lang == "anime_corpus_kr":
+            input_paths.append(ANIME_CORPUS_KR_FIXTURE)
+        elif fixture_lang == "anime":
             input_paths.append(DEFAULT_FIXTURE)
-        if fixture_lang in ("kr", "both"):
+            input_paths.append(ANIME_KR_FIXTURE)
+        elif fixture_lang == "enterprise":
+            input_paths.append(ENTERPRISE_INDEX_FIXTURE)
+        elif fixture_lang == "all":
+            # Unified Phase 9 index. Includes the two anime corpora (en +
+            # ko), the pre-Phase-9 KR enterprise-ish placeholder (so
+            # rag_sample_kr.jsonl baseline still reproduces), AND the
+            # new synthetic enterprise corpus under fixtures/corpus_kr/.
+            input_paths.append(DEFAULT_FIXTURE)
+            input_paths.append(ANIME_KR_FIXTURE)
             input_paths.append(KR_FIXTURE)
+            input_paths.append(ENTERPRISE_INDEX_FIXTURE)
+        else:
+            if fixture_lang in ("en", "both"):
+                input_paths.append(DEFAULT_FIXTURE)
+            if fixture_lang in ("kr", "both"):
+                input_paths.append(KR_FIXTURE)
     elif args.input is not None:
         input_paths.append(args.input)
     else:
@@ -105,20 +146,14 @@ def main() -> int:
             log.error("Dataset not found: %s", p)
             return 2
 
-    # For 'both' mode, merge fixture files into a temp JSONL so the
-    # ingester sees a single stream.
-    if len(input_paths) == 1:
-        input_path = input_paths[0]
-    else:
-        import tempfile
-        merged = tempfile.NamedTemporaryFile(
-            mode="w", suffix=".jsonl", delete=False, encoding="utf-8",
-        )
-        for p in input_paths:
-            merged.write(p.read_text(encoding="utf-8"))
-        merged.close()
-        input_path = Path(merged.name)
-        log.info("Merged %d fixtures into %s", len(input_paths), input_path)
+    # Merge and inject Phase 9 default (domain, language) per-fixture so
+    # kr_sample.jsonl rows (which predate the V4 schema) don't land in
+    # ragmeta with NULL domain/language after a rebuild. Rows that
+    # already carry the fields are left untouched — the injection is
+    # strictly a fill-forward.
+    input_path = _prepare_merged_fixture(
+        input_paths, log, fixture_label=args.fixture,
+    )
 
     settings = get_settings()
     log.info("Dataset:        %s", input_path)
@@ -166,22 +201,38 @@ def main() -> int:
         result.info.dimension,
     )
 
-    # Record languages in build.json for downstream tools.
+    # Record languages + domains in build.json for downstream tools.
     languages = ["en"]
+    domains = ["anime"]
     if args.fixture == "kr":
         languages = ["kr"]
+        domains = ["enterprise"]
     elif args.fixture == "both":
         languages = ["en", "kr"]
+        domains = ["anime", "enterprise"]
+    elif args.fixture == "anime_corpus_kr":
+        languages = ["ko"]
+        domains = ["anime"]
+    elif args.fixture == "anime":
+        languages = ["en", "ko"]
+        domains = ["anime"]
+    elif args.fixture == "enterprise":
+        languages = ["ko"]
+        domains = ["enterprise"]
+    elif args.fixture == "all":
+        languages = ["en", "ko"]
+        domains = ["anime", "enterprise"]
     build_json_path = Path(settings.rag_index_dir) / "build.json"
     if build_json_path.exists():
         import json as _json
         build_meta = _json.loads(build_json_path.read_text(encoding="utf-8"))
         build_meta["languages"] = languages
+        build_meta["domains"] = domains
         build_json_path.write_text(
             _json.dumps(build_meta, indent=2, ensure_ascii=False),
             encoding="utf-8",
         )
-        log.info("build.json updated with languages=%s", languages)
+        log.info("build.json updated with languages=%s domains=%s", languages, domains)
 
     stats = metadata.stats()
     log.info("ragmeta stats: %s", stats)
@@ -202,6 +253,76 @@ def main() -> int:
         result.info.embedding_model,
     )
     return 0
+
+
+def _prepare_merged_fixture(
+    input_paths: list[Path],
+    log: logging.Logger,
+    *,
+    fixture_label: str | None,
+) -> Path:
+    """Merge input JSONL files, injecting per-fixture default metadata.
+
+    For each row in each fixture: if the row already carries ``domain``
+    or ``language`` (e.g. ``anime_kr.jsonl`` sets both explicitly), the
+    field is left untouched. Otherwise the injection table in
+    ``_FIXTURE_DEFAULTS`` fills them in. Rows from unrecognized inputs
+    (``--input <path>``) pass through unchanged so external corpora
+    don't silently pick up a wrong label.
+
+    Always returns a temp file path; even the single-fixture case goes
+    through the injection pass so the ragmeta rows land with consistent
+    domain/language metadata.
+    """
+    import json as _json
+    import tempfile
+
+    # Single-fixture ingest with no recognized default: pass the file
+    # through directly to preserve exact byte-for-byte behaviour (this
+    # matches the pre-Phase-9 path when --input was used on an ad-hoc
+    # dataset).
+    if len(input_paths) == 1 and input_paths[0] not in _FIXTURE_DEFAULTS:
+        return input_paths[0]
+
+    merged = tempfile.NamedTemporaryFile(
+        mode="w", suffix=".jsonl", delete=False, encoding="utf-8",
+    )
+    try:
+        total = 0
+        for fixture_path in input_paths:
+            defaults = _FIXTURE_DEFAULTS.get(fixture_path, {})
+            rows_written = 0
+            with fixture_path.open("r", encoding="utf-8") as fp:
+                for line in fp:
+                    stripped = line.strip()
+                    if not stripped:
+                        continue
+                    if stripped.startswith("#"):
+                        continue
+                    try:
+                        row = _json.loads(stripped)
+                    except _json.JSONDecodeError:
+                        log.warning("Skipping malformed line in %s", fixture_path.name)
+                        continue
+                    if isinstance(row, dict) and defaults:
+                        for key, value in defaults.items():
+                            if row.get(key) is None:
+                                row[key] = value
+                    merged.write(_json.dumps(row, ensure_ascii=False))
+                    merged.write("\n")
+                    rows_written += 1
+            log.info(
+                "merged %s (%d rows, defaults=%s)",
+                fixture_path.name, rows_written, defaults or "{}",
+            )
+            total += rows_written
+    finally:
+        merged.close()
+    log.info(
+        "Prepared merged fixture (%s): %d rows from %d files -> %s",
+        fixture_label or "custom", total, len(input_paths), merged.name,
+    )
+    return Path(merged.name)
 
 
 def _build_image_index(

@@ -123,6 +123,12 @@ def _build_parser() -> argparse.ArgumentParser:
                           "report alongside a per-row compare CSV. Requires "
                           "the dataset to carry a 'difficulty' field for "
                           "per-difficulty aggregation.")
+    rag.add_argument("--cross-domain", action="store_true",
+                     help="Score the dataset under Phase 9 cross-domain mode: "
+                          "every row carries 'filters' that point to the "
+                          "WRONG domain, and the gate is whether the "
+                          "generator refuses rather than hallucinates from "
+                          "the filtered-in corpus.")
     rag.add_argument("--no-csv", action="store_true",
                      help="Skip CSV output.")
 
@@ -213,6 +219,17 @@ def _run_rag_cli(args: argparse.Namespace) -> int:
             offline_info=offline_info,
         )
 
+    if args.cross_domain:
+        return _run_rag_cross_domain_cli(
+            args,
+            dataset=dataset,
+            retriever=retriever,
+            generator=generator,
+            settings=settings,
+            top_k=top_k,
+            offline_info=offline_info,
+        )
+
     summary, rows = run_rag_eval(
         dataset,
         retriever=retriever,
@@ -221,8 +238,8 @@ def _run_rag_cli(args: argparse.Namespace) -> int:
         dataset_path=str(args.dataset),
     )
 
-    _print_rag_summary(summary)
-
+    # Write reports BEFORE the console pretty-print so a stray Unicode
+    # character (cp949 consoles on Windows) can't cost us the data.
     out_json = args.out_json or _default_report_path("rag", "json")
     write_json_report(
         out_json,
@@ -236,6 +253,13 @@ def _run_rag_cli(args: argparse.Namespace) -> int:
             out_csv,
             [rag_row_to_dict(r) for r in rows],
             columns=_rag_csv_columns(),
+        )
+    try:
+        _print_rag_summary(summary)
+    except UnicodeEncodeError as ex:  # pragma: no cover — win-cp949 fallback
+        log.warning(
+            "Pretty summary print failed (%s); report already written to %s",
+            ex, out_json,
         )
     return 0
 
@@ -379,6 +403,95 @@ def _run_rag_compare_cli(
         log.warning(
             "Pretty summary print failed (%s); reports already written "
             "to %s", ex, out_json,
+        )
+    return 0
+
+
+def _run_rag_cross_domain_cli(
+    args: argparse.Namespace,
+    *,
+    dataset: List[Mapping[str, Any]],
+    retriever: Any,
+    generator: Any,
+    settings: Any,
+    top_k: int,
+    offline_info: Optional[Any],
+) -> int:
+    """Score a cross-domain unanswerable dataset (Phase 9).
+
+    Swaps in an ExtractiveGenerator with ``low_relevance_threshold`` so
+    the extractive path emits a Korean refusal when the filter allows
+    only off-topic chunks through. The threshold defaults to
+    ``settings.rag_cross_domain_relevance_threshold`` (0.35 for
+    bge-m3 normalized IP) so on-topic queries still get their normal
+    grounded answer when the filter DOES permit the right corpus.
+    """
+    from app.capabilities.rag.generation import ExtractiveGenerator
+    from eval.harness.rag_eval import (
+        cross_domain_row_to_dict,
+        run_rag_cross_domain_eval,
+    )
+
+    # bge-m3 normalized IP on mixed KR/EN text typically gives
+    # on-topic > 0.5 and cross-domain < 0.45 — 0.48 sits in the clear
+    # space between the two distributions (on-topic min on the Phase 9
+    # baselines is 0.519; cross-domain top score is 0.422).
+    threshold = float(
+        getattr(settings, "rag_cross_domain_relevance_threshold", 0.48)
+    )
+    cross_domain_generator = ExtractiveGenerator(
+        low_relevance_threshold=threshold,
+    )
+    log.info(
+        "Cross-domain eval using relevance-gated ExtractiveGenerator "
+        "(threshold=%.3f)", threshold,
+    )
+
+    summary, rows = run_rag_cross_domain_eval(
+        dataset,
+        retriever=retriever,
+        generator=cross_domain_generator,
+        dataset_path=str(args.dataset),
+    )
+
+    # Write reports BEFORE the console pretty-print so a stray Unicode
+    # character (cp949 consoles on Windows) can't cost us the data.
+    out_json = args.out_json or _default_report_path("rag-cross-domain", "json")
+    write_json_report(
+        out_json,
+        summary={
+            **{k: v for k, v in summary.items() if k != "rows"},
+            "top_k": top_k,
+        },
+        rows=summary["rows"],
+        metadata=_rag_metadata(settings, top_k, offline_info=offline_info),
+    )
+    if not args.no_csv:
+        out_csv = args.out_csv or _default_report_path("rag-cross-domain", "csv")
+        write_csv_report(
+            out_csv,
+            [cross_domain_row_to_dict(r) for r in rows],
+            columns=[
+                "query", "filters", "expected_action",
+                "retrieved_doc_ids", "filter_produced_no_docs",
+                "refusal_detected", "cross_domain_pass",
+                "answer", "retrieval_ms", "generation_ms",
+                "notes", "error",
+            ],
+        )
+    try:
+        print()
+        print(f"Cross-domain RAG eval: {summary['dataset_path']}")
+        print(f"  rows                       : {summary['row_count']}")
+        print(f"  errors                     : {summary['error_count']}")
+        print(f"  cross_domain_refusal_rate  : {summary['cross_domain_refusal_rate']}")
+        print(f"  cross_domain_zero_results  : {summary['cross_domain_zero_results_rate']}")
+        print(f"  passing rows               : {summary['passing_rows']}")
+        print()
+    except UnicodeEncodeError as ex:  # pragma: no cover — win-cp949 fallback
+        log.warning(
+            "Pretty summary print failed (%s); report already written to %s",
+            ex, out_json,
         )
     return 0
 

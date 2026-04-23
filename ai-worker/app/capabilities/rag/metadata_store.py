@@ -31,6 +31,16 @@ class DocumentRow:
     source: Optional[str]
     category: Optional[str]
     metadata: Optional[dict]
+    domain: Optional[str] = None
+    language: Optional[str] = None
+
+
+# Whitelist of filter keys honored by ``doc_ids_matching``. We hard-code
+# this rather than letting callers SELECT against arbitrary columns —
+# the LLM query parser is the primary populator and we don't want a
+# parser hallucination to turn into a SQL injection vector or accidental
+# scan against an unindexed column.
+_FILTER_COLUMNS = frozenset({"domain", "category", "language"})
 
 
 @dataclass(frozen=True)
@@ -119,7 +129,8 @@ class RagMetadataStore:
                     cur,
                     """
                     INSERT INTO ragmeta.documents
-                      (doc_id, title, source, category, metadata_json, created_at, updated_at)
+                      (doc_id, title, source, category, metadata_json,
+                       domain, language, created_at, updated_at)
                     VALUES %s
                     """,
                     [
@@ -129,6 +140,8 @@ class RagMetadataStore:
                             d.source,
                             d.category,
                             json.dumps(d.metadata) if d.metadata is not None else None,
+                            d.domain,
+                            d.language,
                             now,
                             now,
                         )
@@ -219,6 +232,41 @@ class RagMetadataStore:
         ) for r in rows}
         # Preserve the FAISS ranking order of the input ids.
         return [by_row[i] for i in ids if i in by_row]
+
+    def doc_ids_matching(self, filters: dict) -> List[str]:
+        """Return doc_ids whose metadata matches every key in ``filters``.
+
+        Only keys in ``_FILTER_COLUMNS`` (``domain`` / ``category`` /
+        ``language``) are accepted; anything else raises ``ValueError``
+        so a caller can't SELECT against arbitrary columns. Empty or
+        None filters return the full doc_id list — the retriever uses
+        that for the "no filter" short-circuit without having to
+        special-case it here.
+        """
+        if not filters:
+            with self._connect() as conn, conn.cursor() as cur:
+                cur.execute("SELECT doc_id FROM ragmeta.documents")
+                return [str(row[0]) for row in cur.fetchall()]
+
+        for key in filters:
+            if key not in _FILTER_COLUMNS:
+                raise ValueError(
+                    f"Unsupported filter key {key!r}. Allowed: "
+                    f"{sorted(_FILTER_COLUMNS)}."
+                )
+
+        # Parameterised WHERE: the column name is whitelisted above so
+        # f-string interpolation is safe; the value flows through %s so
+        # psycopg2 handles quoting/escape.
+        clauses = [f"{key} = %s" for key in filters.keys()]
+        params = [filters[key] for key in filters.keys()]
+        sql = (
+            "SELECT doc_id FROM ragmeta.documents "
+            "WHERE " + " AND ".join(clauses)
+        )
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(sql, params)
+            return [str(row[0]) for row in cur.fetchall()]
 
     def stats(self) -> dict:
         with self._connect() as conn, conn.cursor() as cur:

@@ -38,6 +38,15 @@ class GenerationProvider(ABC):
         ...
 
 
+def _chunk_relevance(chunk: RetrievedChunk) -> Optional[float]:
+    """Prefer rerank_score when present; fall back to bi-encoder score."""
+    if chunk.rerank_score is not None:
+        return float(chunk.rerank_score)
+    if chunk.score is not None:
+        return float(chunk.score)
+    return None
+
+
 class ExtractiveGenerator(GenerationProvider):
     """Builds a grounded markdown answer from the top retrieved chunks.
 
@@ -54,10 +63,29 @@ class ExtractiveGenerator(GenerationProvider):
     token set. This is deterministic, query-aware, and requires no model
     inference — but it DOES actually consume the retrieval output, which
     is the phase-2 acceptance bar.
+
+    When ``low_relevance_threshold`` is set (default ``None`` = disabled),
+    the generator checks the rerank_score or bi-encoder score of the top
+    chunk. If it falls below the threshold the generator emits a Korean
+    + English refusal text rather than dumping a low-confidence top chunk
+    as if it were the answer. Phase 9 uses this to make the extractive
+    path pass the cross-domain unanswerable gate — a query whose correct
+    answer is "문서에서 찾을 수 없습니다" must not produce a confident-
+    looking summary of whatever the filter allowed through.
     """
 
-    def __init__(self, *, excerpt_chars: int = 400) -> None:
+    def __init__(
+        self,
+        *,
+        excerpt_chars: int = 400,
+        low_relevance_threshold: Optional[float] = None,
+    ) -> None:
         self._excerpt_chars = int(excerpt_chars)
+        self._low_relevance_threshold = (
+            float(low_relevance_threshold)
+            if low_relevance_threshold is not None
+            else None
+        )
 
     @property
     def name(self) -> str:
@@ -66,9 +94,24 @@ class ExtractiveGenerator(GenerationProvider):
     def generate(self, query: str, chunks: List[RetrievedChunk]) -> str:
         if not chunks:
             return (
+                "문서에서 찾을 수 없습니다.\n"
                 "No relevant passages were retrieved for your query.\n\n"
                 f"> {query}"
             )
+
+        # Relevance gate: if the top chunk's score sits below the
+        # threshold every chunk below it is also too weak to ground an
+        # answer, so we emit a refusal instead of pretending.
+        if self._low_relevance_threshold is not None:
+            top_score = _chunk_relevance(chunks[0])
+            if top_score is not None and top_score < self._low_relevance_threshold:
+                return (
+                    "문서에서 관련 정보를 찾을 수 없습니다.\n"
+                    "No relevant passages were retrieved for your query.\n\n"
+                    f"> {query}\n"
+                    f"(top score={top_score:.3f} < threshold="
+                    f"{self._low_relevance_threshold:.3f})"
+                )
 
         short_answer = self._pick_answer_sentence(query, chunks[0].text)
 
