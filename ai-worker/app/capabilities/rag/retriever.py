@@ -33,12 +33,18 @@ from app.capabilities.rag.embeddings import EmbeddingProvider
 from app.capabilities.rag.faiss_index import FaissIndex, IndexBuildInfo
 from app.capabilities.rag.generation import RetrievedChunk
 from app.capabilities.rag.metadata_store import RagMetadataStore
+from app.capabilities.rag.query_parser import (
+    NoOpQueryParser,
+    ParsedQuery,
+    QueryParserProvider,
+)
 from app.capabilities.rag.reranker import NoOpReranker, RerankerProvider
 
 log = logging.getLogger(__name__)
 
 
 _MMR_DOC_ID_PENALTY = 0.6
+_DEFAULT_RRF_K = 60
 
 
 @dataclass(frozen=True)
@@ -55,6 +61,7 @@ class RetrievalReport:
     use_mmr: bool = False
     mmr_lambda: Optional[float] = None
     dup_rate: float = 0.0
+    parsed_query: Optional[ParsedQuery] = None
 
 
 class Retriever:
@@ -69,6 +76,8 @@ class Retriever:
         candidate_k: Optional[int] = None,
         use_mmr: bool = False,
         mmr_lambda: float = 0.7,
+        query_parser: Optional[QueryParserProvider] = None,
+        multi_query_rrf_k: int = _DEFAULT_RRF_K,
     ) -> None:
         self._embedder = embedder
         self._index = index
@@ -87,6 +96,11 @@ class Retriever:
         # no meaningful interpretation and would make the selector pick
         # unstable winners on tied relevance.
         self._mmr_lambda = max(0.0, min(1.0, float(mmr_lambda)))
+        self._parser: QueryParserProvider = query_parser or NoOpQueryParser()
+        # RRF constant. Cormack et al. use 60; we expose it for sweeps.
+        # Non-positive values would divide-by-zero / flip the sign, so
+        # clamp to a sane floor the same way we clamp mmr_lambda.
+        self._rrf_k = max(1, int(multi_query_rrf_k))
         self._info: IndexBuildInfo | None = None
 
     def ensure_ready(self) -> None:
@@ -110,7 +124,7 @@ class Retriever:
         log.info(
             "Retriever readiness check: configured_model=%r index_model=%r "
             "configured_dim=%d index_dim=%d index_version=%s chunk_count=%d "
-            "reranker=%s candidate_k=%d top_k=%d",
+            "reranker=%s candidate_k=%d top_k=%d parser=%s rrf_k=%d",
             self._embedder.model_name,
             self._info.embedding_model,
             self._embedder.dimension,
@@ -120,6 +134,8 @@ class Retriever:
             self._reranker.name,
             self._candidate_k,
             self._top_k,
+            self._parser.name,
+            self._rrf_k,
         )
         if self._embedder.model_name != self._info.embedding_model:
             raise RuntimeError(
@@ -155,9 +171,31 @@ class Retriever:
     def retrieve(self, query: str) -> RetrievalReport:
         if self._info is None:
             raise RuntimeError("Retriever is not ready — call ensure_ready() first")
-        vectors = self._embedder.embed_queries([query])
-        hits = self._index.search(vectors, top_k=self._candidate_k)
-        if not hits or not hits[0]:
+        parsed = self._parser.parse(query)
+        # Normalized form is what the embedder actually sees. The RegexQueryParser
+        # collapses whitespace and strips unicode quotes here; NoOp passes through.
+        embed_query = parsed.normalized or query
+
+        candidates = self._retrieve_candidates(embed_query)
+
+        # Multi-query RRF: when the parser produced rewrites, run one
+        # FAISS search per rewrite, merge their candidate lists with the
+        # primary list via Reciprocal Rank Fusion, and hand the merged
+        # pool to the reranker. Guarded on ``parsed.rewrites`` so the
+        # NoOp / Regex parsers (both empty) skip this path entirely —
+        # single-query behaviour stays bit-for-bit identical.
+        if parsed.rewrites:
+            rewrite_candidates = [
+                self._retrieve_candidates(r)
+                for r in parsed.rewrites
+            ]
+            candidates = _rrf_merge(
+                [candidates] + rewrite_candidates,
+                k_rrf=self._rrf_k,
+                pool_size=self._candidate_k,
+            )
+
+        if not candidates:
             return RetrievalReport(
                 query=query,
                 top_k=self._top_k,
@@ -171,22 +209,8 @@ class Retriever:
                 use_mmr=self._use_mmr,
                 mmr_lambda=self._mmr_lambda if self._use_mmr else None,
                 dup_rate=0.0,
+                parsed_query=parsed,
             )
-        row_ids = [row_id for row_id, _score in hits[0]]
-        looked_up = self._metadata.lookup_chunks_by_faiss_rows(
-            self._info.index_version, row_ids
-        )
-        score_by_row = {row_id: score for row_id, score in hits[0]}
-
-        candidates: List[RetrievedChunk] = []
-        for hit in looked_up:
-            candidates.append(RetrievedChunk(
-                chunk_id=hit.chunk_id,
-                doc_id=hit.doc_id,
-                section=hit.section or "",
-                text=hit.text,
-                score=float(score_by_row.get(hit.faiss_row_id, 0.0)),
-            ))
 
         # When MMR is on, ask the reranker for its FULL candidate pool so
         # the diversity selector has somewhere to reach for lower-ranked
@@ -194,7 +218,7 @@ class Retriever:
         # When MMR is off, trim at the reranker as before — bit-for-bit
         # Phase 1 behaviour.
         rerank_k = len(candidates) if self._use_mmr else self._top_k
-        reranked = self._reranker.rerank(query, candidates, k=rerank_k)
+        reranked = self._reranker.rerank(embed_query, candidates, k=rerank_k)
 
         if self._use_mmr:
             results = _mmr_select(
@@ -222,7 +246,36 @@ class Retriever:
             use_mmr=self._use_mmr,
             mmr_lambda=self._mmr_lambda if self._use_mmr else None,
             dup_rate=dup_rate_value,
+            parsed_query=parsed,
         )
+
+    def _retrieve_candidates(self, query: str) -> List[RetrievedChunk]:
+        """Run one FAISS search + metadata lookup, return candidate chunks.
+
+        Factored out of ``retrieve`` so the multi-query RRF path can reuse
+        it per rewrite without duplicating the embed/search/lookup glue.
+        The returned list is ordered by bi-encoder score (descending) and
+        capped at ``candidate_k``.
+        """
+        vectors = self._embedder.embed_queries([query])
+        hits = self._index.search(vectors, top_k=self._candidate_k)
+        if not hits or not hits[0]:
+            return []
+        row_ids = [row_id for row_id, _score in hits[0]]
+        looked_up = self._metadata.lookup_chunks_by_faiss_rows(
+            self._info.index_version, row_ids
+        )
+        score_by_row = {row_id: score for row_id, score in hits[0]}
+        candidates: List[RetrievedChunk] = []
+        for hit in looked_up:
+            candidates.append(RetrievedChunk(
+                chunk_id=hit.chunk_id,
+                doc_id=hit.doc_id,
+                section=hit.section or "",
+                text=hit.text,
+                score=float(score_by_row.get(hit.faiss_row_id, 0.0)),
+            ))
+        return candidates
 
 
 def _compute_topk_gap(
@@ -322,3 +375,56 @@ def _mmr_select(
         selected_doc_ids.add(chosen.doc_id)
 
     return selected
+
+
+def _rrf_merge(
+    candidate_lists: List[List[RetrievedChunk]],
+    *,
+    k_rrf: int,
+    pool_size: int,
+) -> List[RetrievedChunk]:
+    """Merge per-query candidate lists via Reciprocal Rank Fusion.
+
+    For each chunk_id appearing in any of the per-query result lists we
+    sum ``1 / (k_rrf + rank_i)`` across the lists that contain it (rank
+    is 1-based). The chunks are then sorted by the fused score in
+    descending order and capped at ``pool_size`` so the reranker sees a
+    stable-size pool regardless of how many rewrites the parser emits.
+
+    Each chunk's ``score`` field is overwritten with the fused RRF
+    score so downstream code (reranker fallback, MMR relevance signal,
+    topk_gap computation) has a single consistent ordering signal. The
+    original bi-encoder score is preserved on the variant that wins —
+    we keep the first occurrence of each chunk_id as the "representative"
+    so doc_id / section / text stay intact.
+
+    k_rrf=60 is the Cormack et al. default; the value is exposed on the
+    Retriever so evaluation sweeps can tune it without code changes.
+    """
+    if not candidate_lists:
+        return []
+
+    fused_score: dict[str, float] = {}
+    representative: dict[str, RetrievedChunk] = {}
+    for variant in candidate_lists:
+        for rank, chunk in enumerate(variant, start=1):
+            contribution = 1.0 / float(k_rrf + rank)
+            fused_score[chunk.chunk_id] = (
+                fused_score.get(chunk.chunk_id, 0.0) + contribution
+            )
+            representative.setdefault(chunk.chunk_id, chunk)
+
+    merged: List[RetrievedChunk] = [
+        RetrievedChunk(
+            chunk_id=rep.chunk_id,
+            doc_id=rep.doc_id,
+            section=rep.section,
+            text=rep.text,
+            score=fused_score[rep.chunk_id],
+            rerank_score=rep.rerank_score,
+        )
+        for rep in representative.values()
+    ]
+    merged.sort(key=lambda c: c.score, reverse=True)
+    cap = max(1, int(pool_size))
+    return merged[:cap]

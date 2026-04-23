@@ -125,6 +125,8 @@ class RagCapability(Capability):
                 for i, r in enumerate(report.results)
             ],
         }
+        if report.parsed_query is not None:
+            body["parsedQuery"] = report.parsed_query.to_dict()
         return json.dumps(body, ensure_ascii=False, indent=2)
 
 

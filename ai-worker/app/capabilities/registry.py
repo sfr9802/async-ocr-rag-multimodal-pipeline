@@ -73,7 +73,7 @@ def build_default_registry(settings: WorkerSettings) -> CapabilityRegistry:
         log.info(
             "RAG init: configured_model=%s query_prefix=%r passage_prefix=%r "
             "index_dir=%s top_k=%d generator=%s reranker=%s candidate_k=%d "
-            "use_mmr=%s mmr_lambda=%.3f",
+            "use_mmr=%s mmr_lambda=%.3f query_parser=%s rrf_k=%d",
             settings.rag_embedding_model,
             settings.rag_embedding_prefix_query,
             settings.rag_embedding_prefix_passage,
@@ -84,6 +84,8 @@ def build_default_registry(settings: WorkerSettings) -> CapabilityRegistry:
             settings.rag_candidate_k,
             settings.rag_use_mmr,
             settings.rag_mmr_lambda,
+            settings.rag_query_parser,
+            settings.rag_multi_query_rrf_k,
         )
         try:
             registry.register(_build_rag_capability(settings))
@@ -321,6 +323,8 @@ def _get_shared_retriever_bundle(settings: WorkerSettings):
         settings.rag_rerank_batch,
         settings.rag_use_mmr,
         settings.rag_mmr_lambda,
+        settings.rag_query_parser,
+        settings.rag_multi_query_rrf_k,
     )
     cached = _shared_component_cache.get(key)
     if cached is not None:
@@ -342,6 +346,7 @@ def _get_shared_retriever_bundle(settings: WorkerSettings):
     )
     index = FaissIndex(Path(settings.rag_index_dir))
     reranker = _build_reranker(settings)
+    query_parser = _build_query_parser(settings)
     retriever = Retriever(
         embedder=embedder,
         index=index,
@@ -351,6 +356,8 @@ def _get_shared_retriever_bundle(settings: WorkerSettings):
         candidate_k=settings.rag_candidate_k,
         use_mmr=settings.rag_use_mmr,
         mmr_lambda=settings.rag_mmr_lambda,
+        query_parser=query_parser,
+        multi_query_rrf_k=settings.rag_multi_query_rrf_k,
     )
     # ensure_ready() is the strict gate: on any model/dim mismatch
     # between the runtime embedder and the on-disk build.json it
@@ -385,6 +392,41 @@ def _get_shared_retriever_bundle(settings: WorkerSettings):
     bundle = (retriever, generator)
     _shared_component_cache[key] = bundle
     return bundle
+
+
+def _build_query_parser(settings: WorkerSettings):
+    """Build the query parser named by settings.rag_query_parser.
+
+    Supported values:
+      - 'off' / 'noop' / '' (default): NoOpQueryParser — passthrough,
+        single-query retrieval reproduces the pre-parser Phase 2 path
+        bit-for-bit.
+      - 'regex': RegexQueryParser — offline keyword extractor. Emits
+        ``rewrites=[]`` so the Retriever's RRF path stays dead in
+        Phase 3; only ``normalized`` + ``keywords`` are active.
+
+    The LLM-backed parser lands in Phase 4 behind this same seam and
+    will add a third branch here.
+    """
+    from app.capabilities.rag.query_parser import (
+        NoOpQueryParser,
+        RegexQueryParser,
+    )
+
+    name = (settings.rag_query_parser or "off").strip().lower()
+    if name in ("", "off", "noop", "none", "false", "0"):
+        log.info("RAG query parser disabled (noop).")
+        return NoOpQueryParser()
+    if name == "regex":
+        log.info("RAG query parser active: regex")
+        return RegexQueryParser()
+
+    log.warning(
+        "Unknown rag_query_parser=%r. Falling back to NoOpQueryParser. "
+        "Supported: 'off', 'regex'.",
+        settings.rag_query_parser,
+    )
+    return NoOpQueryParser()
 
 
 def _build_reranker(settings: WorkerSettings):

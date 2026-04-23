@@ -224,6 +224,28 @@ class WorkerSettings(BaseSettings):
             "HTTP timeout (seconds) for Claude Generation API calls."
         ),
     )
+    rag_query_parser: str = Field(
+        default="off",
+        description=(
+            "Which QueryParserProvider to run before retrieval. Options: "
+            "'off' (NoOpQueryParser — passthrough, single-query behaviour "
+            "bit-for-bit identical to the pre-parser path, default), "
+            "'regex' (RegexQueryParser — offline tokenizer that strips "
+            "quotes, collapses whitespace, and extracts up to 10 "
+            "deduplicated keywords with KR+EN stopword removal). The "
+            "LLM-backed parser arrives in phase 4 behind this same seam."
+        ),
+    )
+    rag_multi_query_rrf_k: int = Field(
+        default=60,
+        description=(
+            "Reciprocal Rank Fusion constant for the multi-query path. "
+            "Only used when the query parser emits rewrites (Phase 3's "
+            "offline parsers never do — the code path is dead until the "
+            "phase-4 LLM parser lands). 60 is Cormack et al.'s default; "
+            "raise to flatten rank differences across rewrites."
+        ),
+    )
 
     # --- ocr capability (phase 2) ---
     ocr_enabled: bool = Field(
