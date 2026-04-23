@@ -387,8 +387,12 @@ class WorkerSettings(BaseSettings):
             "Which VisionDescriptionProvider to build. Options: "
             "'heuristic' (deterministic Pillow-based fallback, no API "
             "key needed), 'claude' (Claude Vision via Anthropic API — "
-            "requires anthropic_api_key). Default is 'heuristic' for "
-            "CI/offline compatibility."
+            "requires anthropic_api_key), 'gemma' (reuses the shared "
+            "LlmChatProvider; requires llm_backend=ollama with a "
+            "vision-capable model such as gemma4:e2b). Default is "
+            "'heuristic' for CI/offline compatibility. When 'gemma' is "
+            "selected but the chat backend does not advertise vision, "
+            "the registry downgrades to heuristic with a warning."
         ),
     )
     multimodal_claude_vision_model: str = Field(
@@ -404,6 +408,18 @@ class WorkerSettings(BaseSettings):
             "HTTP timeout (seconds) for Claude Vision API calls. "
             "Includes retries — total wall-clock may be up to "
             "3x this value on transient failures."
+        ),
+    )
+    multimodal_gemma_token_budget: int = Field(
+        default=280,
+        description=(
+            "Default token budget (num_predict) for GemmaVisionProvider. "
+            "Maps to Gemma 4's image-resolution knob — higher is better "
+            "for OCR-heavy document pages, lower is fine for generic "
+            "captioning. Suggested tiers: 140 (generic captioning), 280 "
+            "(default, mixed content), 560 (multi-column / dense "
+            "screenshot), 1120 (OCR-heavy scan). Only relevant when "
+            "multimodal_vision_provider='gemma'."
         ),
     )
     multimodal_max_vision_pages: int = Field(

@@ -157,6 +157,29 @@ class LlmChatProvider(ABC):
     ) -> ChatResult:
         ...
 
+    def chat_vision(
+        self,
+        *,
+        prompt: str,
+        image_bytes: bytes,
+        mime_type: str = "image/png",
+        max_tokens: int = 280,
+        temperature: float = 0.2,
+        timeout_s: float = 60.0,
+    ) -> str:
+        """Send a single-image multimodal prompt, return raw text.
+
+        Default raises ``LlmChatError`` — vision-capable backends
+        override. Callers must check ``self.capabilities['vision']``
+        before invoking; the default here exists so non-vision backends
+        (NoOp, plain-text-only Ollama tags, future providers) compose
+        cleanly without forcing every subclass to implement vision.
+        """
+        raise LlmChatError(
+            f"chat_vision not supported by {self.name!r} "
+            "(capabilities['vision'] is False)."
+        )
+
 
 # ---------------------------------------------------------------------------
 # NoOp — CI / env-unset default. Every call raises LlmChatError so callers
@@ -208,6 +231,18 @@ class NoOpChatProvider(LlmChatProvider):
         timeout_s: float = 15.0,
         enable_thinking: bool = False,
     ) -> ChatResult:
+        raise LlmChatError("noop")
+
+    def chat_vision(
+        self,
+        *,
+        prompt: str,
+        image_bytes: bytes,
+        mime_type: str = "image/png",
+        max_tokens: int = 280,
+        temperature: float = 0.2,
+        timeout_s: float = 60.0,
+    ) -> str:
         raise LlmChatError("noop")
 
 
@@ -369,6 +404,56 @@ class OllamaChatProvider(LlmChatProvider):
             tokens_out=int(body.get("eval_count") or 0),
             latency_ms=elapsed_ms,
         )
+
+    # ------------------------------------------------------------------
+
+    def chat_vision(
+        self,
+        *,
+        prompt: str,
+        image_bytes: bytes,
+        mime_type: str = "image/png",
+        max_tokens: int = 280,
+        temperature: float = 0.2,
+        timeout_s: float = 60.0,
+    ) -> str:
+        """Vision path for Ollama multimodal tags (gemma4, llava, …).
+
+        Talks to ``POST /api/chat`` with ``messages=[{role:user,
+        content:<prompt>, images:[<base64>]}]``. The response text is
+        returned as-is; the caller (GemmaVisionProvider) parses it into
+        caption + details.
+        """
+        if not self.capabilities.get("vision"):
+            raise LlmChatError(
+                f"Ollama model {self._model!r} does not advertise vision "
+                "capability. Pull a multimodal tag (e.g. gemma4:e2b, "
+                "llava:latest) or pick a different backend."
+            )
+        import base64 as _b64
+
+        b64 = _b64.standard_b64encode(image_bytes).decode("ascii")
+        payload = {
+            "model": self._model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": prompt,
+                    "images": [b64],
+                }
+            ],
+            "stream": False,
+            "keep_alive": self._keep_alive,
+            "options": {
+                "temperature": float(temperature),
+                "num_predict": int(max_tokens),
+            },
+        }
+        body = self._post("/api/chat", payload, timeout_s=timeout_s)
+        content = (body.get("message") or {}).get("content") or ""
+        if not content.strip():
+            raise LlmChatError("Ollama vision returned an empty message content.")
+        return content
 
     # ------------------------------------------------------------------
     # helpers

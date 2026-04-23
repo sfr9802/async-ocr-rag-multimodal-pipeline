@@ -937,6 +937,11 @@ def _build_vision_provider(settings: WorkerSettings):
     Supported values for multimodal_vision_provider:
       - 'heuristic' (default): deterministic Pillow-based fallback
       - 'claude': Claude Vision via Anthropic API (requires API key)
+      - 'gemma': reuses the shared LlmChatProvider (Ollama gemma4:e2b
+        by default). Auto-downgrades to the heuristic provider with a
+        warning if the chat backend does not advertise vision
+        capability — this keeps MULTIMODAL registrable even when the
+        LLM backend is NoOp or a text-only Ollama tag.
     """
     provider_name = (settings.multimodal_vision_provider or "heuristic").strip().lower()
     if provider_name in ("", "heuristic", "pillow", "default"):
@@ -959,7 +964,34 @@ def _build_vision_provider(settings: WorkerSettings):
             timeout_seconds=settings.multimodal_claude_timeout_seconds,
         )
 
+    if provider_name == "gemma":
+        from app.capabilities.multimodal.gemma_vision import GemmaVisionProvider
+        from app.capabilities.multimodal.heuristic_vision import HeuristicVisionProvider
+
+        chat = _get_shared_llm_chat(settings)
+        if not chat.capabilities.get("vision"):
+            log.warning(
+                "MULTIMODAL vision_provider='gemma' requested but the "
+                "shared chat backend %r does not advertise vision "
+                "capability (capabilities=%r). Falling back to the "
+                "heuristic vision provider — set "
+                "AIPIPELINE_WORKER_LLM_BACKEND=ollama with a multimodal "
+                "model tag (e.g. gemma4:e2b) to enable gemma vision.",
+                chat.name, chat.capabilities,
+            )
+            return HeuristicVisionProvider()
+
+        log.info(
+            "MULTIMODAL vision provider active: gemma (backend=%s "
+            "default_token_budget=%d)",
+            chat.name, settings.multimodal_gemma_token_budget,
+        )
+        return GemmaVisionProvider(
+            chat,
+            default_token_budget=settings.multimodal_gemma_token_budget,
+        )
+
     raise RuntimeError(
         f"Unknown multimodal vision provider {provider_name!r}. "
-        "Supported: 'heuristic', 'claude'."
+        "Supported: 'heuristic', 'claude', 'gemma'."
     )
