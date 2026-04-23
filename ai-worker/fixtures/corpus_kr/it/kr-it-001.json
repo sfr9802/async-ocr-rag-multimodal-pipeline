@@ -1,0 +1,35 @@
+{
+  "doc_id": "kr-it-001",
+  "title": "Kubernetes 클러스터 운영 가이드",
+  "category": "it",
+  "sections": [
+    {
+      "heading": "개요",
+      "text": "본 가이드는 사내 운영용 Kubernetes 클러스터(k8s-prod-01)의 일상 운영 절차와 기본 설정 기준을 정의합니다. 적용 범위는 프로덕션 워크로드 전반이며, 개발/스테이징 클러스터는 별도의 가이드를 따릅니다."
+    },
+    {
+      "heading": "기본 설정",
+      "text": "노드 풀은 일반(n1-std), 메모리 집약(n1-mem), GPU(g1-gpu) 3종류로 운영하며, 각 풀의 노드 수는 부하 기반 오토스케일링(HPA + Cluster Autoscaler)으로 결정됩니다. 모든 워크로드는 resources.requests / limits를 명시해야 하며, 미명시 워크로드는 admission controller에서 거부됩니다."
+    },
+    {
+      "heading": "운영 절차",
+      "text": "kubectl 접근 권한은 RBAC을 통해 팀 단위로 부여하며, 프로덕션에 대한 write 권한은 SRE 팀과 각 서비스 오너 팀장으로 제한됩니다. 변경 작업은 GitOps(Argo CD) 파이프라인을 통해 진행하며, 직접 kubectl apply는 장애 대응 외에는 금지됩니다."
+    },
+    {
+      "heading": "장애 대응",
+      "text": "1순위 알림 채널은 PagerDuty 서비스 'k8s-prod-critical'이며, p99 응답 지연 500ms 초과 또는 노드 NotReady가 5분 지속되면 자동으로 트리거됩니다. 온콜 SRE는 15분 이내 1차 응답을 시작해야 하며, 30분 이내 상황 보고를 #incidents Slack 채널에 게시합니다."
+    },
+    {
+      "heading": "예외 사항",
+      "text": "GPU 노드 풀의 변경은 데이터 사이언스 팀 사전 협의가 필요합니다. 신규 네임스페이스 생성은 SRE 팀장이 단독으로 진행할 수 없으며, 보안팀 검토를 거쳐야 합니다. 본 가이드의 해석에 이견이 있을 경우 SRE 팀장과 보안 위원회 합의를 따릅니다."
+    },
+    {
+      "heading": "관련 문서",
+      "text": "GitOps 배포 파이프라인 가이드(IT-08), 모니터링 대시보드 운영 가이드(IT-09), 데이터베이스 백업 및 복구 절차(IT-10)를 참조합니다."
+    }
+  ],
+  "related_docs": ["IT-08 GitOps 배포 파이프라인 가이드", "IT-09 모니터링 대시보드 운영 가이드", "IT-10 데이터베이스 백업 및 복구 절차"],
+  "seed": 1737200003,
+  "created_at": "2026-04-23T00:00:00+00:00",
+  "generator_model": "hand-authored-seed"
+}

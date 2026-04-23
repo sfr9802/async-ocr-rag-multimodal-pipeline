@@ -23,3 +23,10 @@
 # --- OCR + Visual rows ---
 {"image": "samples/multimodal/labeled_diagram.png", "question": "What components are shown in the system architecture diagram and how are they connected?", "expected_answer": null, "expected_keywords": ["Frontend", "Backend", "Database"], "expected_labels": ["Frontend", "Backend", "Database"], "requires_ocr": true, "language": "eng", "notes": "OCR+visual EN: labeled architecture diagram requires reading labels and understanding arrows"}
 {"image": "samples/multimodal/kr_labeled_diagram.png", "question": "이 시스템 구성도에서 어떤 구성 요소가 있나요?", "expected_answer": null, "expected_keywords": ["웹 서버", "API 서버", "데이터베이스"], "expected_labels": ["웹 서버", "API 서버", "데이터베이스"], "requires_ocr": true, "language": "kor", "notes": "OCR+visual KR: Korean labeled system diagram"}
+
+# --- Anime poster rows (Phase 9) — see also multimodal_anime_kr.jsonl ---
+# Programmatic posters from scripts.make_anime_poster_fixtures. domain=anime
+# is added so the harness can split metrics per domain when both anime and
+# enterprise multimodal sets feed in.
+{"image": "../../fixtures/posters/anime-kr-001.png", "question": "이 포스터의 작품 제목은 무엇인가요?", "expected_answer": null, "expected_keywords": ["별빛", "도서관"], "expected_labels": ["별빛 도서관의 사서"], "requires_ocr": true, "language": "kor", "domain": "anime", "notes": "OCR + visual: Korean title on a starry-night poster"}
+{"image": "../../fixtures/posters/anime-kr-005.png", "question": "이 포스터의 핵심 시각 모티프는 무엇인가요?", "expected_answer": null, "expected_keywords": ["시계"], "expected_labels": ["시계공"], "requires_ocr": false, "language": "kor", "domain": "anime", "notes": "Visual-only: large clock face dominates the poster"}

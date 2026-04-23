@@ -1,0 +1,38 @@
+# Enterprise Korean RAG eval dataset — targets fixtures/corpus_kr/index.jsonl.
+# Phase 9 seed set (n=20) spanning the 5 seed docs.
+# To scale to 200 queries against the full 125-doc corpus:
+#   python -m scripts.dataset.generate_queries \
+#       --corpus ai-worker/fixtures/corpus_kr/index.jsonl \
+#       --out    ai-worker/eval/datasets/rag_enterprise_kr_raw.jsonl \
+#       --queries-per-doc 2 --difficulty-target easy:80,medium:100,hard:20
+#   python -m scripts.dataset.validate_dataset \
+#       --in  ai-worker/eval/datasets/rag_enterprise_kr_raw.jsonl \
+#       --out ai-worker/eval/datasets/rag_enterprise_kr.jsonl \
+#       --filters domain=enterprise --top-k 5
+#
+# Schema = rag_sample_kr.jsonl + difficulty. `filters` is intentionally
+# omitted from these rows so the retriever search runs across the full
+# combined anime+enterprise index — this is the primary signal for
+# "enterprise corpus doesn't bleed into anime queries and vice versa".
+# The hard rag_cross_domain_kr.jsonl set (Phase 9 Section E) carries
+# explicit filters for the refusal-rate test.
+{"query": "재택근무는 시행 며칠 전까지 신청해야 하나요?", "difficulty": "easy", "expected_doc_ids": ["kr-hr-001"], "expected_keywords": ["3 영업일"], "notes": "단일 수치"}
+{"query": "재택근무 긴급 사후 신청은 월 몇 회까지 가능한가요?", "difficulty": "easy", "expected_doc_ids": ["kr-hr-001"], "expected_keywords": ["2회"], "notes": "단일 수치"}
+{"query": "주 3일 이상의 재택근무 승인은 누구의 결재가 필요한가요?", "difficulty": "medium", "expected_doc_ids": ["kr-hr-001"], "expected_keywords": ["본부장"], "notes": "조건+결재선 결합"}
+{"query": "법인카드 1회 사용 한도가 50만원 초과 200만원 이하일 때 사전 승인권자는?", "difficulty": "medium", "expected_doc_ids": ["kr-finance-001"], "expected_keywords": ["팀장"], "notes": "구간 조건 결합"}
+{"query": "법인카드 사용 후 증빙 등록 기한은 며칠인가요?", "difficulty": "easy", "expected_doc_ids": ["kr-finance-001"], "expected_keywords": ["5 영업일"], "notes": "단일 수치"}
+{"query": "자필 사용 내역서는 분기당 몇 건까지 허용되나요?", "difficulty": "easy", "expected_doc_ids": ["kr-finance-001"], "expected_keywords": ["3건"], "notes": "단일 수치"}
+{"query": "해외 출장 외화 결제의 증빙 등록 기한은?", "difficulty": "medium", "expected_doc_ids": ["kr-finance-001"], "expected_keywords": ["10 영업일"], "notes": "예외 조건+수치"}
+{"query": "Kubernetes 프로덕션 클러스터에서 kubectl write 권한은 누구에게 부여되나요?", "difficulty": "medium", "expected_doc_ids": ["kr-it-001"], "expected_keywords": ["SRE", "오너"], "notes": "정책+역할 결합"}
+{"query": "프로덕션 클러스터의 변경 작업은 어떤 파이프라인을 통해 진행되나요?", "difficulty": "easy", "expected_doc_ids": ["kr-it-001"], "expected_keywords": ["Argo CD", "GitOps"], "notes": "도구 식별"}
+{"query": "p99 응답 지연이 몇 ms를 초과하면 PagerDuty가 자동 트리거되나요?", "difficulty": "easy", "expected_doc_ids": ["kr-it-001"], "expected_keywords": ["500ms"], "notes": "단일 수치"}
+{"query": "Kubernetes 온콜 SRE의 1차 응답 기한은 몇 분인가요?", "difficulty": "easy", "expected_doc_ids": ["kr-it-001"], "expected_keywords": ["15분"], "notes": "단일 수치"}
+{"query": "검색 랭킹 v3에서 응답 지연 p95 목표는 얼마인가요?", "difficulty": "easy", "expected_doc_ids": ["kr-product-001"], "expected_keywords": ["250ms"], "notes": "단일 수치"}
+{"query": "검색 랭킹 v3의 NDCG@10 개선 수락 기준은?", "difficulty": "medium", "expected_doc_ids": ["kr-product-001"], "expected_keywords": ["0.10"], "notes": "수치+지표 결합"}
+{"query": "검색 랭킹 v3 롤아웃 1단계의 트래픽 비율은?", "difficulty": "easy", "expected_doc_ids": ["kr-product-001"], "expected_keywords": ["5%"], "notes": "단일 수치"}
+{"query": "NDA 체결 시 법무팀의 표준 검토 기한은?", "difficulty": "easy", "expected_doc_ids": ["kr-legal-001"], "expected_keywords": ["5일"], "notes": "단일 수치"}
+{"query": "어떤 계약 유형에 NDA 체결 절차가 적용되나요?", "difficulty": "medium", "expected_doc_ids": ["kr-legal-001"], "expected_keywords": ["기술 용역", "공동 연구"], "notes": "범위 나열"}
+{"query": "본 NDA 절차의 개정 결재는 누구의 권한인가요?", "difficulty": "medium", "expected_doc_ids": ["kr-legal-001"], "expected_keywords": ["CLO", "법무팀장"], "notes": "승인 체계"}
+{"query": "회사 내 표준 결재 절차 없이 외부에 비밀정보가 유출되었을 때 어떤 조치가 가능한가요?", "difficulty": "hard", "expected_doc_ids": ["kr-legal-001"], "expected_keywords": ["인사위원회", "징계"], "notes": "패러프레이즈 질문"}
+{"query": "프로덕션 환경에 대해 GitOps 외의 직접 변경이 허용되는 예외 상황은?", "difficulty": "hard", "expected_doc_ids": ["kr-it-001"], "expected_keywords": ["장애", "대응"], "notes": "예외 조항 추론"}
+{"query": "A/B 테스트 결과의 유의성 기준치는 무엇인가요?", "difficulty": "hard", "expected_doc_ids": ["kr-product-001"], "expected_keywords": ["0.05", "p"], "notes": "통계 기준 추출"}

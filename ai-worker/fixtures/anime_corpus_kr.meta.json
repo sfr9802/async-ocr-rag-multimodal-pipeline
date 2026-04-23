@@ -1,0 +1,9 @@
+{
+  "sampled": 300,
+  "source_total": 1764,
+  "source_unique_titles": 1413,
+  "chunk_count_total": 32446,
+  "section_count_total": 651,
+  "per_section_avg_chars": 5596.0,
+  "seed": 42
+}

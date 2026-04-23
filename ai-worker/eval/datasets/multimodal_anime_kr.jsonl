@@ -1,0 +1,19 @@
+# Korean anime poster multimodal eval — small demo set (n=6).
+# Each row pairs a poster PNG (rendered by scripts.make_anime_poster_fixtures)
+# with a Korean question + expected_keywords. The posters carry both visual
+# motifs (clock, lighthouse, rails, ...) and embedded Korean text, so a
+# vision provider can answer either by OCR or by visual description.
+#
+# Schema matches multimodal_sample.jsonl with an added `domain` field so
+# the harness can split metrics per domain when both anime + enterprise
+# multimodal sets feed in.
+#
+# Image paths are relative to this JSONL file's directory; the harness
+# resolves them via dataset_dir. The `../../fixtures/posters/...` prefix
+# walks up from eval/datasets/ to ai-worker/ then back into fixtures/.
+{"image": "../../fixtures/posters/anime-kr-001.png", "question": "이 포스터의 작품은 어떤 장소를 무대로 하나요?", "expected_keywords": ["도서관", "별빛"], "expected_labels": ["별빛 도서관"], "requires_ocr": true, "language": "kor", "domain": "anime", "notes": "OCR can read the title; visual conveys nighttime/star motif"}
+{"image": "../../fixtures/posters/anime-kr-002.png", "question": "이 포스터에서 직업과 관련된 핵심 시각 요소는 무엇인가요?", "expected_keywords": ["등대", "등불"], "expected_labels": ["등대"], "requires_ocr": false, "language": "kor", "domain": "anime", "notes": "Visual: lighthouse silhouette + warm beam color"}
+{"image": "../../fixtures/posters/anime-kr-003.png", "question": "이 포스터의 작품은 어디를 배경으로 하나요?", "expected_keywords": ["구름", "비행선"], "expected_labels": ["구름 위"], "requires_ocr": true, "language": "kor", "domain": "anime", "notes": "OCR + visual: cloud sky background and balloon shapes"}
+{"image": "../../fixtures/posters/anime-kr-005.png", "question": "이 포스터에서 가장 두드러지는 시각적 모티프는?", "expected_keywords": ["시계"], "expected_labels": ["시계공"], "requires_ocr": false, "language": "kor", "domain": "anime", "notes": "Visual-only: large clock face dominates the poster"}
+{"image": "../../fixtures/posters/anime-kr-006.png", "question": "이 포스터의 직업과 관련된 시각 요소는 무엇인가요?", "expected_keywords": ["철도", "선로"], "expected_labels": ["차장", "폐역"], "requires_ocr": true, "language": "kor", "domain": "anime", "notes": "OCR + visual: rails + Korean title"}
+{"image": "../../fixtures/posters/anime-kr-009.png", "question": "이 포스터의 작품 제목과 시각적 상징은 무엇인가요?", "expected_keywords": ["라디오", "신호수", "탑"], "expected_labels": ["여름 라디오의 신호수"], "requires_ocr": true, "language": "kor", "domain": "anime", "notes": "OCR + visual: tall tower silhouette + Korean title"}

@@ -1,0 +1,39 @@
+# Korean anime RAG eval dataset — targets the anime_kr.jsonl fixture.
+# 30 queries split across easy (10) / medium (15) / hard (5) difficulty.
+# Schema = rag_sample.jsonl + difficulty + filters.
+# Domain filter is not pre-set on these rows (Phase 9 cross-domain set
+# carries the filter); these are vanilla retrieval rows so they exercise
+# the unified anime+enterprise FAISS index without restriction.
+# easy   : single fact stated directly in one section
+# medium : combine 2 facts within the doc
+# hard   : paraphrased / implicit; user knows what they want but no exact wording
+{"query": "별빛 도서관은 언제 문을 여나요?", "difficulty": "easy", "expected_doc_ids": ["anime-kr-001"], "expected_keywords": ["야간", "도서관"], "notes": "한 문장으로 명시"}
+{"query": "남쪽 항구의 등불 수리공의 주인공은 누구인가요?", "difficulty": "easy", "expected_doc_ids": ["anime-kr-002"], "expected_keywords": ["하루", "등대"], "notes": "주인공 직설 질문"}
+{"query": "구름 위의 우편 배달부에서 시온의 나이는?", "difficulty": "easy", "expected_doc_ids": ["anime-kr-003"], "expected_keywords": ["14세"], "notes": "단일 사실"}
+{"query": "가을 포장마차의 기록자에서 후미오의 직업 경력은?", "difficulty": "easy", "expected_doc_ids": ["anime-kr-004"], "expected_keywords": ["편집자"], "notes": "단일 사실"}
+{"query": "겨울 산장의 시계공에서 시계가 매일 몇 초씩 늦어지나요?", "difficulty": "easy", "expected_doc_ids": ["anime-kr-005"], "expected_keywords": ["1초"], "notes": "단일 수치"}
+{"query": "사라진 노선의 차장에서 료의 직업은?", "difficulty": "easy", "expected_doc_ids": ["anime-kr-006"], "expected_keywords": ["차장", "철도"], "notes": "단일 사실"}
+{"query": "강가의 종이접기 장인에서 미오의 어머니 이름은?", "difficulty": "easy", "expected_doc_ids": ["anime-kr-007"], "expected_keywords": ["사쿠라"], "notes": "캐릭터 이름"}
+{"query": "야간 공원의 청소부에서 켄이치는 정년이 몇 년 남았나요?", "difficulty": "easy", "expected_doc_ids": ["anime-kr-008"], "expected_keywords": ["5년"], "notes": "단일 수치"}
+{"query": "여름 라디오의 신호수 주인공은 어떤 학생인가요?", "difficulty": "easy", "expected_doc_ids": ["anime-kr-009"], "expected_keywords": ["대학생", "21세"], "notes": "단일 사실"}
+{"query": "산골 마을의 약초 정원사 사키의 나이는?", "difficulty": "easy", "expected_doc_ids": ["anime-kr-010"], "expected_keywords": ["16세"], "notes": "단일 사실"}
+{"query": "별빛 도서관에서 유리가 발견한 책 속 메모는 누가 남긴 것인가요?", "difficulty": "medium", "expected_doc_ids": ["anime-kr-001"], "expected_keywords": ["전임", "사서"], "notes": "두 사실 결합 — 사라진 사서 + 메모"}
+{"query": "남쪽 항구의 등불 수리공에서 회전 렌즈가 깨졌을 때 하루는 어떻게 대응했나요?", "difficulty": "medium", "expected_doc_ids": ["anime-kr-002"], "expected_keywords": ["굴절판", "도자기"], "notes": "사건+해결 결합"}
+{"query": "구름 위의 우편 배달부에서 우편물이 분실되면 어떻게 되나요?", "difficulty": "medium", "expected_doc_ids": ["anime-kr-003"], "expected_keywords": ["금속판", "공기"], "notes": "설정 결합"}
+{"query": "가을 포장마차의 기록자에서 후미오와 사키 사이의 무언의 약속은?", "difficulty": "medium", "expected_doc_ids": ["anime-kr-004"], "expected_keywords": ["기록", "묻지", "않"], "notes": "관계+행동 결합"}
+{"query": "겨울 산장의 시계공에서 카에데가 받은 회중시계의 특별한 점은?", "difficulty": "medium", "expected_doc_ids": ["anime-kr-005"], "expected_keywords": ["어릴", "잃어버린"], "notes": "물건+과거 결합"}
+{"query": "사라진 노선의 차장에서 료가 폐역 게시판에 붙이는 것은 무엇인가요?", "difficulty": "medium", "expected_doc_ids": ["anime-kr-006"], "expected_keywords": ["승객", "마디"], "notes": "행동+이유 결합"}
+{"query": "강가의 종이접기 장인 매년 도시에서 열리는 행사와 미오 가게의 관계는?", "difficulty": "medium", "expected_doc_ids": ["anime-kr-007"], "expected_keywords": ["종이배", "유일"], "notes": "행사+가게 역할 결합"}
+{"query": "야간 공원의 청소부에서 매일 같은 벤치 아래에서 발견되는 것은?", "difficulty": "medium", "expected_doc_ids": ["anime-kr-008"], "expected_keywords": ["종이쪽지"], "notes": "사건 추적"}
+{"query": "여름 라디오의 신호수에서 송신탑이 가끔 잡아내는 신호의 정체는?", "difficulty": "medium", "expected_doc_ids": ["anime-kr-009"], "expected_keywords": ["침몰", "어선"], "notes": "설정+미스터리 결합"}
+{"query": "산골 마을의 약초 정원사에서 사키가 어머니의 일지를 누구의 도움으로 채워가나요?", "difficulty": "medium", "expected_doc_ids": ["anime-kr-010"], "expected_keywords": ["다이키", "의사"], "notes": "조력자 식별"}
+{"query": "구성원 한 명의 갑작스러운 부재로 시작되는 일상물 작품은?", "difficulty": "medium", "expected_doc_ids": ["anime-kr-001"], "expected_keywords": ["사서"], "notes": "패러프레이즈 — 전임 사서가 사라진 별빛 도서관"}
+{"query": "정년을 앞두고 새 직장을 선택한 인물이 등장하는 사색적 작품은?", "difficulty": "medium", "expected_doc_ids": ["anime-kr-008"], "expected_keywords": ["청소부"], "notes": "켄이치 패러프레이즈"}
+{"query": "운행이 끝난 노선과 그곳의 마지막 직원이 등장하는 잔잔한 작품은?", "difficulty": "medium", "expected_doc_ids": ["anime-kr-006"], "expected_keywords": ["폐역", "차장"], "notes": "사라진 노선 패러프레이즈"}
+{"query": "물려받은 손재주에 적힌 빈칸을 채워가는 견습 장인이 등장하는 애니는?", "difficulty": "medium", "expected_doc_ids": ["anime-kr-010"], "expected_keywords": ["약초", "일지"], "notes": "산골 마을 패러프레이즈"}
+{"query": "본명을 숨긴 채 외딴 곳에서 기술을 발휘하는 청년이 등장하는 미스터리는?", "difficulty": "medium", "expected_doc_ids": ["anime-kr-005"], "expected_keywords": ["시계공"], "notes": "겨울 산장 패러프레이즈"}
+{"query": "사라진 사람들의 마지막 말을 기록하는 행위가 핵심 모티프인 작품을 추천해주세요", "difficulty": "hard", "expected_doc_ids": ["anime-kr-006"], "expected_keywords": ["승객", "마디", "폐역"], "notes": "사라진 노선의 차장 — 강한 패러프레이즈"}
+{"query": "전통과 변화 사이에서 한 해 동안 만드는 결과물의 양으로 시간을 측정하는 작품은?", "difficulty": "hard", "expected_doc_ids": ["anime-kr-007"], "expected_keywords": ["종이배"], "notes": "강가의 종이접기 장인 — 추상적 표현"}
+{"query": "옛 직장에서 도망쳐 온 인물이 산속에서 작은 손기술로 하루를 보내는 미스터리 작품은?", "difficulty": "hard", "expected_doc_ids": ["anime-kr-005"], "expected_keywords": ["시계공", "산장"], "notes": "겨울 산장의 시계공 — 강한 패러프레이즈"}
+{"query": "어떤 기록도 부탁받지 않은 사람이 매일 같은 자리에서 메모를 남기는 따뜻한 작품은?", "difficulty": "hard", "expected_doc_ids": ["anime-kr-004"], "expected_keywords": ["편집자", "포장마차"], "notes": "가을 포장마차의 기록자 — 함의적 질문"}
+{"query": "일터에 도착한 첫날부터 자신의 진짜 이름을 사용하지 않는 인물이 등장하는 잔잔한 미스터리?", "difficulty": "hard", "expected_doc_ids": ["anime-kr-005"], "expected_keywords": ["카에데", "본명"], "notes": "겨울 산장의 시계공 — 매우 함의적"}
