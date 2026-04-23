@@ -78,6 +78,12 @@ class ActiveConfig:
     seed: Optional[int]
     direction: str
     meta: Dict[str, Any] = field(default_factory=dict)
+    # Axes held constant this round but still injected as env vars
+    # (e.g. freeze decisions carried over from a previous round's
+    # optuna-round-refinement diff). Same WorkerSettings mapping as
+    # search_space keys; values are passed through params_to_env()
+    # verbatim.
+    fixed_params: Dict[str, Any] = field(default_factory=dict)
     # Raw snapshot as loaded — used verbatim when freezing the config
     # copy into the study directory so replay is bit-identical.
     raw: Dict[str, Any] = field(default_factory=dict)
@@ -160,6 +166,16 @@ def load_active_config(path: Path) -> ActiveConfig:
     if not isinstance(meta, dict):
         raise ValueError("_meta must be a mapping")
 
+    fixed_params_raw = raw.get("fixed_params") or {}
+    if not isinstance(fixed_params_raw, dict):
+        raise ValueError("fixed_params must be a mapping")
+    fixed_params: Dict[str, Any] = dict(fixed_params_raw)
+    collision = set(fixed_params) & set(search_space)
+    if collision:
+        raise ValueError(
+            f"fixed_params and search_space must not share keys: {sorted(collision)}"
+        )
+
     return ActiveConfig(
         experiment_id=experiment_id,
         mode=mode,
@@ -172,6 +188,7 @@ def load_active_config(path: Path) -> ActiveConfig:
         seed=seed,
         direction=direction,
         meta=meta,
+        fixed_params=fixed_params,
         raw=raw,
     )
 
@@ -491,8 +508,12 @@ def _run_single_trial(
     subprocess_timeout: Optional[float],
 ) -> float:
     params = suggest_params(trial, config)
-    env_overrides = params_to_env(params)
-    rag_top_k = int(params["rag_top_k"]) if "rag_top_k" in params else None
+    # Fixed params come first so any search_space value shadows them
+    # on collision — collisions are already rejected in load_active_config,
+    # this is belt-and-braces for programmatic callers.
+    effective = {**config.fixed_params, **params}
+    env_overrides = params_to_env(effective)
+    rag_top_k = int(effective["rag_top_k"]) if "rag_top_k" in effective else None
 
     t0 = time.perf_counter()
     summary, wall_ms = run_one_trial(

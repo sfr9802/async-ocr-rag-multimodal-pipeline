@@ -33,7 +33,7 @@
   "provenance": {
     "kind": "llm_proposed",
     "source_round_id": "round_01",
-    "source_bundle_hash": "b7612a2956a46f913e041853e636857b6e8d8375dfe78810d418e22ba5537f78",
+    "source_bundle_hash": "1827a27b9055c65b24aa0706dac8905f8f0f2c49b711894090c7d13bd8b4dbfc",
     "parent_config_hash": "0e073814a046c6ebe348110fe1949d4ad66f2880753aec3786c2920cd03615db",
     "generated_at": "2026-04-23T14:56:34Z",
     "generated_by": {
