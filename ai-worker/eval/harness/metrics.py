@@ -11,8 +11,12 @@ What's here:
   - cer           : character error rate
   - wer           : word error rate (whitespace-tokenized)
   - hit_at_k      : 1.0 if any expected id is in the top-k, else 0.0
+  - recall_at_k   : distinct-gold recall over top-k (normalized ids)
   - reciprocal_rank : 1/rank of the first matching expected id, else 0.0
   - keyword_coverage : fraction of expected keywords present (case-insensitive)
+  - dup_rate      : 1 - unique/len for a top-k id list
+  - p_percentile  : nearest-rank percentile over a list of values
+  - topk_gap      : (absolute, relative) score gap between rank 1 and rank k
 
 None of these handle "language nuance" — CER is raw character edit
 distance after an optional normalization pass, and WER is whitespace
@@ -22,8 +26,10 @@ only, which is how `ocr_eval.py` defaults per-row language.
 
 from __future__ import annotations
 
+import math
 import re
-from typing import Iterable, List, Optional, Sequence
+import unicodedata
+from typing import Iterable, List, Optional, Sequence, Tuple
 
 
 # ---------------------------------------------------------------------------
@@ -176,6 +182,105 @@ def reciprocal_rank(
         if doc_id in expected:
             return 1.0 / rank
     return 0.0
+
+
+_NON_ALNUM_RE = re.compile(r"[^0-9a-z]+")
+
+
+def _normalize_doc_id(raw: str) -> str:
+    """NFKC + lowercase + strip non-alphanumeric.
+
+    Retrieval can round-trip ids through embeddings, stores, and user
+    fixtures — unicode width, casing, and separator drift all show up
+    as false misses in recall calculations. Normalize before comparing.
+    """
+    if not raw:
+        return ""
+    folded = unicodedata.normalize("NFKC", raw).casefold()
+    return _NON_ALNUM_RE.sub("", folded)
+
+
+def recall_at_k(
+    retrieved_doc_ids: Sequence[str],
+    expected_doc_ids: Iterable[str],
+    *,
+    k: int,
+) -> Optional[float]:
+    """Distinct-gold recall over the top-k retrieved ids.
+
+    Counts how many unique ids from `expected_doc_ids` appear in the
+    first k retrieved ids, divided by the number of unique expected
+    ids. A gold id surfacing multiple times in the top-k is only
+    credited once — this is what "recall" means, and it differs from
+    hit@k which only asks whether any gold landed.
+
+    Returns None when `expected_doc_ids` is empty so callers can skip
+    the row during aggregation, matching the hit@k contract.
+    """
+    expected = {_normalize_doc_id(d) for d in expected_doc_ids if d}
+    expected.discard("")
+    if not expected:
+        return None
+    top_k = list(retrieved_doc_ids)[: max(0, int(k))]
+    matched: set[str] = set()
+    for doc_id in top_k:
+        norm = _normalize_doc_id(doc_id)
+        if norm in expected:
+            matched.add(norm)
+            if len(matched) == len(expected):
+                break
+    return len(matched) / len(expected)
+
+
+def dup_rate(doc_ids_topk: Sequence[str]) -> float:
+    """Fraction of duplicates in a top-k id list: 1 - unique/len.
+
+    A high value means the retriever is returning the same doc under
+    multiple chunks — useful as a diversity signal ahead of rerankers.
+    Returns 0.0 for 0- and 1-element lists (no duplication possible).
+    """
+    n = len(doc_ids_topk)
+    if n <= 1:
+        return 0.0
+    return 1.0 - (len(set(doc_ids_topk)) / float(n))
+
+
+def p_percentile(values: Sequence[float], p: float = 95.0) -> float:
+    """Nearest-rank percentile of `values` (0.0 on empty input).
+
+    Uses the ceil(p/100 * n) - 1 index on the sorted list — deliberate
+    match of the port/rag convention so eval reports across the two
+    repos stay comparable. For latency tracking this is close enough
+    to what percentile libraries give and needs no extra dependency.
+    """
+    if not values:
+        return 0.0
+    xs = sorted(values)
+    idx = int(math.ceil((p / 100.0) * len(xs))) - 1
+    idx = max(0, min(len(xs) - 1, idx))
+    return float(xs[idx])
+
+
+def topk_gap(scores: Sequence[float]) -> Tuple[Optional[float], Optional[float]]:
+    """Absolute and relative score gap between rank 1 and rank k.
+
+    Returns (abs_gap, rel_gap) where abs_gap = scores[0] - scores[-1]
+    and rel_gap = abs_gap / |scores[0]|. A wide gap suggests the top
+    hit is clearly better than the tail and a reranker has less to do;
+    a narrow gap suggests rerank room.
+
+    Returns (None, None) when fewer than 2 scores exist — the concept
+    is undefined in that case. rel_gap is None when the top score is
+    zero (avoids dividing by zero while keeping abs_gap meaningful).
+    """
+    if len(scores) < 2:
+        return (None, None)
+    top = float(scores[0])
+    bottom = float(scores[-1])
+    abs_gap = top - bottom
+    denom = abs(top)
+    rel_gap = (abs_gap / denom) if denom > 0.0 else None
+    return (abs_gap, rel_gap)
 
 
 # ---------------------------------------------------------------------------

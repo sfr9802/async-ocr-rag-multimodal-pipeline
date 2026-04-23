@@ -16,10 +16,14 @@ from eval.harness.io_utils import (
 )
 from eval.harness.metrics import (
     cer,
+    dup_rate,
     edit_distance,
     hit_at_k,
     keyword_coverage,
+    p_percentile,
+    recall_at_k,
     reciprocal_rank,
+    topk_gap,
     wer,
 )
 from eval.harness.multimodal_eval import (
@@ -32,10 +36,14 @@ from eval.harness.rag_eval import RagEvalRow, RagEvalSummary, run_rag_eval
 
 __all__ = [
     "cer",
+    "dup_rate",
     "edit_distance",
     "hit_at_k",
     "keyword_coverage",
+    "p_percentile",
+    "recall_at_k",
     "reciprocal_rank",
+    "topk_gap",
     "wer",
     "load_jsonl",
     "write_csv_report",

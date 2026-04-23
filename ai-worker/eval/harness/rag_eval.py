@@ -16,17 +16,24 @@ Why pluggable vs. building the RAG stack inside this module:
 Emitted metrics per row:
 
   - hit@k            : retrieval hit rate (None if no expected_doc_ids)
+  - recall_at_k      : distinct-gold recall over top-k (None if no expected_doc_ids)
   - reciprocal_rank  : 1/rank of first match, 0 if no match (None if no expected_doc_ids)
   - keyword_coverage : fraction of expected_keywords in the final answer
                        (None if no expected_keywords)
+  - dup_rate         : fraction of duplicate ids in the top-k
+  - topk_gap / topk_rel_gap : score headroom between rank 1 and rank k
   - retrieval_ms / generation_ms / total_ms : per-call latency
 
 Aggregations in the summary:
 
-  - mean_hit_at_k over rows that had expected_doc_ids
-  - mrr  over the same rows
+  - mean_hit_at_k / mean_recall_at_k / mrr over rows that had expected_doc_ids
   - mean_keyword_coverage over rows that had expected_keywords
-  - latency p50 / mean / max
+  - mean_dup_rate / mean_topk_gap over rows where the signal is defined
+  - latency mean / p50 / p95 / max
+
+A `misses` list (capped at 20) enumerates the rows where hit@k == 0 with
+their top-3 retrieved doc_ids and scores — the quickest way to see what
+a reranker or query parser would have to fix.
 """
 
 from __future__ import annotations
@@ -38,10 +45,16 @@ from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Mapping, Optional, Protocol
 
 from eval.harness.metrics import (
+    dup_rate,
     hit_at_k,
     keyword_coverage,
+    p_percentile,
+    recall_at_k,
     reciprocal_rank,
+    topk_gap,
 )
+
+MISSES_CAP = 20
 
 log = logging.getLogger(__name__)
 
@@ -81,8 +94,12 @@ class RagEvalRow:
     retrieved_doc_ids: List[str] = field(default_factory=list)
     retrieval_scores: List[float] = field(default_factory=list)
     hit_at_k: Optional[float] = None
+    recall_at_k: Optional[float] = None
     reciprocal_rank: Optional[float] = None
     keyword_coverage: Optional[float] = None
+    dup_rate: float = 0.0
+    topk_gap: Optional[float] = None
+    topk_rel_gap: Optional[float] = None
     retrieval_ms: float = 0.0
     generation_ms: float = 0.0
     total_ms: float = 0.0
@@ -101,14 +118,19 @@ class RagEvalSummary:
     rows_with_expected_keywords: int
     top_k: int
     mean_hit_at_k: Optional[float]
+    mean_recall_at_k: Optional[float]
     mrr: Optional[float]
     mean_keyword_coverage: Optional[float]
+    mean_dup_rate: float
+    mean_topk_gap: Optional[float]
     mean_retrieval_ms: float
     p50_retrieval_ms: float
+    p95_retrieval_ms: float
     max_retrieval_ms: float
     mean_generation_ms: float
     mean_total_ms: float
     error_count: int
+    misses: List[Dict[str, Any]] = field(default_factory=list)
     index_version: Optional[str] = None
     embedding_model: Optional[str] = None
     started_at: Optional[str] = None
@@ -194,12 +216,19 @@ def run_rag_eval(
             row.hit_at_k = hit_at_k(
                 retrieved_doc_ids, expected_doc_ids, k=top_k
             )
+            row.recall_at_k = recall_at_k(
+                retrieved_doc_ids, expected_doc_ids, k=top_k
+            )
             row.reciprocal_rank = reciprocal_rank(
                 retrieved_doc_ids, expected_doc_ids
             )
             row.keyword_coverage = keyword_coverage(
                 answer, expected_keywords
             )
+            row.dup_rate = round(dup_rate(retrieved_doc_ids[:top_k]), 4)
+            gap_abs, gap_rel = topk_gap(retrieval_scores[:top_k])
+            row.topk_gap = round(gap_abs, 6) if gap_abs is not None else None
+            row.topk_rel_gap = round(gap_rel, 6) if gap_rel is not None else None
         except Exception as ex:
             errors += 1
             row.error = f"{type(ex).__name__}: {ex}"
@@ -236,8 +265,11 @@ def _aggregate(
     errors: int,
 ) -> RagEvalSummary:
     hit_values = [r.hit_at_k for r in rows if r.hit_at_k is not None]
+    recall_values = [r.recall_at_k for r in rows if r.recall_at_k is not None]
     rr_values = [r.reciprocal_rank for r in rows if r.reciprocal_rank is not None]
     kc_values = [r.keyword_coverage for r in rows if r.keyword_coverage is not None]
+    dup_values = [r.dup_rate for r in rows if r.error is None]
+    gap_values = [r.topk_gap for r in rows if r.topk_gap is not None]
 
     retrieval_latencies = [r.retrieval_ms for r in rows if r.error is None]
     generation_latencies = [r.generation_ms for r in rows if r.error is None]
@@ -259,30 +291,67 @@ def _aggregate(
         rows_with_expected_keywords=len(kc_values),
         top_k=top_k,
         mean_hit_at_k=_mean_or_none(hit_values),
+        mean_recall_at_k=_mean_or_none(recall_values),
         mrr=_mean_or_none(rr_values),
         mean_keyword_coverage=_mean_or_none(kc_values),
+        mean_dup_rate=round(statistics.fmean(dup_values), 4) if dup_values else 0.0,
+        mean_topk_gap=_mean_or_none(gap_values),
         mean_retrieval_ms=_mean_or_zero(retrieval_latencies),
         p50_retrieval_ms=_p50_or_zero(retrieval_latencies),
+        p95_retrieval_ms=round(p_percentile(retrieval_latencies, 95.0), 3),
         max_retrieval_ms=round(max(retrieval_latencies), 3) if retrieval_latencies else 0.0,
         mean_generation_ms=_mean_or_zero(generation_latencies),
         mean_total_ms=_mean_or_zero(total_latencies),
         error_count=errors,
+        misses=_collect_misses(rows),
         index_version=index_version,
         embedding_model=embedding_model,
     )
 
 
+def _collect_misses(rows: List[RagEvalRow]) -> List[Dict[str, Any]]:
+    """Rows with hit@k == 0, capped at `MISSES_CAP` for report size.
+
+    Only the first three retrieved (doc_id, score) pairs are included —
+    the quickest signal for "what did the retriever return instead?"
+    without blowing up the JSON report on long top-k values.
+    """
+    out: List[Dict[str, Any]] = []
+    for row in rows:
+        if row.hit_at_k != 0.0:
+            continue
+        top3 = [
+            {"doc_id": doc_id, "score": score}
+            for doc_id, score in zip(row.retrieved_doc_ids[:3], row.retrieval_scores[:3])
+        ]
+        out.append(
+            {
+                "query": row.query,
+                "expected_doc_ids": list(row.expected_doc_ids),
+                "top3": top3,
+            }
+        )
+        if len(out) >= MISSES_CAP:
+            break
+    return out
+
+
 def _log_summary(summary: RagEvalSummary) -> None:
     log.info(
-        "RAG eval complete: rows=%d errors=%d hit@%d=%s mrr=%s kw_cov=%s "
-        "mean_total_ms=%.1f",
+        "RAG eval complete: rows=%d errors=%d hit@%d=%s recall@%d=%s mrr=%s "
+        "kw_cov=%s dup=%s p95_ret_ms=%.1f mean_total_ms=%.1f misses=%d",
         summary.row_count,
         summary.error_count,
         summary.top_k,
         _fmt_opt(summary.mean_hit_at_k),
+        summary.top_k,
+        _fmt_opt(summary.mean_recall_at_k),
         _fmt_opt(summary.mrr),
         _fmt_opt(summary.mean_keyword_coverage),
+        f"{summary.mean_dup_rate:.3f}",
+        summary.p95_retrieval_ms,
         summary.mean_total_ms,
+        len(summary.misses),
     )
 
 
