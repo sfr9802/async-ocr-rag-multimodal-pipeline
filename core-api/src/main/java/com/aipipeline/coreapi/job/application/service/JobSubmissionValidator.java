@@ -29,6 +29,8 @@ import java.util.Set;
  *   <tr><td>MULTIMODAL</td> <td>multipart</td><td>optional</td>                <td><b>required, non-empty</b></td> <td>PNG, JPEG, PDF</td></tr>
  *   <tr><td>AUTO</td>       <td>JSON</td>     <td>optional (may be blank)</td> <td>-</td>            <td>-</td></tr>
  *   <tr><td>AUTO</td>       <td>multipart</td><td>optional</td>                <td>optional, non-empty (at least one of text/file required)</td> <td>PNG, JPEG, PDF</td></tr>
+ *   <tr><td>AGENT</td>      <td>JSON</td>     <td>optional (may be blank)</td> <td>-</td>            <td>-</td></tr>
+ *   <tr><td>AGENT</td>      <td>multipart</td><td>optional</td>                <td>optional, non-empty (at least one of text/file required)</td> <td>PNG, JPEG, PDF</td></tr>
  * </table>
  *
  * <h2>Error codes</h2>
@@ -97,14 +99,14 @@ public final class JobSubmissionValidator {
         if (raw == null || raw.isBlank()) {
             throw new InvalidJobSubmissionException(
                     ErrorCodes.CAPABILITY_REQUIRED,
-                    "capability field is required. Accepted values: MOCK, RAG, OCR, MULTIMODAL, AUTO.");
+                    "capability field is required. Accepted values: MOCK, RAG, OCR, MULTIMODAL, AUTO, AGENT.");
         }
         try {
             return JobCapability.fromString(raw);
         } catch (IllegalArgumentException ex) {
             throw new InvalidJobSubmissionException(
                     ErrorCodes.UNKNOWN_CAPABILITY,
-                    "Unknown capability: " + raw + ". Accepted values: MOCK, RAG, OCR, MULTIMODAL, AUTO.");
+                    "Unknown capability: " + raw + ". Accepted values: MOCK, RAG, OCR, MULTIMODAL, AUTO, AGENT.");
         }
     }
 
@@ -165,16 +167,18 @@ public final class JobSubmissionValidator {
                                     + "(empty string is acceptable for backward compatibility).");
                 }
             }
-            case AUTO -> {
-                // AUTO on the JSON endpoint accepts any non-null text —
-                // blank / whitespace-only is fine because the router emits
-                // a clarify FINAL_RESPONSE rather than rejecting the job.
-                // Null is rejected so the controller's text-to-bytes path
-                // does not NPE (matches the MOCK-JSON contract).
+            case AUTO, AGENT -> {
+                // AUTO / AGENT on the JSON endpoint accept any non-null
+                // text — blank / whitespace-only is fine because the
+                // router emits a clarify FINAL_RESPONSE rather than
+                // rejecting the job. Null is rejected so the controller's
+                // text-to-bytes path does not NPE (matches the MOCK-JSON
+                // contract). AGENT shares the rule matrix with AUTO; the
+                // only Phase 6 difference is the loop behind the dispatch.
                 if (text == null) {
                     throw new InvalidJobSubmissionException(
                             ErrorCodes.TEXT_REQUIRED,
-                            "AUTO jobs on the JSON endpoint require a 'text' "
+                            capability + " jobs on the JSON endpoint require a 'text' "
                                     + "field (empty string is acceptable — use it "
                                     + "to force a clarify response). To include a "
                                     + "file, use the multipart endpoint.");
@@ -229,13 +233,14 @@ public final class JobSubmissionValidator {
             MultipartFile file,
             String text
     ) {
-        // AUTO is the only capability where the file field is OPTIONAL on
-        // the multipart endpoint — it is routed from (text, file) pair, so
-        // either side is enough. Every other capability requires a real
-        // file; the shared "file must exist + non-empty" guard below runs
-        // for them after the AUTO branch's own text/file check.
-        if (capability == JobCapability.AUTO) {
-            validateAutoMultipart(file, text);
+        // AUTO and AGENT are the capabilities where the file field is
+        // OPTIONAL on the multipart endpoint — the decision is routed
+        // from the (text, file) pair, so either side is enough. Every
+        // other capability requires a real file; the shared "file must
+        // exist + non-empty" guard below runs for them after the
+        // AUTO/AGENT branch's own text/file check.
+        if (capability == JobCapability.AUTO || capability == JobCapability.AGENT) {
+            validateAutoMultipart(capability, file, text);
             return;
         }
 
@@ -265,32 +270,37 @@ public final class JobSubmissionValidator {
                 // Phase-1 compatibility: MOCK accepts any non-empty file and
                 // any (or no) text. No additional checks.
             }
-            case AUTO -> {
+            case AUTO, AGENT -> {
                 // Handled above via the early-return branch.
             }
         }
     }
 
-    private static void validateAutoMultipart(MultipartFile file, String text) {
+    private static void validateAutoMultipart(
+            JobCapability capability,
+            MultipartFile file,
+            String text
+    ) {
         boolean hasText = text != null && !text.isBlank();
         boolean hasFile = file != null && !file.isEmpty() && file.getSize() > 0;
 
         if (!hasText && !hasFile) {
             throw new InvalidJobSubmissionException(
                     ErrorCodes.AUTO_NO_INPUT,
-                    "AUTO jobs on the multipart endpoint require AT LEAST ONE of: "
+                    capability + " jobs on the multipart endpoint require AT LEAST ONE of: "
                             + "a non-blank 'text' form field, or a non-empty 'file' form field. "
                             + "Neither was supplied — the router would have nothing to route on.");
         }
 
-        // A file that is present but empty is always an error, even on AUTO —
-        // core-api would stage a zero-byte INPUT_FILE that the worker's
-        // routing classifier cannot use.
+        // A file that is present but empty is always an error, even on
+        // AUTO / AGENT — core-api would stage a zero-byte INPUT_FILE
+        // that the worker's routing classifier cannot use.
         if (file != null && !file.isEmpty() && file.getSize() <= 0) {
             throw new InvalidJobSubmissionException(
                     ErrorCodes.FILE_EMPTY,
-                    "AUTO job supplied a 'file' form field but its size is 0 bytes. "
-                            + "Omit the file entirely to submit a text-only AUTO job.");
+                    capability + " job supplied a 'file' form field but its size is 0 bytes. "
+                            + "Omit the file entirely to submit a text-only "
+                            + capability + " job.");
         }
 
         // When a file IS present, enforce the same PNG/JPEG/PDF rule as
@@ -298,7 +308,7 @@ public final class JobSubmissionValidator {
         // clarify response — we fail fast at the boundary instead so the
         // client gets a clean UNSUPPORTED_FILE_TYPE immediately.
         if (hasFile) {
-            requireSupportedFileType(JobCapability.AUTO, file);
+            requireSupportedFileType(capability, file);
         }
     }
 

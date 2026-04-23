@@ -1458,5 +1458,5 @@ def test_multimodal_disabled_leaves_others_untouched(monkeypatch):
     )
     result = registry_module.build_default_registry(settings)
 
-    # AUTO auto-registers when at least one downstream sub is available.
-    assert set(result.available()) == {"MOCK", "RAG", "OCR", "AUTO"}
+    # AUTO + AGENT auto-register when at least one downstream sub is available.
+    assert set(result.available()) == {"MOCK", "RAG", "OCR", "AUTO", "AGENT"}

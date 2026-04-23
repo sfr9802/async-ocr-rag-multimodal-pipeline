@@ -16,7 +16,8 @@ public enum JobCapability {
     OCR,
     RAG,
     MULTIMODAL,
-    AUTO;
+    AUTO,
+    AGENT;
 
     public static JobCapability fromString(String raw) {
         if (raw == null) {

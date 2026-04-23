@@ -15,11 +15,15 @@ from eval.harness.io_utils import (
     write_json_report,
 )
 from eval.harness.metrics import (
+    answer_recall_delta,
+    avg_cost_multiplier,
     cer,
     dup_rate,
     edit_distance,
     hit_at_k,
+    iter_count_mean,
     keyword_coverage,
+    loop_recovery_rate,
     p_percentile,
     recall_at_k,
     reciprocal_rank,
@@ -35,11 +39,15 @@ from eval.harness.ocr_eval import OcrEvalRow, OcrEvalSummary, run_ocr_eval
 from eval.harness.rag_eval import RagEvalRow, RagEvalSummary, run_rag_eval
 
 __all__ = [
+    "answer_recall_delta",
+    "avg_cost_multiplier",
     "cer",
     "dup_rate",
     "edit_distance",
     "hit_at_k",
+    "iter_count_mean",
     "keyword_coverage",
+    "loop_recovery_rate",
     "p_percentile",
     "recall_at_k",
     "reciprocal_rank",

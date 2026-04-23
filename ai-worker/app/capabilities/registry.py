@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from app.capabilities.base import Capability, CapabilityError
 from app.capabilities.mock_processor import MockProcessor
@@ -178,42 +178,50 @@ def build_default_registry(settings: WorkerSettings) -> CapabilityRegistry:
                     type(ex).__name__, ex,
                 )
 
-    # AUTO depends on at least one of RAG / OCR / MULTIMODAL being
-    # registered — it has nothing to dispatch to otherwise. Missing
+    # AUTO / AGENT depend on at least one of RAG / OCR / MULTIMODAL being
+    # registered — they have nothing to dispatch to otherwise. Missing
     # sub-capabilities are not fatal: the router simply can't route to
     # them and the AutoCapability returns a clarify response with a
-    # reason when a missing-sub action is selected.
+    # reason when a missing-sub action is selected. Both AUTO and AGENT
+    # are registered when any downstream exists — AUTO is the Phase 5
+    # single-pass dispatcher (loop forced off), AGENT honours
+    # agent_loop to enable the Phase 6 loop.
     if rag_registered or ocr_registered or multimodal_registered:
         try:
-            registry.register(
-                _build_auto_capability(
-                    settings,
-                    registry=registry,
-                    rag_registered=rag_registered,
-                    ocr_registered=ocr_registered,
-                    multimodal_registered=multimodal_registered,
-                )
+            auto_cap, agent_cap = _build_agent_capabilities(
+                settings,
+                registry=registry,
+                rag_registered=rag_registered,
+                ocr_registered=ocr_registered,
+                multimodal_registered=multimodal_registered,
             )
+            registry.register(auto_cap)
+            registry.register(agent_cap)
             log.info(
-                "AUTO capability registered (router=%s confidence_threshold=%.2f "
-                "rag=%s ocr=%s multimodal=%s).",
+                "AUTO + AGENT capabilities registered (router=%s "
+                "confidence_threshold=%.2f rag=%s ocr=%s multimodal=%s "
+                "agent_loop=%s agent_critic=%s agent_max_iter=%d).",
                 settings.agent_router,
                 settings.agent_confidence_threshold,
                 rag_registered, ocr_registered, multimodal_registered,
+                settings.agent_loop, settings.agent_critic,
+                settings.agent_max_iter,
             )
         except Exception as ex:
             log.warning(
-                "AUTO capability NOT registered (%s: %s). MOCK, RAG, OCR, "
-                "MULTIMODAL continue to serve their own capabilities. "
-                "Check the agent_router / agent_confidence_threshold "
-                "settings, then restart the worker.",
+                "AUTO/AGENT capabilities NOT registered (%s: %s). MOCK, "
+                "RAG, OCR, MULTIMODAL continue to serve their own "
+                "capabilities. Check the agent_router / "
+                "agent_confidence_threshold / agent_loop settings, "
+                "then restart the worker.",
                 type(ex).__name__, ex,
             )
     else:
         log.info(
-            "AUTO capability NOT registered: no downstream capabilities "
-            "(RAG / OCR / MULTIMODAL) are available. Enable at least one, "
-            "then restart the worker. MOCK remains registered."
+            "AUTO / AGENT capabilities NOT registered: no downstream "
+            "capabilities (RAG / OCR / MULTIMODAL) are available. "
+            "Enable at least one, then restart the worker. MOCK "
+            "remains registered."
         )
 
     log.info("Active capabilities: %s", registry.available())
@@ -678,37 +686,61 @@ def _build_cross_modal_retriever(settings: WorkerSettings, text_retriever):
     return retriever
 
 
-def _build_auto_capability(
+def _build_agent_capabilities(
     settings: WorkerSettings,
     *,
     registry: "CapabilityRegistry",
     rag_registered: bool,
     ocr_registered: bool,
     multimodal_registered: bool,
-) -> Capability:
-    """Build the AUTO capability.
+) -> tuple[Capability, Capability]:
+    """Build ``(AutoCapability, AgentCapability)`` sharing wiring.
 
     Reuses the already-registered RAG / OCR / MULTIMODAL Capability
     instances (pulled from the registry) so there is exactly one
     RagCapability / OcrCapability / MultimodalCapability in the
     process regardless of whether AUTO is enabled. Missing
-    sub-capabilities become ``None`` — AutoCapability's missing-sub
+    sub-capabilities become ``None`` — AgentCapability's missing-sub
     branch handles the dispatch-time failure with a typed
     ``AUTO_<sub>_UNAVAILABLE`` error code.
+
+    AUTO is always built with ``loop_enabled=False`` so the Phase 5
+    contract is bit-for-bit preserved. AGENT honours
+    ``settings.agent_loop`` — ``on`` enables the loop, ``off`` (the
+    default) mirrors AUTO behaviour for safe Phase 5 parity until Phase
+    8 measures ``loop_recovery_rate``.
 
     The router is built from ``settings.agent_router``. When the env
     asks for ``llm`` but the configured LLM backend has downgraded to
     NoOpChatProvider (either because ``llm_backend`` was unset or the
     remote backend was unreachable), the registry auto-downgrades to
-    the rule router with a warning — AUTO never goes down because of a
-    missing LLM.
+    the rule router with a warning — AUTO / AGENT never go down because
+    of a missing LLM. The same downgrade logic applies to the critic:
+    ``agent_critic=llm`` on a noop backend falls back to the rule
+    critic with a warning.
     """
-    from app.capabilities.agent.capability import AutoCapability
+    from app.capabilities.agent.capability import (
+        AgentCapability,
+        AutoCapability,
+    )
+    from app.capabilities.agent.critic import (
+        AgentCriticProvider,
+        LlmCritic,
+        NoOpCritic,
+        RuleCritic,
+    )
+    from app.capabilities.agent.loop import LoopBudget
+    from app.capabilities.agent.rewriter import (
+        LlmQueryRewriter,
+        NoOpQueryRewriter,
+        QueryRewriterProvider,
+    )
     from app.capabilities.agent.router import (
         AgentRouterProvider,
         LlmAgentRouter,
         RuleBasedAgentRouter,
     )
+    from app.capabilities.agent.synthesizer import AgentSynthesizer
     from app.clients.llm_chat import NoOpChatProvider
 
     chat = _get_shared_llm_chat(settings)
@@ -718,11 +750,11 @@ def _build_auto_capability(
     router: AgentRouterProvider
     if requested in ("", "rule", "off", "noop", "none", "false", "0"):
         router = RuleBasedAgentRouter()
-        log.info("AUTO router active: rule")
+        log.info("AUTO/AGENT router active: rule")
     elif requested == "llm":
         if isinstance(chat, NoOpChatProvider):
             log.warning(
-                "AUTO router requested=llm but llm_backend is noop "
+                "AUTO/AGENT router requested=llm but llm_backend is noop "
                 "(or downgraded). Falling back to rule-based router — "
                 "set AIPIPELINE_WORKER_LLM_BACKEND=ollama|claude and "
                 "ensure the backend is reachable to re-enable the LLM "
@@ -736,7 +768,7 @@ def _build_auto_capability(
                 confidence_threshold=settings.agent_confidence_threshold,
             )
             log.info(
-                "AUTO router active: %s (threshold=%.2f)",
+                "AUTO/AGENT router active: %s (threshold=%.2f)",
                 router.name, settings.agent_confidence_threshold,
             )
     else:
@@ -751,15 +783,152 @@ def _build_auto_capability(
     ocr_capability = registry.get("OCR") if ocr_registered else None
     multimodal_capability = registry.get("MULTIMODAL") if multimodal_registered else None
 
-    return AutoCapability(
+    chat_for_capability = chat if not isinstance(chat, NoOpChatProvider) else None
+
+    # AUTO: always loop_enabled=False, no loop wiring needed.
+    auto_cap = AutoCapability(
         router=router,
         parser=parser,
         rag=rag_capability,
         ocr=ocr_capability,
         multimodal=multimodal_capability,
-        chat=chat if not isinstance(chat, NoOpChatProvider) else None,
+        chat=chat_for_capability,
         direct_answer_max_tokens=settings.agent_direct_answer_max_tokens,
     )
+
+    # AGENT: loop wiring is only activated when agent_loop='on'.
+    loop_enabled = _parse_loop_flag(settings.agent_loop)
+    critic: AgentCriticProvider
+    rewriter: QueryRewriterProvider
+    synthesizer: Optional[AgentSynthesizer] = None
+    retriever = None
+    generator = None
+
+    if loop_enabled:
+        critic = _build_agent_critic(settings, chat)
+        rewriter = _build_agent_rewriter(settings, chat, parser)
+        # Loop wiring reuses the RAG retriever + generator. We only
+        # fetch them when RAG has registered (they're the same shared
+        # instances used by RagCapability + MultimodalCapability). The
+        # loop is only meaningfully useful when retrieval is available.
+        if rag_registered:
+            retriever, generator = _get_shared_retriever_bundle(settings)
+            synthesizer = AgentSynthesizer(generator)
+        else:
+            # Loop requested but no retriever — the AGENT capability
+            # falls through to the Phase 5 single-pass path because its
+            # loop gate requires retriever + generator + synthesizer.
+            log.warning(
+                "AGENT loop requested but RAG is not registered — the "
+                "loop will be inactive until a RAG retriever is "
+                "available. AGENT continues to serve single-pass "
+                "dispatch until then."
+            )
+    else:
+        critic = NoOpCritic()
+        rewriter = NoOpQueryRewriter()
+
+    budget = LoopBudget(
+        max_iter=settings.agent_max_iter,
+        max_total_ms=settings.agent_max_total_ms,
+        max_llm_tokens=settings.agent_max_llm_tokens,
+        min_confidence_to_stop=settings.agent_min_stop_confidence,
+    )
+
+    agent_cap = AgentCapability(
+        router=router,
+        parser=parser,
+        rag=rag_capability,
+        ocr=ocr_capability,
+        multimodal=multimodal_capability,
+        chat=chat_for_capability,
+        direct_answer_max_tokens=settings.agent_direct_answer_max_tokens,
+        loop_enabled=loop_enabled,
+        critic=critic,
+        rewriter=rewriter,
+        synthesizer=synthesizer,
+        retriever=retriever,
+        generator=generator,
+        budget=budget,
+    )
+
+    return auto_cap, agent_cap
+
+
+def _parse_loop_flag(raw: str) -> bool:
+    """Lenient truthy parser for ``agent_loop``: on/true/1/yes -> True."""
+    lowered = (raw or "").strip().lower()
+    if lowered in ("on", "true", "1", "yes", "y", "enable", "enabled"):
+        return True
+    return False
+
+
+def _build_agent_critic(settings: WorkerSettings, chat):
+    """Build the AgentCriticProvider named by ``settings.agent_critic``.
+
+    Supported values:
+      - 'llm'  : LlmCritic, degrades to RuleCritic on provider failure.
+        If the LLM backend downgraded to NoOp, the registry falls back
+        to RuleCritic with a warning — the loop stays alive but
+        semantically identical to rule.
+      - 'rule' (default): RuleCritic.
+      - 'noop' / 'off': NoOpCritic (loop degenerates to single-pass).
+
+    Anything else degrades to RuleCritic with a warning.
+    """
+    from app.capabilities.agent.critic import (
+        LlmCritic,
+        NoOpCritic,
+        RuleCritic,
+    )
+    from app.clients.llm_chat import NoOpChatProvider
+
+    name = (settings.agent_critic or "rule").strip().lower()
+    if name in ("off", "noop", "none", "false", "0"):
+        log.info("AGENT critic: noop (loop effectively disabled)")
+        return NoOpCritic()
+    if name == "rule":
+        log.info("AGENT critic: rule")
+        return RuleCritic()
+    if name == "llm":
+        if isinstance(chat, NoOpChatProvider):
+            log.warning(
+                "AGENT critic requested=llm but llm_backend is noop. "
+                "Falling back to rule critic — set "
+                "AIPIPELINE_WORKER_LLM_BACKEND=ollama|claude to re-enable."
+            )
+            return RuleCritic()
+        log.info("AGENT critic: llm (backend=%s)", chat.name)
+        return LlmCritic(chat)
+    log.warning(
+        "Unknown agent_critic=%r. Falling back to rule critic. "
+        "Supported: 'llm', 'rule', 'noop'.",
+        settings.agent_critic,
+    )
+    return RuleCritic()
+
+
+def _build_agent_rewriter(settings: WorkerSettings, chat, parser):
+    """Build a ``QueryRewriterProvider`` for the agent loop.
+
+    Always attempts the LLM rewriter when a live chat backend is
+    available. On a NoOp backend the registry hands back a
+    ``NoOpQueryRewriter`` so the loop still composes — but a loop with
+    a NoOp rewriter is equivalent to a single-pass flow because the
+    second iteration would re-run the same query; operators are
+    expected to enable the LLM backend before turning the loop on.
+    """
+    from app.capabilities.agent.rewriter import (
+        LlmQueryRewriter,
+        NoOpQueryRewriter,
+    )
+    from app.clients.llm_chat import NoOpChatProvider
+
+    if isinstance(chat, NoOpChatProvider):
+        log.info("AGENT rewriter: noop (llm backend unavailable)")
+        return NoOpQueryRewriter()
+    log.info("AGENT rewriter: llm (backend=%s)", chat.name)
+    return LlmQueryRewriter(chat)
 
 
 def _build_vision_provider(settings: WorkerSettings):

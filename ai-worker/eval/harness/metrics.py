@@ -314,3 +314,131 @@ def keyword_coverage(
         if needle and needle in haystack:
             hits += 1
     return hits / len(keywords)
+
+
+# ---------------------------------------------------------------------------
+# Agent loop metrics (phase 6).
+# ---------------------------------------------------------------------------
+
+
+def _get_attr(row: object, name: str) -> object:
+    """Dict-or-object field accessor used by the agent metrics.
+
+    The loop metrics are defined over the "compare" eval rows where each
+    row carries both a loop-off snapshot (``iter0``) and a loop-on
+    snapshot (``final``). Rows are plain dicts in the JSON output but
+    dataclasses in memory; accepting both keeps the metrics callable
+    from both the writer and in-memory tests.
+    """
+    if isinstance(row, dict):
+        return row.get(name)
+    return getattr(row, name, None)
+
+
+def iter_count_mean(rows: Sequence[object]) -> Optional[float]:
+    """Mean of per-row ``iter_count`` values (loop iterations run).
+
+    Rows without an ``iter_count`` field are skipped. Returns None when
+    no row contributed a value — callers treat None as "metric not
+    defined for this dataset" rather than failing.
+    """
+    values: List[float] = []
+    for row in rows:
+        v = _get_attr(row, "iter_count")
+        if v is None:
+            continue
+        try:
+            values.append(float(v))
+        except (TypeError, ValueError):
+            continue
+    if not values:
+        return None
+    return round(sum(values) / float(len(values)), 4)
+
+
+def loop_recovery_rate(
+    rows: Sequence[object],
+    *,
+    keyword_threshold: float = 0.5,
+) -> Optional[float]:
+    """Fraction of failing iter0 rows whose final answer clears the bar.
+
+    A row "recovered" when ``iter0_keyword_coverage < keyword_threshold``
+    AND ``final_keyword_coverage >= keyword_threshold``. The metric is
+    ``recovered / needing_recovery``: how often did the loop actually
+    rescue a weak first pass.
+
+    Returns None when no row was "needing_recovery" — dividing by zero
+    would be meaningless and the caller skips aggregation.
+    """
+    needing: int = 0
+    recovered: int = 0
+    for row in rows:
+        iter0 = _get_attr(row, "iter0_keyword_coverage")
+        final = _get_attr(row, "final_keyword_coverage")
+        if iter0 is None or final is None:
+            continue
+        try:
+            iter0_f = float(iter0)
+            final_f = float(final)
+        except (TypeError, ValueError):
+            continue
+        if iter0_f < keyword_threshold:
+            needing += 1
+            if final_f >= keyword_threshold:
+                recovered += 1
+    if needing == 0:
+        return None
+    return round(recovered / float(needing), 4)
+
+
+def avg_cost_multiplier(rows: Sequence[object]) -> Optional[float]:
+    """Mean of per-row ``total_tokens / iter0_tokens`` ratios.
+
+    The iter0 tokens approximate "what a single-shot (loop-off) run
+    would have cost"; the total tokens count every iteration. A value
+    of 1.0 means the loop didn't add cost (converged at iter 0). Higher
+    values indicate the loop paid for additional iterations. Rows with
+    zero or missing iter0 tokens are excluded — cost multiplier is
+    undefined in that case.
+    """
+    ratios: List[float] = []
+    for row in rows:
+        total = _get_attr(row, "total_tokens")
+        iter0 = _get_attr(row, "iter0_tokens")
+        if total is None or iter0 is None:
+            continue
+        try:
+            total_f = float(total)
+            iter0_f = float(iter0)
+        except (TypeError, ValueError):
+            continue
+        if iter0_f <= 0.0:
+            continue
+        ratios.append(total_f / iter0_f)
+    if not ratios:
+        return None
+    return round(sum(ratios) / float(len(ratios)), 4)
+
+
+def answer_recall_delta(rows: Sequence[object]) -> Optional[float]:
+    """Mean of ``final_keyword_coverage - iter0_keyword_coverage``.
+
+    Positive means the loop improved answer coverage on average;
+    negative would mean it regressed (which Phase 8 would flag as a
+    failure). Rows where either side is missing are skipped so the
+    metric is taken only over the sample it can actually compare.
+    """
+    deltas: List[float] = []
+    for row in rows:
+        iter0 = _get_attr(row, "iter0_keyword_coverage")
+        final = _get_attr(row, "final_keyword_coverage")
+        if iter0 is None or final is None:
+            continue
+        try:
+            deltas.append(float(final) - float(iter0))
+        except (TypeError, ValueError):
+            continue
+    if not deltas:
+        return None
+    return round(sum(deltas) / float(len(deltas)), 4)

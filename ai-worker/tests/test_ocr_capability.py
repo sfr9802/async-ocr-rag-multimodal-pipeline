@@ -493,8 +493,8 @@ def test_ocr_disabled_leaves_other_capabilities_intact(monkeypatch):
     settings = WorkerSettings(rag_enabled=True, ocr_enabled=False)
     result = registry_module.build_default_registry(settings)
 
-    # AUTO auto-registers when at least one downstream sub is available.
-    assert set(result.available()) == {"MOCK", "RAG", "AUTO"}
+    # AUTO + AGENT auto-register when at least one downstream sub is available.
+    assert set(result.available()) == {"MOCK", "RAG", "AUTO", "AGENT"}
 
 
 # ---------------------------------------------------------------------------

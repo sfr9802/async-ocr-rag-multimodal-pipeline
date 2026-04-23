@@ -469,3 +469,135 @@ def summary_to_dict(summary: RagEvalSummary) -> Dict[str, Any]:
 
 def row_to_dict(row: RagEvalRow) -> Dict[str, Any]:
     return asdict(row)
+
+
+# ---------------------------------------------------------------------------
+# Agent compare harness (phase 6).
+#
+# Runs the same dataset twice — once with the loop disabled (single-pass
+# Phase 5 AUTO behaviour) and once with the loop enabled — so the Phase
+# 6 metrics (loop_recovery_rate, answer_recall_delta, avg_cost_multiplier,
+# iter_count_mean) have something to average over.
+#
+# The harness takes a single ``agent_run_fn`` callback that knows how to
+# execute one row end-to-end given ``(query, loop_enabled)``. Passing the
+# callback instead of building the agent stack inline keeps this module
+# testable (tests can supply a deterministic fake runner) and keeps the
+# CLI free to wire a live AgentCapability without bleeding its types
+# into the harness.
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class AgentCompareRow:
+    """One row of the compare report.
+
+    Carries the per-row fields needed by the Phase 6 metric helpers
+    (``iter0_keyword_coverage``, ``final_keyword_coverage``,
+    ``iter0_tokens``, ``total_tokens``, ``iter_count``) plus the raw
+    answers so a human reviewer can eyeball what the loop rewrote. The
+    loop-off snapshot is the ``iter0_*`` fields; the loop-on snapshot is
+    ``final_*``.
+    """
+
+    query: str
+    expected_keywords: List[str] = field(default_factory=list)
+    # loop=off snapshot
+    iter0_answer: str = ""
+    iter0_retrieved_doc_ids: List[str] = field(default_factory=list)
+    iter0_keyword_coverage: Optional[float] = None
+    iter0_tokens: int = 0
+    iter0_ms: float = 0.0
+    # loop=on snapshot
+    final_answer: str = ""
+    final_retrieved_doc_ids: List[str] = field(default_factory=list)
+    final_keyword_coverage: Optional[float] = None
+    total_tokens: int = 0
+    total_ms: float = 0.0
+    iter_count: int = 0
+    stop_reason: Optional[str] = None
+    notes: Optional[str] = None
+    error: Optional[str] = None
+
+
+# Signature for the per-row agent runner. Returns an ``AgentRunResult``
+# dataclass so the harness doesn't have to care whether the agent is a
+# real AgentCapability or a deterministic test fake.
+@dataclass
+class AgentRunResult:
+    answer: str
+    retrieved_doc_ids: List[str]
+    tokens_used: int
+    elapsed_ms: float
+    iter_count: int
+    stop_reason: Optional[str]
+
+
+def run_agent_compare_eval(
+    dataset: List[Mapping[str, Any]],
+    *,
+    agent_run_fn: Any,
+    dataset_path: Optional[str] = None,
+) -> List[AgentCompareRow]:
+    """Run the compare harness over ``dataset``.
+
+    ``agent_run_fn(query, loop_enabled) -> AgentRunResult`` is called
+    twice per row — once with ``loop_enabled=False`` (captures the
+    iter0 baseline) and once with ``loop_enabled=True`` (captures the
+    final loop result). The per-row ``keyword_coverage`` is computed
+    against the row's ``expected_keywords``.
+
+    Returns a list of ``AgentCompareRow`` suitable for feeding into
+    ``eval.harness.metrics.loop_recovery_rate`` /
+    ``answer_recall_delta`` / ``avg_cost_multiplier`` /
+    ``iter_count_mean``.
+    """
+    rows: List[AgentCompareRow] = []
+    for idx, raw in enumerate(dataset, start=1):
+        query = _require_str(raw, "query", row_index=idx)
+        expected_keywords = _list_of_str(raw.get("expected_keywords"))
+        notes = raw.get("notes")
+
+        row = AgentCompareRow(
+            query=query,
+            expected_keywords=expected_keywords,
+            notes=str(notes) if notes is not None else None,
+        )
+
+        try:
+            off = agent_run_fn(query, False)
+            row.iter0_answer = off.answer or ""
+            row.iter0_retrieved_doc_ids = list(off.retrieved_doc_ids or [])
+            row.iter0_tokens = int(off.tokens_used or 0)
+            row.iter0_ms = round(float(off.elapsed_ms or 0.0), 3)
+            row.iter0_keyword_coverage = keyword_coverage(
+                row.iter0_answer, expected_keywords
+            )
+
+            on = agent_run_fn(query, True)
+            row.final_answer = on.answer or ""
+            row.final_retrieved_doc_ids = list(on.retrieved_doc_ids or [])
+            row.total_tokens = int(on.tokens_used or 0)
+            row.total_ms = round(float(on.elapsed_ms or 0.0), 3)
+            row.iter_count = int(on.iter_count or 0)
+            row.stop_reason = on.stop_reason
+            row.final_keyword_coverage = keyword_coverage(
+                row.final_answer, expected_keywords
+            )
+        except Exception as ex:
+            row.error = f"{type(ex).__name__}: {ex}"
+            log.exception("AGENT compare row %d (%r) failed", idx, query)
+
+        rows.append(row)
+
+    log.info(
+        "AGENT compare eval complete: rows=%d errors=%d dataset=%s",
+        len(rows),
+        sum(1 for r in rows if r.error is not None),
+        dataset_path or "<inline>",
+    )
+    return rows
+
+
+def agent_compare_row_to_dict(row: AgentCompareRow) -> Dict[str, Any]:
+    return asdict(row)

@@ -498,6 +498,146 @@ metadata as a sibling artifact rather than nesting its own trace.
 All three default to safe values, so an unset env produces the same
 behaviour the deterministic rule router has shipped with since Phase 3.
 
+## Phase 3: AGENT capability — loop-based self-refinement
+
+Phase 6 adds an iterative **AGENT** capability that upgrades the
+Phase 3/5 single-pass dispatcher into a real agent loop. The AUTO
+capability still ships unchanged (single-pass dispatch); AGENT is a
+new capability name that reuses the same router / sub-capability
+wiring and adds a critic / rewriter / synthesizer layer on top.
+
+The loop is **opt-in** (`AIPIPELINE_WORKER_AGENT_LOOP=off` by
+default) until Phase 8 measures `loop_recovery_rate` against the
+`kr_sample` dataset. When `agent_loop=off`, AGENT behaves
+bit-for-bit identically to AUTO — the integration test
+(`tests/test_auto_capability.py`) keeps a guard on that.
+
+### Loop flow
+
+```
+INPUT ─▶ classify ─▶ route_decide ─▶ ┌─[iter 0: delegate -> critique]
+                                     │    critic says "sufficient" -> stop
+                                     ├─[iter 1: rewrite -> retrieve -> critique]
+                                     │    critic says "sufficient" -> stop
+                                     ├─[iter N or converged or budget breached]
+                                     └─▶ synthesize (union chunks) -> FINAL_RESPONSE
+```
+
+On iter 0 the loop's `execute_fn`:
+
+* For `action=rag` — runs the shared `retriever.retrieve` +
+  `generator.generate` pair directly (bypassing `RagCapability` to
+  avoid emitting an intermediate `RETRIEVAL_RESULT` that the loop
+  would later overwrite).
+* For `action=multimodal` — runs the full `MultimodalCapability` so
+  OCR + vision + fusion happen exactly once. On subsequent iters the
+  loop falls back to `retriever.retrieve` + `generator.generate` with
+  the rewritten query (OCR/Vision do not re-run). The MULTIMODAL
+  side-output artifacts (`OCR_TEXT`, `VISION_RESULT`,
+  `MULTIMODAL_TRACE`) are preserved alongside the loop's own outputs.
+
+The critic judges sufficiency:
+
+* `NoOpCritic` — always sufficient. Loop degenerates to single-pass;
+  picked when `agent_loop=off` or `agent_critic=noop`.
+* `RuleCritic` — deterministic heuristic. Answers under 40 chars or
+  containing a Korean/English "I don't know" marker are flagged
+  `missing_facts`.
+* `LlmCritic` — Gemma 4 E2B function calling (`judge_answer` tool) +
+  thinking mode. Picks one of five letters:
+  `A=sufficient`, `B=missing_facts`, `C=ambiguous`,
+  `D=off_topic`, `E=unanswerable`. On any provider failure or
+  invalid letter it degrades to `RuleCritic` with
+  `critic_name="llm-fallback-rule"`.
+
+The rewriter proposes the next iteration's query:
+
+* `LlmQueryRewriter` — `chat_json` with the previous iter's full
+  retrieved chunks (clipped to `max_context_chars`, default 10 K —
+  plenty of room inside Gemma 4's 128 K context). Prompt explicitly
+  asks for DIFFERENT information from what was already retrieved.
+  On `LlmChatError` or an invalid payload it falls back to
+  `parser.parse(gap_reason + " " + original)` with
+  `parser_name="rewriter-fallback"`.
+
+The synthesizer composes the final answer over the UNION of every
+iter's retrieved chunks (deduped by `chunk_id`, first-occurrence
+wins). This is the core quality win — a question that needs
+complementary information from two different docs can surface both
+even if no single iter's top-k had both.
+
+### Budget
+
+`LoopBudget` bounds the loop. Any breach terminates with a typed
+`stop_reason`:
+
+| Field                  | Default  | Stop reason when breached |
+|------------------------|---------:|---------------------------|
+| `max_iter`             | 3        | `iter_cap`                |
+| `max_total_ms`         | 15 000   | `time_cap`                |
+| `max_llm_tokens`       | 4 000    | `token_cap`               |
+| `min_confidence_to_stop` | 0.75   | (drives `converged`)      |
+
+A critic verdict of `gap_type='unanswerable'` short-circuits the
+loop with `stop_reason='unanswerable'` regardless of remaining
+budget — rewriting against a corpus that doesn't have the answer
+never helps.
+
+### Artifacts
+
+When the loop runs (`agent_loop=on` + action in `{rag, multimodal}`):
+
+| Artifact                | Content                                                   |
+|-------------------------|-----------------------------------------------------------|
+| `AGENT_DECISION`        | Routing metadata (same as AUTO).                          |
+| `AGENT_TRACE`           | Full `LoopOutcome` JSON (budget + per-step critique).     |
+| `RETRIEVAL_RESULT_AGG`  | Union of every iter's retrieved chunks, deduped.          |
+| `FINAL_RESPONSE`        | Synthesizer's answer over the aggregated chunks.          |
+| (MULTIMODAL only)       | `OCR_TEXT`, `VISION_RESULT`, `MULTIMODAL_TRACE` preserved. |
+
+When the loop is off, or the action is `ocr` / `direct_answer` /
+`clarify`, AGENT emits the Phase 5 artifact shape
+(`AGENT_DECISION` + sub-capability outputs).
+
+### Stop reasons
+
+| Value          | Meaning                                                        |
+|----------------|----------------------------------------------------------------|
+| `converged`    | Critic said sufficient and confidence >= `min_confidence_to_stop`. |
+| `iter_cap`     | Ran `max_iter` iterations without converging.                  |
+| `time_cap`     | Wall-clock exceeded `max_total_ms`.                            |
+| `token_cap`    | Accumulated LLM tokens (critic + executor) exceeded cap.       |
+| `unanswerable` | Critic flagged the question as unanswerable from the corpus.   |
+
+### Environment variables
+
+| Variable                                            | Default | Meaning                                                         |
+|------------------------------------------------------|---------|-----------------------------------------------------------------|
+| `AIPIPELINE_WORKER_AGENT_LOOP`                       | `off`   | Master switch. `on` enables the iterative loop on AGENT.        |
+| `AIPIPELINE_WORKER_AGENT_CRITIC`                     | `rule`  | Critic provider. `llm`, `rule`, or `noop`.                      |
+| `AIPIPELINE_WORKER_AGENT_MAX_ITER`                   | `3`     | Hard cap on loop iterations.                                    |
+| `AIPIPELINE_WORKER_AGENT_MAX_TOTAL_MS`               | `15000` | Wall-clock cap for the entire loop, in milliseconds.            |
+| `AIPIPELINE_WORKER_AGENT_MAX_LLM_TOKENS`             | `4000`  | Accumulated LLM token cap across all iters.                     |
+| `AIPIPELINE_WORKER_AGENT_MIN_STOP_CONF`              | `0.75`  | Minimum critic confidence required for an early-stop `converged`. |
+
+When `agent_loop=off`, the AGENT capability is registered but
+behaves identically to AUTO. Loop-related envs are safe to set
+alongside the default-off flag — they only take effect when the
+loop is turned on.
+
+### Failure containment
+
+The loop must NOT expand the capability's failure surface:
+
+* Critic / rewriter failures degrade to their rule fallbacks and
+  are surfaced in `critic_name` / `parser_name` suffixes (visible
+  in `AGENT_TRACE` and the Phase 8 metrics layer).
+* An `execute_fn` raise on iter 0 falls back to an empty outcome
+  with `stop_reason=iter_cap` and the capability still emits the
+  four loop artifacts — the client gets a consistent shape.
+* Any loop-wide error returns the best-so-far answer. The job never
+  fails because of a loop error.
+
 ## Pipeline trace and failure reporting
 
 ### Goal

@@ -477,6 +477,69 @@ class WorkerSettings(BaseSettings):
         ),
     )
 
+    # --- agent loop (phase 6) ---
+    agent_loop: str = Field(
+        default="off",
+        description=(
+            "Enable the Phase 6 iterative agent loop on the AGENT "
+            "capability. Options: 'on' or 'off' (default). When 'off', "
+            "AGENT degenerates to the Phase 5 single-pass dispatcher "
+            "(bit-for-bit identical to AUTO). When 'on', AGENT runs a "
+            "critic/rewriter/retrieve cycle up to agent_max_iter times "
+            "on rag/multimodal actions, then synthesizes the final "
+            "answer over the UNION of every iteration's retrieved "
+            "chunks. Off-by-default until Phase 8 measures the "
+            "recovery rate."
+        ),
+    )
+    agent_critic: str = Field(
+        default="rule",
+        description=(
+            "Which AgentCriticProvider the loop uses. Options: 'llm' "
+            "(function-calling + thinking mode on backends that advertise "
+            "them, falls back to rule on any provider failure), 'rule' "
+            "(deterministic heuristic — short answers or 'I don't know' "
+            "markers flag missing_facts), 'noop' (always sufficient — "
+            "loop degenerates to single-pass). Ignored when agent_loop='off'."
+        ),
+    )
+    agent_max_iter: int = Field(
+        default=3,
+        description=(
+            "Hard cap on loop iterations. Budget shared across critic + "
+            "rewriter + retrieve calls per iteration. 3 is tuned to the "
+            "Phase 6 acceptance criteria — enough to recover from a weak "
+            "initial retrieval without paying runaway tokens."
+        ),
+    )
+    agent_max_total_ms: int = Field(
+        default=15_000,
+        description=(
+            "Hard wall-clock cap for the loop, in milliseconds. Breaching "
+            "this triggers stop_reason='time_cap' and the best-so-far "
+            "answer is returned. 15s stays below TaskRunner's default "
+            "job-level deadline."
+        ),
+    )
+    agent_max_llm_tokens: int = Field(
+        default=4_000,
+        description=(
+            "Hard cap on LLM tokens accumulated across critic + rewriter "
+            "calls. Breaching it triggers stop_reason='token_cap'. "
+            "Execution-side token use (e.g. Claude generator) is counted "
+            "too when the executor reports it."
+        ),
+    )
+    agent_min_stop_confidence: float = Field(
+        default=0.75,
+        description=(
+            "Minimum critic confidence required for a 'sufficient' verdict "
+            "to actually stop the loop. A low-confidence sufficient "
+            "judgment still triggers another iteration up to the iter "
+            "budget. Range [0.0, 1.0]."
+        ),
+    )
+
     # --- cross-modal retrieval (opt-in) ---
     cross_modal_enabled: bool = Field(
         default=False,

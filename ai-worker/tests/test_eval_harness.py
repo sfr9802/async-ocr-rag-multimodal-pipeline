@@ -298,6 +298,104 @@ class TestKeywordCoverage:
 
 
 # ---------------------------------------------------------------------------
+# 1b. Phase 6 agent loop metrics.
+# ---------------------------------------------------------------------------
+
+
+class TestAgentLoopMetrics:
+    """Exercise iter_count_mean / loop_recovery_rate /
+    avg_cost_multiplier / answer_recall_delta over small dict-shaped
+    row sets. The metrics accept either dicts or dataclasses."""
+
+    def test_iter_count_mean_happy_path(self):
+        from eval.harness import iter_count_mean
+
+        rows = [
+            {"iter_count": 1},
+            {"iter_count": 2},
+            {"iter_count": 3},
+        ]
+        assert iter_count_mean(rows) == 2.0
+
+    def test_iter_count_mean_skips_missing(self):
+        from eval.harness import iter_count_mean
+
+        rows = [{"iter_count": 1}, {"other": "x"}, {"iter_count": 3}]
+        assert iter_count_mean(rows) == 2.0
+
+    def test_iter_count_mean_none_when_empty(self):
+        from eval.harness import iter_count_mean
+
+        assert iter_count_mean([]) is None
+        assert iter_count_mean([{"no_field": 1}]) is None
+
+    def test_loop_recovery_rate_basic(self):
+        from eval.harness import loop_recovery_rate
+
+        # Two rows needed recovery: one did (0.3 -> 0.8), one did not
+        # (0.2 -> 0.4). Rows where iter0 >= threshold are excluded.
+        rows = [
+            {"iter0_keyword_coverage": 0.3, "final_keyword_coverage": 0.8},
+            {"iter0_keyword_coverage": 0.2, "final_keyword_coverage": 0.4},
+            {"iter0_keyword_coverage": 0.9, "final_keyword_coverage": 0.9},
+        ]
+        assert loop_recovery_rate(rows, keyword_threshold=0.5) == 0.5
+
+    def test_loop_recovery_rate_none_when_no_needing_rows(self):
+        from eval.harness import loop_recovery_rate
+
+        # Every row already above the bar -> no recovery candidates.
+        rows = [
+            {"iter0_keyword_coverage": 0.9, "final_keyword_coverage": 0.9},
+            {"iter0_keyword_coverage": 0.8, "final_keyword_coverage": 0.8},
+        ]
+        assert loop_recovery_rate(rows, keyword_threshold=0.5) is None
+
+    def test_avg_cost_multiplier_basic(self):
+        from eval.harness import avg_cost_multiplier
+
+        # total/iter0 ratios: 100/100=1, 300/100=3, 200/100=2 -> mean 2.0
+        rows = [
+            {"total_tokens": 100, "iter0_tokens": 100},
+            {"total_tokens": 300, "iter0_tokens": 100},
+            {"total_tokens": 200, "iter0_tokens": 100},
+        ]
+        assert avg_cost_multiplier(rows) == 2.0
+
+    def test_avg_cost_multiplier_skips_zero_iter0(self):
+        from eval.harness import avg_cost_multiplier
+
+        rows = [
+            {"total_tokens": 100, "iter0_tokens": 0},   # skipped
+            {"total_tokens": 200, "iter0_tokens": 100},  # 2.0
+        ]
+        assert avg_cost_multiplier(rows) == 2.0
+
+    def test_avg_cost_multiplier_none_when_empty(self):
+        from eval.harness import avg_cost_multiplier
+
+        assert avg_cost_multiplier([]) is None
+        assert avg_cost_multiplier([{"a": 1}]) is None
+
+    def test_answer_recall_delta_positive_mean(self):
+        from eval.harness import answer_recall_delta
+
+        # Deltas: +0.3, +0.1, -0.1 -> mean 0.1
+        rows = [
+            {"iter0_keyword_coverage": 0.2, "final_keyword_coverage": 0.5},
+            {"iter0_keyword_coverage": 0.7, "final_keyword_coverage": 0.8},
+            {"iter0_keyword_coverage": 0.5, "final_keyword_coverage": 0.4},
+        ]
+        assert answer_recall_delta(rows) == pytest.approx(0.1, abs=1e-4)
+
+    def test_answer_recall_delta_none_when_no_rows(self):
+        from eval.harness import answer_recall_delta
+
+        assert answer_recall_delta([]) is None
+        assert answer_recall_delta([{"x": 1}]) is None
+
+
+# ---------------------------------------------------------------------------
 # 2. I/O.
 # ---------------------------------------------------------------------------
 
