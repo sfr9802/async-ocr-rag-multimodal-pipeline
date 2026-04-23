@@ -232,8 +232,11 @@ class WorkerSettings(BaseSettings):
             "bit-for-bit identical to the pre-parser path, default), "
             "'regex' (RegexQueryParser — offline tokenizer that strips "
             "quotes, collapses whitespace, and extracts up to 10 "
-            "deduplicated keywords with KR+EN stopword removal). The "
-            "LLM-backed parser arrives in phase 4 behind this same seam."
+            "deduplicated keywords with KR+EN stopword removal), "
+            "'llm' (LlmQueryParser — wraps the shared LlmChatProvider, "
+            "emits a real intent + up to 3 rewrites, falls back to "
+            "regex on any provider failure with "
+            "parser_name='llm-fallback-regex')."
         ),
     )
     rag_multi_query_rrf_k: int = Field(
@@ -306,6 +309,63 @@ class WorkerSettings(BaseSettings):
             "providers. Required when multimodal_vision_provider='claude' "
             "or rag_generator='claude'. SecretStr is avoided because "
             "pydantic-settings env parsing is simpler with plain Optional[str]."
+        ),
+    )
+
+    # --- shared LLM chat backend (phase 4+) ---
+    llm_backend: str = Field(
+        default="noop",
+        description=(
+            "Which LlmChatProvider to build once per worker. The provider "
+            "is shared by the LLM-backed query parser today and by the "
+            "agent router / critic / rewriter in later phases. Options: "
+            "'noop' (default, every chat call raises — consumers fall "
+            "back to their offline path), 'ollama' (local Ollama server, "
+            "gemma4:e2b by default, see llm_ollama_* knobs below), "
+            "'claude' (Anthropic API, requires anthropic_api_key). "
+            "Init failure downgrades to noop with a warning; RAG never "
+            "goes down because of a broken LLM backend."
+        ),
+    )
+    llm_timeout_seconds: float = Field(
+        default=15.0,
+        description=(
+            "Default per-call timeout (seconds) passed to LlmChatProvider "
+            "methods. Callers can still override per-call."
+        ),
+    )
+    llm_ollama_base_url: str = Field(
+        default="http://localhost:11434",
+        description=(
+            "Ollama HTTP API base URL. Use http://ollama:11434 when the "
+            "worker runs inside the compose network alongside the ollama "
+            "service; use http://localhost:11434 when the worker runs on "
+            "the host and ollama is exposed on the default port."
+        ),
+    )
+    llm_ollama_model: str = Field(
+        default="gemma4:e2b",
+        description=(
+            "Model tag served by Ollama. The bootstrap companion in "
+            "docker-compose.yml pulls this model on first compose up. "
+            "Switch to a smaller gemma4/llama variant on CPU-only hosts."
+        ),
+    )
+    llm_ollama_keep_alive: str = Field(
+        default="30m",
+        description=(
+            "Duration Ollama keeps the model resident between requests "
+            "(forwarded as the 'keep_alive' field on every /api/chat "
+            "call). Shorter reclaims VRAM sooner; longer avoids cold "
+            "loads for bursty workloads."
+        ),
+    )
+    llm_claude_model: str = Field(
+        default="claude-haiku-4-5-20251001",
+        description=(
+            "Anthropic model id used when llm_backend='claude'. Defaults "
+            "to the smallest latest-gen Claude because query parsing / "
+            "routing / critique fit comfortably inside that budget."
         ),
     )
 

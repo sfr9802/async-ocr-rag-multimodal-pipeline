@@ -96,7 +96,60 @@ services:
       "
     restart: "no"
 
+  # Local LLM stack (phase 4+). Opt-in: only started when the "llm"
+  # profile is selected, so CPU-only dev machines that don't want a
+  # resident model can skip it entirely.
+  #
+  #   docker compose --profile llm up -d ollama ollama-bootstrap
+  #
+  # The bootstrap companion is a one-shot container that pulls
+  # gemma4:e2b (~5 GB on first run) and exits cleanly — the same pattern
+  # minio-bootstrap uses for bucket creation. Re-running it is a
+  # no-op once the model is already pulled.
+  #
+  # GPU reservation is OPTIONAL. On a CPU-only host either (a) comment
+  # out the deploy block below, or (b) start ollama with a compose
+  # override: `docker compose -f docker-compose.yml
+  # -f docker-compose.cpu.yml --profile llm up -d ollama
+  # ollama-bootstrap`. See docs/local-run.md "LLM stack (Ollama)" for
+  # the override file contents.
+  ollama:
+    image: ollama/ollama:latest
+    container_name: aipipeline-ollama
+    restart: unless-stopped
+    profiles: ["llm"]
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    environment:
+      - OLLAMA_KEEP_ALIVE=30m
+      - OLLAMA_HOST=0.0.0.0
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  ollama-bootstrap:
+    image: ollama/ollama:latest
+    container_name: aipipeline-ollama-bootstrap
+    profiles: ["llm"]
+    depends_on:
+      ollama:
+        condition: service_started
+    entrypoint: >
+      /bin/sh -c "
+      sleep 3 &&
+      OLLAMA_HOST=http://ollama:11434 ollama pull gemma4:e2b &&
+      echo 'Model gemma4:e2b pulled and ready'
+      "
+    restart: "no"
+
 volumes:
   aipipeline-redis-data:
   aipipeline-postgres-data:
   aipipeline-minio-data:
+  ollama_data:

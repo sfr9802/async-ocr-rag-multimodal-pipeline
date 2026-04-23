@@ -841,6 +841,119 @@ should be (a) better OCR preprocessing, (b) a real VLM behind the
 or (d) a real LLM generator — and it pins that decision to actual
 product quality instead of developer intuition.
 
+## LLM stack (Ollama)
+
+Phases 5/6 — agent routing, critique, and query rewriting — depend on a
+chat-style LLM behind the shared `LlmChatProvider` seam
+(`ai-worker/app/clients/llm_chat.py`). The default backend is a local
+Ollama service running `gemma4:e2b`, wired into the compose file under
+an opt-in `llm` profile so CPU-only dev boxes can skip it entirely.
+
+### Starting the LLM stack
+
+```bash
+docker compose --profile llm up -d ollama ollama-bootstrap
+```
+
+On first run `ollama-bootstrap` pulls `gemma4:e2b` (~5 GB) into the
+named volume `ollama_data` and exits cleanly. Subsequent runs are
+no-ops. Verify:
+
+```bash
+curl http://localhost:11434/api/tags
+# → {"models": [{"name": "gemma4:e2b", ...}]}
+```
+
+`OLLAMA_KEEP_ALIVE=30m` is set on the service so the model stays
+resident between jobs; the worker also forwards `keep_alive=30m` on
+every `/api/chat` call (configurable via
+`AIPIPELINE_WORKER_LLM_OLLAMA_KEEP_ALIVE`).
+
+### Pointing the worker at Ollama
+
+Two env vars wire the shared `LlmChatProvider` used by `LlmQueryParser`
+today and by the agent router / critic / rewriter in later phases:
+
+```
+AIPIPELINE_WORKER_LLM_BACKEND=ollama
+AIPIPELINE_WORKER_LLM_OLLAMA_BASE_URL=http://localhost:11434
+AIPIPELINE_WORKER_LLM_OLLAMA_MODEL=gemma4:e2b
+```
+
+Use `http://ollama:11434` instead when the worker runs inside the
+compose network alongside the ollama container. Use
+`http://localhost:11434` when the worker runs on the host.
+
+To enable the LLM-backed query parser on top of the backend:
+
+```
+AIPIPELINE_WORKER_RAG_QUERY_PARSER=llm
+```
+
+The parser automatically falls back to the regex parser on any provider
+failure (network down, timeout, invalid JSON, schema violation), stamping
+`parser_name='llm-fallback-regex'` on the `ParsedQuery` so the downgrade
+is visible in `retrieval.json`.
+
+### CPU-only hosts (no NVIDIA GPU)
+
+The ollama service declares a GPU reservation by default. On machines
+without NVIDIA drivers compose refuses to start the service. Two
+workarounds:
+
+**Option A — drop a compose override.** Create
+`docker-compose.cpu.yml` next to the main compose file:
+
+```yaml
+services:
+  ollama:
+    deploy:
+      resources:
+        reservations:
+          devices: []
+```
+
+Then start with both files:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.cpu.yml \
+  --profile llm up -d ollama ollama-bootstrap
+```
+
+**Option B — comment out the deploy block** in `docker-compose.yml`
+locally (do not commit).
+
+Expect `gemma4:e2b` inference on CPU to be 10–30x slower than on a
+modest GPU. For routing / classification / rewriting it is still
+usable; for long-form generation it is not.
+
+### Swapping Claude in behind the same seam
+
+If you already have an Anthropic API key and prefer not to run a
+local LLM:
+
+```
+AIPIPELINE_WORKER_LLM_BACKEND=claude
+AIPIPELINE_WORKER_ANTHROPIC_API_KEY=sk-ant-...
+AIPIPELINE_WORKER_LLM_CLAUDE_MODEL=claude-haiku-4-5-20251001
+```
+
+`LlmQueryParser`, the agent router, and every other `LlmChatProvider`
+consumer see the exact same interface — you never need to recompile
+or change downstream code to swap backends.
+
+### LLM configuration knobs (env vars)
+
+| Env var                                        | Default                            | Notes                                                            |
+|------------------------------------------------|------------------------------------|------------------------------------------------------------------|
+| `AIPIPELINE_WORKER_LLM_BACKEND`                | `noop`                             | `noop` / `ollama` / `claude`. `noop` → every chat call raises `LlmChatError` and consumers fall back. |
+| `AIPIPELINE_WORKER_LLM_TIMEOUT_SECONDS`        | `15.0`                             | Default per-call timeout (s).                                    |
+| `AIPIPELINE_WORKER_LLM_OLLAMA_BASE_URL`        | `http://localhost:11434`           | Use `http://ollama:11434` from inside compose.                   |
+| `AIPIPELINE_WORKER_LLM_OLLAMA_MODEL`           | `gemma4:e2b`                       | Model tag Ollama serves. Must be pulled.                         |
+| `AIPIPELINE_WORKER_LLM_OLLAMA_KEEP_ALIVE`      | `30m`                              | Model residency between calls. Shorter reclaims VRAM sooner.     |
+| `AIPIPELINE_WORKER_LLM_CLAUDE_MODEL`           | `claude-haiku-4-5-20251001`        | Anthropic model id when backend=claude.                          |
+| `AIPIPELINE_WORKER_RAG_QUERY_PARSER`           | `off`                              | `off` / `regex` / `llm`. The `llm` option routes through the shared chat provider. |
+
 ## Pipeline closeout tooling
 
 Two local-first tools ship in `ai-worker/scripts/` for developer and

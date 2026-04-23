@@ -16,7 +16,7 @@ an embedder, so the registry can swap between NoOpQueryParser,
 RegexQueryParser, and (later, in phase 4) an LLM-backed parser
 without the Retriever itself ever growing parser-specific code.
 
-Two implementations ship here:
+Three implementations ship here:
 
   1. NoOpQueryParser — passthrough default. ``normalized`` equals the
      raw query; everything else is empty. Single-query behaviour is
@@ -29,17 +29,27 @@ Two implementations ship here:
      tokenizes on whitespace + Korean punctuation, drops len<2 tokens
      and a small hardcoded KR+EN stopword list, deduplicates while
      preserving first-seen order, and caps at 10 keywords. Always
-     returns ``intent='other'`` and ``rewrites=[]`` because this
-     phase ships keyword extraction only — intent classification and
-     query rewriting arrive with the LLM-backed parser in phase 4.
+     returns ``intent='other'`` and ``rewrites=[]``.
+
+  3. LlmQueryParser — phase 4. Wraps a shared ``LlmChatProvider`` and
+     asks it for a JSON object with the same fields the regex parser
+     produces plus a real intent classification and up to 3 alternate
+     phrasings. LRU-caches per-query so repeated calls don't re-hit
+     the LLM. Any provider failure or schema violation falls back to
+     the regex parser, with ``parser_name='llm-fallback-regex'`` so
+     downgrades are visible in metrics.
 """
 
 from __future__ import annotations
 
+import logging
 import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Literal
+from functools import lru_cache
+from typing import Any, Literal
+
+log = logging.getLogger(__name__)
 
 
 # Intent tag reserved for future routing (definition-vs-procedure-vs-
@@ -233,3 +243,193 @@ class RegexQueryParser(QueryParserProvider):
             if len(keywords) >= _KEYWORD_CAP:
                 break
         return keywords
+
+
+# ---------------------------------------------------------------------------
+# LLM parser — phase 4. Uses a shared LlmChatProvider to classify intent,
+# extract keywords, and propose alternate phrasings. On any provider failure
+# (network, timeout, invalid JSON, schema violation) it degrades to the
+# RegexQueryParser so a broken LLM never takes down retrieval — the
+# downgrade is visible in ParsedQuery.parser_name for the metrics layer.
+# ---------------------------------------------------------------------------
+
+
+_LLM_SYSTEM_PROMPT = (
+    "You extract retrieval intent. Respond ONLY with a JSON object.\n"
+    "Fields:\n"
+    "  normalized (string): the query rewritten into a clean, self-contained "
+    "form suitable for dense retrieval. Strip filler words but keep the "
+    "meaning.\n"
+    "  keywords (array of strings, up to 10): the most salient content "
+    "tokens. Lowercase; do not include stopwords.\n"
+    "  intent (one of 'definition', 'comparison', 'procedure', 'factoid', "
+    "'other'): what the user is actually trying to learn.\n"
+    "  rewrites (array of strings, up to 3): alternate phrasings that would "
+    "also retrieve relevant passages. Empty array is fine.\n"
+    "Return nothing except the JSON object."
+)
+
+_LLM_SCHEMA_HINT = (
+    '{"normalized": string, "keywords": [string, ...], '
+    '"intent": "definition"|"comparison"|"procedure"|"factoid"|"other", '
+    '"rewrites": [string, ...]}'
+)
+
+_LLM_KEYWORD_CAP = 10
+_LLM_REWRITE_CAP = 3
+_LLM_CACHE_DEFAULT = 256
+
+
+class LlmQueryParser(QueryParserProvider):
+    """LLM-backed parser that falls back to the regex parser on failure.
+
+    Wraps a single ``LlmChatProvider`` instance and uses ``chat_json``
+    with a fixed schema. Repeated parses of the same query are served
+    from an LRU cache so a hot query doesn't re-hit the LLM — the cache
+    size defaults to 256 entries per parser instance.
+
+    Failure modes that fall back to regex instead of raising:
+      * LlmChatError from the underlying provider (network, timeout,
+        invalid JSON, empty response).
+      * Schema violation at our layer (missing field, wrong type, intent
+        not in the 5-enum, keywords/rewrites not list-of-str).
+
+    The fallback's ``parser_name`` is ``"llm-fallback-regex"`` — distinct
+    from both ``"llm"`` (clean LLM path) and ``"regex"`` (configured
+    regex parser) so the metrics layer can measure LLM downgrade rate
+    separately from baseline regex usage.
+    """
+
+    def __init__(
+        self,
+        chat: Any,
+        *,
+        cache_size: int = _LLM_CACHE_DEFAULT,
+    ) -> None:
+        from app.clients.llm_chat import LlmChatProvider  # local import - avoids cycles
+
+        if not isinstance(chat, LlmChatProvider):
+            raise TypeError(
+                "LlmQueryParser requires an LlmChatProvider instance; "
+                f"got {type(chat).__name__}"
+            )
+        self._chat = chat
+        self._regex_fallback = RegexQueryParser()
+        # Bind the LRU cache to the instance so different parser
+        # instances don't leak entries across each other and so test
+        # setup/teardown can discard the cache by dropping the instance.
+        self._parse_cached = lru_cache(maxsize=cache_size)(self._parse_uncached)
+
+    @property
+    def name(self) -> str:
+        return "llm"
+
+    def parse(self, query: str) -> ParsedQuery:
+        return self._parse_cached(query)
+
+    # ------------------------------------------------------------------
+
+    def _parse_uncached(self, query: str) -> ParsedQuery:
+        from app.clients.llm_chat import ChatMessage, LlmChatError
+
+        messages = [
+            ChatMessage(role="system", content=_LLM_SYSTEM_PROMPT),
+            ChatMessage(
+                role="user",
+                content=(
+                    f"Query: {query}\n\n"
+                    "Extract normalized + keywords + intent + rewrites."
+                ),
+            ),
+        ]
+        enable_thinking = bool(self._chat.capabilities.get("thinking"))
+
+        try:
+            data = self._chat.chat_json(
+                messages,
+                schema_hint=_LLM_SCHEMA_HINT,
+                enable_thinking=enable_thinking,
+            )
+        except LlmChatError as ex:
+            log.warning(
+                "LlmQueryParser: provider failure, falling back to regex (%s)", ex,
+            )
+            return self._fallback(query)
+
+        try:
+            return self._materialize(query, data)
+        except ValueError as ex:
+            log.warning(
+                "LlmQueryParser: schema violation, falling back to regex (%s)", ex,
+            )
+            return self._fallback(query)
+
+    def _fallback(self, query: str) -> ParsedQuery:
+        base = self._regex_fallback.parse(query)
+        # Re-wrap so parser_name records the downgrade for metrics.
+        return ParsedQuery(
+            original=base.original,
+            normalized=base.normalized,
+            keywords=base.keywords,
+            intent=base.intent,
+            rewrites=base.rewrites,
+            filters=base.filters,
+            parser_name="llm-fallback-regex",
+        )
+
+    @staticmethod
+    def _materialize(query: str, data: dict) -> ParsedQuery:
+        if not isinstance(data, dict):
+            raise ValueError(
+                f"LLM response must be a JSON object; got {type(data).__name__}"
+            )
+
+        raw_normalized = data.get("normalized", query)
+        if not isinstance(raw_normalized, str):
+            raise ValueError("'normalized' must be a string")
+        normalized = raw_normalized.strip() or query
+
+        raw_keywords = data.get("keywords", [])
+        if not isinstance(raw_keywords, list):
+            raise ValueError("'keywords' must be a list of strings")
+        keywords: list[str] = []
+        for kw in raw_keywords:
+            if not isinstance(kw, str):
+                raise ValueError("'keywords' entries must be strings")
+            kw = kw.strip()
+            if kw:
+                keywords.append(kw)
+            if len(keywords) >= _LLM_KEYWORD_CAP:
+                break
+
+        intent = data.get("intent", "other")
+        if not isinstance(intent, str):
+            raise ValueError("'intent' must be a string")
+        intent = intent.strip().lower()
+        if intent not in _VALID_INTENTS:
+            raise ValueError(
+                f"'intent' must be one of {sorted(_VALID_INTENTS)}; got {intent!r}"
+            )
+
+        raw_rewrites = data.get("rewrites", [])
+        if not isinstance(raw_rewrites, list):
+            raise ValueError("'rewrites' must be a list of strings")
+        rewrites: list[str] = []
+        for rw in raw_rewrites:
+            if not isinstance(rw, str):
+                raise ValueError("'rewrites' entries must be strings")
+            rw = rw.strip()
+            if rw:
+                rewrites.append(rw)
+            if len(rewrites) >= _LLM_REWRITE_CAP:
+                break
+
+        return ParsedQuery(
+            original=query,
+            normalized=normalized,
+            keywords=keywords,
+            intent=intent,  # type: ignore[arg-type]
+            rewrites=rewrites,
+            filters={},
+            parser_name="llm",
+        )

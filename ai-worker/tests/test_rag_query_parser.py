@@ -29,10 +29,18 @@ import json
 import pytest
 
 from app.capabilities.rag.query_parser import (
+    LlmQueryParser,
     NoOpQueryParser,
     ParsedQuery,
     QueryParserProvider,
     RegexQueryParser,
+)
+from app.clients.llm_chat import (
+    ChatMessage,
+    ChatResult,
+    ChatToolSpec,
+    LlmChatError,
+    LlmChatProvider,
 )
 
 
@@ -274,3 +282,219 @@ def test_query_parser_provider_subclass_contract():
     seam the registry depends on."""
     assert issubclass(NoOpQueryParser, QueryParserProvider)
     assert issubclass(RegexQueryParser, QueryParserProvider)
+    assert issubclass(LlmQueryParser, QueryParserProvider)
+
+
+# ---------------------------------------------------------------------------
+# 4. LlmQueryParser — wraps LlmChatProvider with regex fallback.
+# ---------------------------------------------------------------------------
+
+
+class _FakeChat(LlmChatProvider):
+    """Tiny LlmChatProvider stub used for LlmQueryParser unit tests."""
+
+    def __init__(
+        self,
+        *,
+        json_return: dict | None = None,
+        json_error: Exception | None = None,
+        capabilities: dict | None = None,
+    ):
+        self._json_return = json_return
+        self._json_error = json_error
+        self._capabilities = capabilities or {
+            "function_calling": True,
+            "thinking": True,
+            "json_mode": True,
+            "vision": False,
+            "audio": False,
+        }
+        self.chat_json_calls: list[tuple[tuple, dict]] = []
+
+    @property
+    def name(self) -> str:
+        return "fake-chat"
+
+    @property
+    def capabilities(self) -> dict:
+        return self._capabilities
+
+    def chat_json(self, messages, *, schema_hint, max_tokens=512,
+                  temperature=0.0, timeout_s=15.0, enable_thinking=False):
+        self.chat_json_calls.append(
+            ((messages,), {"schema_hint": schema_hint, "enable_thinking": enable_thinking}),
+        )
+        if self._json_error is not None:
+            raise self._json_error
+        return self._json_return  # type: ignore[return-value]
+
+    def chat_tools(self, messages, tools, *, max_tokens=512, temperature=0.0,
+                   timeout_s=15.0, enable_thinking=False):  # pragma: no cover
+        raise LlmChatError("not used in parser tests")
+
+
+def test_llm_parser_happy_path_returns_structured_parsed_query():
+    chat = _FakeChat(
+        json_return={
+            "normalized": "what is faiss index",
+            "keywords": ["faiss", "index", "vector"],
+            "intent": "definition",
+            "rewrites": [
+                "explain faiss index",
+                "faiss index overview",
+            ],
+        },
+    )
+    parser = LlmQueryParser(chat)
+    parsed = parser.parse("What is a FAISS index?")
+
+    assert parsed.parser_name == "llm"
+    assert parsed.original == "What is a FAISS index?"
+    assert parsed.normalized == "what is faiss index"
+    assert parsed.keywords == ["faiss", "index", "vector"]
+    assert parsed.intent == "definition"
+    assert parsed.rewrites == [
+        "explain faiss index",
+        "faiss index overview",
+    ]
+    assert parsed.filters == {}
+
+
+def test_llm_parser_enables_thinking_when_backend_supports_it():
+    chat = _FakeChat(
+        json_return={"normalized": "q", "keywords": [], "intent": "other", "rewrites": []},
+        capabilities={
+            "function_calling": True,
+            "thinking": True,
+            "json_mode": True,
+            "vision": False,
+            "audio": False,
+        },
+    )
+    parser = LlmQueryParser(chat)
+    parser.parse("q")
+    _, kw = chat.chat_json_calls[0]
+    assert kw["enable_thinking"] is True
+
+
+def test_llm_parser_disables_thinking_on_non_thinking_backend():
+    chat = _FakeChat(
+        json_return={"normalized": "q", "keywords": [], "intent": "other", "rewrites": []},
+        capabilities={
+            "function_calling": True,
+            "thinking": False,
+            "json_mode": True,
+            "vision": False,
+            "audio": False,
+        },
+    )
+    parser = LlmQueryParser(chat)
+    parser.parse("q")
+    _, kw = chat.chat_json_calls[0]
+    assert kw["enable_thinking"] is False
+
+
+def test_llm_parser_falls_back_to_regex_on_provider_error(caplog):
+    chat = _FakeChat(json_error=LlmChatError("timeout"))
+    parser = LlmQueryParser(chat)
+
+    with caplog.at_level("WARNING"):
+        parsed = parser.parse("What is the RAG pipeline about")
+
+    assert parsed.parser_name == "llm-fallback-regex"
+    # Regex extracted real tokens (drops stopwords 'is', 'the').
+    assert "rag" in parsed.keywords
+    assert "pipeline" in parsed.keywords
+    assert "the" not in parsed.keywords
+    assert any("falling back to regex" in r.message for r in caplog.records)
+
+
+def test_llm_parser_falls_back_on_invalid_json_schema(caplog):
+    # intent not in the 5-enum -> schema violation -> fallback
+    chat = _FakeChat(
+        json_return={
+            "normalized": "q",
+            "keywords": ["x"],
+            "intent": "summarize",  # invalid
+            "rewrites": [],
+        },
+    )
+    parser = LlmQueryParser(chat)
+    with caplog.at_level("WARNING"):
+        parsed = parser.parse("some query")
+    assert parsed.parser_name == "llm-fallback-regex"
+    assert any("schema violation" in r.message for r in caplog.records)
+
+
+def test_llm_parser_falls_back_when_keywords_wrong_type():
+    chat = _FakeChat(
+        json_return={
+            "normalized": "q",
+            "keywords": "faiss,index",  # str, not list
+            "intent": "definition",
+            "rewrites": [],
+        },
+    )
+    parser = LlmQueryParser(chat)
+    parsed = parser.parse("q")
+    assert parsed.parser_name == "llm-fallback-regex"
+
+
+def test_llm_parser_caps_keywords_at_ten():
+    chat = _FakeChat(
+        json_return={
+            "normalized": "q",
+            "keywords": [f"kw{i}" for i in range(25)],
+            "intent": "other",
+            "rewrites": [],
+        },
+    )
+    parser = LlmQueryParser(chat)
+    parsed = parser.parse("q")
+    assert parsed.parser_name == "llm"
+    assert len(parsed.keywords) == 10
+    assert parsed.keywords == [f"kw{i}" for i in range(10)]
+
+
+def test_llm_parser_caps_rewrites_at_three():
+    chat = _FakeChat(
+        json_return={
+            "normalized": "q",
+            "keywords": [],
+            "intent": "other",
+            "rewrites": ["r1", "r2", "r3", "r4", "r5"],
+        },
+    )
+    parser = LlmQueryParser(chat)
+    parsed = parser.parse("q")
+    assert parsed.rewrites == ["r1", "r2", "r3"]
+
+
+def test_llm_parser_lru_cache_prevents_double_calls_on_same_query():
+    chat = _FakeChat(
+        json_return={"normalized": "q", "keywords": [], "intent": "other", "rewrites": []},
+    )
+    parser = LlmQueryParser(chat, cache_size=16)
+
+    a = parser.parse("same query")
+    b = parser.parse("same query")
+    c = parser.parse("different query")
+
+    # Cached — only two distinct chat_json invocations.
+    assert len(chat.chat_json_calls) == 2
+    # Cache returns the same object identity.
+    assert a is b
+    assert a is not c
+
+
+def test_llm_parser_rejects_non_provider_input():
+    with pytest.raises(TypeError):
+        LlmQueryParser(object())  # not an LlmChatProvider
+
+
+def test_llm_parser_name_is_llm():
+    chat = _FakeChat(
+        json_return={"normalized": "q", "keywords": [], "intent": "other", "rewrites": []},
+    )
+    parser = LlmQueryParser(chat)
+    assert parser.name == "llm"

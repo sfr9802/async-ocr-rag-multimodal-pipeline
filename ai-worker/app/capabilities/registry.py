@@ -66,6 +66,14 @@ def build_default_registry(settings: WorkerSettings) -> CapabilityRegistry:
     registry = CapabilityRegistry()
     registry.register(MockProcessor())
 
+    # Build the shared LlmChatProvider once per registry build so that
+    # the query parser today and the agent router / critic / rewriter
+    # in later phases share a single client (and, crucially, a single
+    # keep-alive slot against Ollama). Failures are logged and
+    # downgraded to NoOpChatProvider — RAG falls back to regex; the
+    # worker never crashes because of a broken LLM backend.
+    _get_shared_llm_chat(settings)
+
     rag_registered = False
     ocr_registered = False
 
@@ -73,7 +81,8 @@ def build_default_registry(settings: WorkerSettings) -> CapabilityRegistry:
         log.info(
             "RAG init: configured_model=%s query_prefix=%r passage_prefix=%r "
             "index_dir=%s top_k=%d generator=%s reranker=%s candidate_k=%d "
-            "use_mmr=%s mmr_lambda=%.3f query_parser=%s rrf_k=%d",
+            "use_mmr=%s mmr_lambda=%.3f query_parser=%s rrf_k=%d "
+            "llm_backend=%s",
             settings.rag_embedding_model,
             settings.rag_embedding_prefix_query,
             settings.rag_embedding_prefix_passage,
@@ -86,6 +95,7 @@ def build_default_registry(settings: WorkerSettings) -> CapabilityRegistry:
             settings.rag_mmr_lambda,
             settings.rag_query_parser,
             settings.rag_multi_query_rrf_k,
+            settings.llm_backend,
         )
         try:
             registry.register(_build_rag_capability(settings))
@@ -402,13 +412,17 @@ def _build_query_parser(settings: WorkerSettings):
         single-query retrieval reproduces the pre-parser Phase 2 path
         bit-for-bit.
       - 'regex': RegexQueryParser — offline keyword extractor. Emits
-        ``rewrites=[]`` so the Retriever's RRF path stays dead in
-        Phase 3; only ``normalized`` + ``keywords`` are active.
-
-    The LLM-backed parser lands in Phase 4 behind this same seam and
-    will add a third branch here.
+        ``rewrites=[]`` so the Retriever's RRF path stays dead; only
+        ``normalized`` + ``keywords`` are active.
+      - 'llm': LlmQueryParser — wraps the shared LlmChatProvider. On
+        any provider failure it falls back to the regex parser and
+        stamps ``parser_name='llm-fallback-regex'``. If the configured
+        LLM backend itself downgraded to NoOp at worker startup, the
+        LlmQueryParser still builds but every parse call exercises
+        the fallback — visible in metrics.
     """
     from app.capabilities.rag.query_parser import (
+        LlmQueryParser,
         NoOpQueryParser,
         RegexQueryParser,
     )
@@ -420,13 +434,121 @@ def _build_query_parser(settings: WorkerSettings):
     if name == "regex":
         log.info("RAG query parser active: regex")
         return RegexQueryParser()
+    if name == "llm":
+        chat = _get_shared_llm_chat(settings)
+        log.info("RAG query parser active: llm (backend=%s)", chat.name)
+        return LlmQueryParser(chat)
 
     log.warning(
         "Unknown rag_query_parser=%r. Falling back to NoOpQueryParser. "
-        "Supported: 'off', 'regex'.",
+        "Supported: 'off', 'regex', 'llm'.",
         settings.rag_query_parser,
     )
     return NoOpQueryParser()
+
+
+def _get_shared_llm_chat(settings: WorkerSettings):
+    """Return the process's single LlmChatProvider instance.
+
+    Built on the first call per ``build_default_registry`` invocation.
+    Any backend init failure is logged and downgraded to
+    ``NoOpChatProvider`` so dependent consumers (LlmQueryParser today;
+    agent router / critic / rewriter in later phases) exercise their
+    fallback paths instead of taking the worker down.
+    """
+    key = (
+        "llm_chat",
+        settings.llm_backend,
+        settings.llm_ollama_base_url,
+        settings.llm_ollama_model,
+        settings.llm_ollama_keep_alive,
+        settings.llm_claude_model,
+        settings.llm_timeout_seconds,
+    )
+    cached = _shared_component_cache.get(key)
+    if cached is not None:
+        return cached
+
+    from app.clients.llm_chat import (
+        ClaudeChatProvider,
+        NoOpChatProvider,
+        OllamaChatProvider,
+    )
+
+    backend = (settings.llm_backend or "noop").strip().lower()
+    provider = None
+
+    if backend in ("", "noop", "off", "none", "false", "0"):
+        provider = NoOpChatProvider()
+        log.info("LLM chat backend disabled (noop).")
+    elif backend == "ollama":
+        try:
+            provider = OllamaChatProvider(
+                base_url=settings.llm_ollama_base_url,
+                model=settings.llm_ollama_model,
+                timeout_s=settings.llm_timeout_seconds,
+                keep_alive=settings.llm_ollama_keep_alive,
+            )
+            log.info(
+                "LLM chat backend active: ollama base_url=%s model=%s "
+                "keep_alive=%s timeout=%.1fs",
+                settings.llm_ollama_base_url,
+                settings.llm_ollama_model,
+                settings.llm_ollama_keep_alive,
+                settings.llm_timeout_seconds,
+            )
+        except Exception as ex:
+            log.warning(
+                "LLM chat backend init failed (ollama, %s: %s). "
+                "Falling back to NoOpChatProvider — dependent consumers "
+                "will use their offline fallback path. Ensure Ollama is "
+                "running (docker compose --profile llm up -d ollama "
+                "ollama-bootstrap) and AIPIPELINE_WORKER_LLM_OLLAMA_BASE_URL "
+                "points at it.",
+                type(ex).__name__, ex,
+            )
+            provider = NoOpChatProvider()
+    elif backend == "claude":
+        if not settings.anthropic_api_key:
+            log.warning(
+                "LLM chat backend 'claude' requested but "
+                "AIPIPELINE_WORKER_ANTHROPIC_API_KEY is unset. Falling "
+                "back to NoOpChatProvider."
+            )
+            provider = NoOpChatProvider()
+        else:
+            try:
+                import anthropic
+
+                client = anthropic.Anthropic(
+                    api_key=settings.anthropic_api_key,
+                    timeout=settings.llm_timeout_seconds,
+                )
+                provider = ClaudeChatProvider(
+                    anthropic_client=client,
+                    model=settings.llm_claude_model,
+                )
+                log.info(
+                    "LLM chat backend active: claude model=%s",
+                    settings.llm_claude_model,
+                )
+            except Exception as ex:
+                log.warning(
+                    "LLM chat backend init failed (claude, %s: %s). "
+                    "Falling back to NoOpChatProvider.",
+                    type(ex).__name__, ex,
+                )
+                provider = NoOpChatProvider()
+    else:
+        log.warning(
+            "Unknown llm_backend=%r. Falling back to NoOpChatProvider. "
+            "Supported: 'noop', 'ollama', 'claude'.",
+            settings.llm_backend,
+        )
+        provider = NoOpChatProvider()
+
+    _shared_component_cache[key] = provider
+    return provider
 
 
 def _build_reranker(settings: WorkerSettings):
