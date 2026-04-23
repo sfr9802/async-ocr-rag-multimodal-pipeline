@@ -1,0 +1,439 @@
+{
+  "metadata": {
+    "harness": "rag",
+    "embedding_model": "BAAI/bge-m3",
+    "rag_index_dir": "../rag-data",
+    "top_k": 5,
+    "run_at": "2026-04-23T17:12:37",
+    "offline_corpus": {
+      "path": "fixtures\\kr_sample.jsonl",
+      "document_count": 10,
+      "chunk_count": 29,
+      "index_version": "offline-1776931946",
+      "dimension": 1024
+    }
+  },
+  "summary": {
+    "dataset_path": "eval\\datasets\\rag_sample_kr.jsonl",
+    "row_count": 10,
+    "rows_with_expected_doc_ids": 10,
+    "rows_with_expected_keywords": 10,
+    "top_k": 5,
+    "mean_hit_at_k": 1.0,
+    "mean_recall_at_k": 1.0,
+    "mrr": 1.0,
+    "mean_keyword_coverage": 1.0,
+    "mean_dup_rate": 0.34,
+    "mean_topk_gap": 0.2325,
+    "mean_retrieval_ms": 10.533,
+    "p50_retrieval_ms": 8.663,
+    "p95_retrieval_ms": 27.397,
+    "max_retrieval_ms": 27.397,
+    "mean_generation_ms": 0.037,
+    "mean_total_ms": 10.57,
+    "error_count": 0,
+    "misses": [],
+    "index_version": "offline-1776931946",
+    "embedding_model": "BAAI/bge-m3",
+    "started_at": "2026-04-23T17:12:37",
+    "finished_at": "2026-04-23T17:12:37",
+    "duration_ms": 106.037
+  },
+  "rows": [
+    {
+      "query": "비밀번호 정책에서 최소 길이와 변경 주기는?",
+      "expected_doc_ids": [
+        "kr-002"
+      ],
+      "expected_keywords": [
+        "12자",
+        "90일"
+      ],
+      "retrieved_doc_ids": [
+        "kr-002",
+        "kr-005",
+        "kr-002",
+        "kr-004",
+        "kr-002"
+      ],
+      "retrieval_scores": [
+        0.684231,
+        0.554017,
+        0.488596,
+        0.488331,
+        0.456193
+      ],
+      "hit_at_k": 1.0,
+      "recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "keyword_coverage": 1.0,
+      "dup_rate": 0.4,
+      "topk_gap": 0.228038,
+      "topk_rel_gap": 0.333276,
+      "retrieval_ms": 27.397,
+      "generation_ms": 0.075,
+      "total_ms": 27.473,
+      "index_version": "offline-1776931946",
+      "embedding_model": "BAAI/bge-m3",
+      "notes": "보안 정책 FAQ — 비밀번호 규칙",
+      "answer": "**Query:** 비밀번호 정책에서 최소 길이와 변경 주기는?\n\n**Short answer:** 비밀번호는 최소 12자 이상이며, 대문자, 소문자, 숫자, 특수문자를 각각 1개 이상 포함해야 한다.\n\n**Supporting passages:**\n1. [kr-002#password_policy] (score=0.684) 비밀번호는 최소 12자 이상이며, 대문자, 소문자, 숫자, 특수문자를 각각 1개 이상 포함해야 한다. 비밀번호는 90일마다 변경해야 하며, 최근 5개의 비밀번호를 재사용할 수 없다. 2단계 인증(MFA)은 VPN 접속, 클라우드 콘솔, 소스 코드 저장소 접근 시 필수이다.\n2. [kr-005#eviction] (score=0.554) 메모리가 maxmemory 한도에 도달하면 Redis는 설정된 정책에 따라 키를 제거한다. allkeys-lru는 가장 오래 사용되지 않은 키를 제거하며, volatile-ttl은 TTL이 가장 짧은 키를 우선 제거한다.\n3. [kr-002#overview] (score=0.489) 본 문서는 전 직원이 숙지해야 하는 정보보안 정책의 주요 사항을 질문과 답변 형식으로 정리한 것이다. 모든 직원은 입사 시 보안…",
+      "error": null
+    },
+    {
+      "query": "PostgreSQL에서 시계열 데이터에 적합한 인덱스 종류는?",
+      "expected_doc_ids": [
+        "kr-003"
+      ],
+      "expected_keywords": [
+        "BRIN",
+        "시계열"
+      ],
+      "retrieved_doc_ids": [
+        "kr-003",
+        "kr-004",
+        "kr-002",
+        "kr-003",
+        "kr-008"
+      ],
+      "retrieval_scores": [
+        0.597299,
+        0.43087,
+        0.429687,
+        0.429631,
+        0.391276
+      ],
+      "hit_at_k": 1.0,
+      "recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "keyword_coverage": 1.0,
+      "dup_rate": 0.2,
+      "topk_gap": 0.206023,
+      "topk_rel_gap": 0.344925,
+      "retrieval_ms": 8.838,
+      "generation_ms": 0.04,
+      "total_ms": 8.879,
+      "index_version": "offline-1776931946",
+      "embedding_model": "BAAI/bge-m3",
+      "notes": "성능 튜닝 가이드 — 인덱스 유형",
+      "answer": "**Query:** PostgreSQL에서 시계열 데이터에 적합한 인덱스 종류는?\n\n**Short answer:** BRIN 인덱스는 시계열 데이터와 같이 물리적으로 정렬된 대규모 테이블에서 탁월한 성능을 발휘한다.\n\n**Supporting passages:**\n1. [kr-003#indexing] (score=0.597) B-Tree 인덱스는 범위 검색과 정렬에 최적화되어 있으며, GIN 인덱스는 전문 검색(Full-Text Search)과 JSONB 필드 검색에 적합하다. BRIN 인덱스는 시계열 데이터와 같이 물리적으로 정렬된 대규모 테이블에서 탁월한 성능을 발휘한다. 파티션 테이블에서는 파티션 키에 대한 인덱스가 자동으로 각 파티션에 생성된다. 파티션 프루닝(Partition Pruning)을 통해 불필요한 파티션 스캔을 건너뛸 수 있다.\n2. [kr-004#dev_environment] (score=0.431) 개발 환경은 Docker Compose를 기반으로 구성한다. docker-compose up 명령으로 PostgreSQL, Redis, MinIO가 자동으로 프로비저닝된다. JDK 21과 Python 3.12는 미리 설치되어 있어야 한다.…",
+      "error": null
+    },
+    {
+      "query": "Redis 캐시에서 Cache-Aside 패턴은 어떻게 동작하나요?",
+      "expected_doc_ids": [
+        "kr-005"
+      ],
+      "expected_keywords": [
+        "캐시",
+        "미스",
+        "데이터베이스"
+      ],
+      "retrieved_doc_ids": [
+        "kr-005",
+        "kr-005",
+        "kr-006",
+        "kr-005",
+        "kr-008"
+      ],
+      "retrieval_scores": [
+        0.748644,
+        0.668566,
+        0.622991,
+        0.529632,
+        0.487529
+      ],
+      "hit_at_k": 1.0,
+      "recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "keyword_coverage": 1.0,
+      "dup_rate": 0.4,
+      "topk_gap": 0.261115,
+      "topk_rel_gap": 0.348784,
+      "retrieval_ms": 8.616,
+      "generation_ms": 0.03,
+      "total_ms": 8.646,
+      "index_version": "offline-1776931946",
+      "embedding_model": "BAAI/bge-m3",
+      "notes": "캐싱 전략 가이드",
+      "answer": "**Query:** Redis 캐시에서 Cache-Aside 패턴은 어떻게 동작하나요?\n\n**Short answer:** Redis를 애플리케이션 캐시로 활용할 때의 전략과 주의사항을 정리한 가이드이다.\n\n**Supporting passages:**\n1. [kr-005#overview] (score=0.749) Redis를 애플리케이션 캐시로 활용할 때의 전략과 주의사항을 정리한 가이드이다. Cache-Aside, Write-Through, Write-Behind 세 가지 패턴 중 상황에 맞는 전략을 선택해야 한다.\n2. [kr-005#patterns] (score=0.669) Cache-Aside 패턴에서는 애플리케이션이 캐시를 먼저 조회하고, 캐시 미스 시 데이터베이스에서 읽어온 뒤 캐시에 저장한다. TTL(Time-To-Live)을 적절히 설정하여 데이터 일관성을 유지해야 한다. Write-Through 패턴은 쓰기 작업 시 캐시와 데이터베이스를 동시에 갱신한다. 데이터 일관성이 보장되지만, 쓰기 지연이 발생할 수 있다.\n3. [kr-006#redis_outage] (score=0.623) Redis 장애 시 애플리케이션은 캐시 미스 모드로 자동 전환…",
+      "error": null
+    },
+    {
+      "query": "데이터베이스 장애 시 자동 페일오버 소요 시간은?",
+      "expected_doc_ids": [
+        "kr-006"
+      ],
+      "expected_keywords": [
+        "1분",
+        "페일오버",
+        "PgBouncer"
+      ],
+      "retrieved_doc_ids": [
+        "kr-006",
+        "kr-006",
+        "kr-009",
+        "kr-005",
+        "kr-003"
+      ],
+      "retrieval_scores": [
+        0.740979,
+        0.555828,
+        0.53875,
+        0.470684,
+        0.469279
+      ],
+      "hit_at_k": 1.0,
+      "recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "keyword_coverage": 1.0,
+      "dup_rate": 0.2,
+      "topk_gap": 0.271699,
+      "topk_rel_gap": 0.366676,
+      "retrieval_ms": 8.98,
+      "generation_ms": 0.032,
+      "total_ms": 9.012,
+      "index_version": "offline-1776931946",
+      "embedding_model": "BAAI/bge-m3",
+      "notes": "장애 대응 런북",
+      "answer": "**Query:** 데이터베이스 장애 시 자동 페일오버 소요 시간은?\n\n**Short answer:** 데이터베이스 장애 발생 시 PgBouncer를 통한 자동 페일오버가 1분 이내에 수행된다.\n\n**Supporting passages:**\n1. [kr-006#database_failover] (score=0.741) 데이터베이스 장애 발생 시 PgBouncer를 통한 자동 페일오버가 1분 이내에 수행된다. 수동 페일오버가 필요한 경우 pg_ctl promote 명령을 스탠바이 노드에서 실행한다. 페일오버 후에는 반드시 데이터 무결성 검증을 수행해야 한다. pg_rewind를 사용하여 이전 프라이머리를 스탠바이로 재구성할 수 있다.\n2. [kr-006#redis_outage] (score=0.556) Redis 장애 시 애플리케이션은 캐시 미스 모드로 자동 전환되어 데이터베이스를 직접 조회한다. Sentinel 구성에서는 자동 마스터 승격이 수행된다. 장애 복구 후 캐시 워밍(warming)을 수행하여 hit rate를 회복한다.\n3. [kr-009#key_metrics] (score=0.539) 처리량(Throughput)은 초당 처리된 메시지 수를 나타…",
+      "error": null
+    },
+    {
+      "query": "REST API URL 경로에 사용하는 네이밍 컨벤션은?",
+      "expected_doc_ids": [
+        "kr-007"
+      ],
+      "expected_keywords": [
+        "kebab-case",
+        "복수형"
+      ],
+      "retrieved_doc_ids": [
+        "kr-007",
+        "kr-007",
+        "kr-001",
+        "kr-008",
+        "kr-010"
+      ],
+      "retrieval_scores": [
+        0.607029,
+        0.5587,
+        0.486192,
+        0.44917,
+        0.43398
+      ],
+      "hit_at_k": 1.0,
+      "recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "keyword_coverage": 1.0,
+      "dup_rate": 0.2,
+      "topk_gap": 0.173049,
+      "topk_rel_gap": 0.285075,
+      "retrieval_ms": 9.655,
+      "generation_ms": 0.034,
+      "total_ms": 9.689,
+      "index_version": "offline-1776931946",
+      "embedding_model": "BAAI/bge-m3",
+      "notes": "API 설계 표준",
+      "answer": "**Query:** REST API URL 경로에 사용하는 네이밍 컨벤션은?\n\n**Short answer:** REST API를 설계할 때 준수해야 하는 팀 내 표준을 정의한 가이드이다.\n\n**Supporting passages:**\n1. [kr-007#overview] (score=0.607) REST API를 설계할 때 준수해야 하는 팀 내 표준을 정의한 가이드이다. 일관된 URL 구조, HTTP 메서드 사용, 에러 응답 형식, 버전 관리 전략을 포함한다.\n2. [kr-007#url_convention] (score=0.559) 리소스 URL은 복수형 명사를 사용한다 (예: /api/v1/users, /api/v1/orders). 하위 리소스는 중첩하여 표현한다 (예: /api/v1/users/{id}/orders). URL 경로는 소문자 케밥 케이스(kebab-case)를 사용한다.\n3. [kr-001#overview] (score=0.486) 클라우드 네이티브 아키텍처는 컨테이너, 마이크로서비스, 서비스 메시, 불변 인프라, 선언적 API를 활용하여 탄력적이고 관리 가능하며 관측 가능한 느슨하게 결합된 시스템을 구축하는 접근 방식이다. CNCF(Cl…",
+      "error": null
+    },
+    {
+      "query": "쿠버네티스 Pod가 CrashLoopBackOff 상태일 때 어떻게 진단하나요?",
+      "expected_doc_ids": [
+        "kr-008"
+      ],
+      "expected_keywords": [
+        "kubectl",
+        "logs",
+        "CrashLoopBackOff"
+      ],
+      "retrieved_doc_ids": [
+        "kr-008",
+        "kr-008",
+        "kr-008",
+        "kr-006",
+        "kr-006"
+      ],
+      "retrieval_scores": [
+        0.710016,
+        0.547868,
+        0.53381,
+        0.500466,
+        0.490616
+      ],
+      "hit_at_k": 1.0,
+      "recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "keyword_coverage": 1.0,
+      "dup_rate": 0.6,
+      "topk_gap": 0.2194,
+      "topk_rel_gap": 0.309007,
+      "retrieval_ms": 8.599,
+      "generation_ms": 0.041,
+      "total_ms": 8.64,
+      "index_version": "offline-1776931946",
+      "embedding_model": "BAAI/bge-m3",
+      "notes": "K8s 트러블슈팅",
+      "answer": "**Query:** 쿠버네티스 Pod가 CrashLoopBackOff 상태일 때 어떻게 진단하나요?\n\n**Short answer:** CrashLoopBackOff 상태의 Pod는 kubectl logs 명령으로 컨테이너 로그를 확인한다.\n\n**Supporting passages:**\n1. [kr-008#pod_issues] (score=0.710) CrashLoopBackOff 상태의 Pod는 kubectl logs 명령으로 컨테이너 로그를 확인한다. OOMKilled는 메모리 리밋이 부족하다는 의미이며, resources.limits.memory를 상향 조정해야 한다. ImagePullBackOff는 컨테이너 이미지를 가져올 수 없는 상태이다. 이미지 레지스트리 인증 정보(imagePullSecrets)를 확인하고, 이미지 태그가 정확한지 검증한다.\n2. [kr-008#overview] (score=0.548) Kubernetes 클러스터에서 흔히 발생하는 문제와 진단 방법을 정리한 가이드이다. Pod 상태 이상, 네트워크 문제, 리소스 부족 시나리오를 다룬다.\n3. [kr-008#networking] (score=0.534) 서비스 간 통신 문제는 k…",
+      "error": null
+    },
+    {
+      "query": "데이터 파이프라인 오류율이 몇 퍼센트를 넘으면 PagerDuty 경보가 발생하나요?",
+      "expected_doc_ids": [
+        "kr-009"
+      ],
+      "expected_keywords": [
+        "1%",
+        "PagerDuty"
+      ],
+      "retrieved_doc_ids": [
+        "kr-009",
+        "kr-006",
+        "kr-009",
+        "kr-009",
+        "kr-003"
+      ],
+      "retrieval_scores": [
+        0.722835,
+        0.556952,
+        0.510649,
+        0.493739,
+        0.464216
+      ],
+      "hit_at_k": 1.0,
+      "recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "keyword_coverage": 1.0,
+      "dup_rate": 0.4,
+      "topk_gap": 0.258619,
+      "topk_rel_gap": 0.357784,
+      "retrieval_ms": 8.71,
+      "generation_ms": 0.034,
+      "total_ms": 8.745,
+      "index_version": "offline-1776931946",
+      "embedding_model": "BAAI/bge-m3",
+      "notes": "모니터링 대시보드 가이드",
+      "answer": "**Query:** 데이터 파이프라인 오류율이 몇 퍼센트를 넘으면 PagerDuty 경보가 발생하나요?\n\n**Short answer:** 1%를 초과하면 PagerDuty 경보가 트리거된다.\n\n**Supporting passages:**\n1. [kr-009#key_metrics] (score=0.723) 처리량(Throughput)은 초당 처리된 메시지 수를 나타내며, 정상 범위는 500~2000 msg/s이다. p99 지연 시간이 500ms를 초과하면 경고 알림이 발생한다. 오류율(Error Rate)은 전체 처리 대비 실패한 메시지의 비율이다. 1%를 초과하면 PagerDuty 경보가 트리거된다. 오류 유형별(파싱 오류, 타임아웃, 스키마 불일치) 분류 패널을 통해 원인을 빠르게 파악할 수 있다.\n2. [kr-006#database_failover] (score=0.557) 데이터베이스 장애 발생 시 PgBouncer를 통한 자동 페일오버가 1분 이내에 수행된다. 수동 페일오버가 필요한 경우 pg_ctl promote 명령을 스탠바이 노드에서 실행한다. 페일오버 후에는 반드시 데이터 무결성 검증을 수행해야 한다. pg_rewind를 사용하여 이전 프라이…",
+      "error": null
+    },
+    {
+      "query": "Git 브랜치 네이밍 컨벤션과 머지 방식은?",
+      "expected_doc_ids": [
+        "kr-010"
+      ],
+      "expected_keywords": [
+        "Squash",
+        "Conventional Commits"
+      ],
+      "retrieved_doc_ids": [
+        "kr-010",
+        "kr-010",
+        "kr-010",
+        "kr-001",
+        "kr-006"
+      ],
+      "retrieval_scores": [
+        0.608984,
+        0.500021,
+        0.479789,
+        0.433421,
+        0.382218
+      ],
+      "hit_at_k": 1.0,
+      "recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "keyword_coverage": 1.0,
+      "dup_rate": 0.4,
+      "topk_gap": 0.226765,
+      "topk_rel_gap": 0.372367,
+      "retrieval_ms": 8.189,
+      "generation_ms": 0.027,
+      "total_ms": 8.216,
+      "index_version": "offline-1776931946",
+      "embedding_model": "BAAI/bge-m3",
+      "notes": "브랜치 전략 가이드",
+      "answer": "**Query:** Git 브랜치 네이밍 컨벤션과 머지 방식은?\n\n**Short answer:** 팀에서 사용하는 Git 브랜치 전략과 워크플로우를 정의한 가이드이다.\n\n**Supporting passages:**\n1. [kr-010#overview] (score=0.609) 팀에서 사용하는 Git 브랜치 전략과 워크플로우를 정의한 가이드이다. GitHub Flow를 기반으로 하되, 릴리스 브랜치를 추가하여 안정적인 배포 프로세스를 유지한다.\n2. [kr-010#merge_policy] (score=0.500) PR 머지는 Squash and Merge 방식을 기본으로 한다. 커밋 메시지는 Conventional Commits 형식을 따르며, feat:, fix:, docs:, refactor: 접두사를 사용한다.\n3. [kr-010#branch_naming] (score=0.480) 브랜치명은 타입/이슈번호-간단한설명 형식을 따른다 (예: feature/PROJ-123-user-auth, bugfix/PROJ-456-login-error). main 브랜치는 항상 배포 가능한 상태를 유지해야 한다. 릴리스 브랜치는 release/v{major}.{mino…",
+      "error": null
+    },
+    {
+      "query": "신입 개발자 온보딩에서 코드 리뷰 규칙은?",
+      "expected_doc_ids": [
+        "kr-004"
+      ],
+      "expected_keywords": [
+        "리뷰어",
+        "24시간",
+        "PR"
+      ],
+      "retrieved_doc_ids": [
+        "kr-004",
+        "kr-004",
+        "kr-007",
+        "kr-010",
+        "kr-008"
+      ],
+      "retrieval_scores": [
+        0.581327,
+        0.558912,
+        0.484309,
+        0.458344,
+        0.450691
+      ],
+      "hit_at_k": 1.0,
+      "recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "keyword_coverage": 1.0,
+      "dup_rate": 0.2,
+      "topk_gap": 0.130636,
+      "topk_rel_gap": 0.22472,
+      "retrieval_ms": 8.551,
+      "generation_ms": 0.027,
+      "total_ms": 8.579,
+      "index_version": "offline-1776931946",
+      "embedding_model": "BAAI/bge-m3",
+      "notes": "온보딩 체크리스트",
+      "answer": "**Query:** 신입 개발자 온보딩에서 코드 리뷰 규칙은?\n\n**Short answer:** 신입 개발자가 팀에 합류한 후 첫 2주 동안 완료해야 하는 업무를 정리한 체크리스트이다.\n\n**Supporting passages:**\n1. [kr-004#overview] (score=0.581) 신입 개발자가 팀에 합류한 후 첫 2주 동안 완료해야 하는 업무를 정리한 체크리스트이다. 개발 환경 설정, 코드 리뷰 프로세스 숙지, 팀 컨벤션 학습이 핵심 과제이다.\n2. [kr-004#code_review] (score=0.559) PR(Pull Request)은 최소 1명의 리뷰어 승인을 받아야 머지할 수 있다. 리뷰 요청 후 24시간 이내에 첫 번째 리뷰가 완료되어야 한다. 리뷰어는 코드 스타일, 테스트 커버리지, 보안 취약점을 확인한다.\n3. [kr-007#overview] (score=0.484) REST API를 설계할 때 준수해야 하는 팀 내 표준을 정의한 가이드이다. 일관된 URL 구조, HTTP 메서드 사용, 에러 응답 형식, 버전 관리 전략을 포함한다.\n4. [kr-010#branch_naming] (score=0.458) 브랜치명은 타입/이슈번호…",
+      "error": null
+    },
+    {
+      "query": "클라우드 네이티브에서 12-Factor App 원칙이란?",
+      "expected_doc_ids": [
+        "kr-001"
+      ],
+      "expected_keywords": [
+        "12-Factor",
+        "환경 변수",
+        "이식성"
+      ],
+      "retrieved_doc_ids": [
+        "kr-001",
+        "kr-001",
+        "kr-002",
+        "kr-005",
+        "kr-002"
+      ],
+      "retrieval_scores": [
+        0.763741,
+        0.586841,
+        0.466683,
+        0.423019,
+        0.413732
+      ],
+      "hit_at_k": 1.0,
+      "recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "keyword_coverage": 1.0,
+      "dup_rate": 0.4,
+      "topk_gap": 0.35001,
+      "topk_rel_gap": 0.458283,
+      "retrieval_ms": 7.796,
+      "generation_ms": 0.028,
+      "total_ms": 7.824,
+      "index_version": "offline-1776931946",
+      "embedding_model": "BAAI/bge-m3",
+      "notes": "클라우드 네이티브 아키텍처",
+      "answer": "**Query:** 클라우드 네이티브에서 12-Factor App 원칙이란?\n\n**Short answer:** 12-Factor App 원칙을 준수하면 클라우드 환경에서의 이식성과 확장성이 크게 향상된다.\n\n**Supporting passages:**\n1. [kr-001#best_practices] (score=0.764) 12-Factor App 원칙을 준수하면 클라우드 환경에서의 이식성과 확장성이 크게 향상된다. 환경 변수를 통한 설정 관리, 로그의 이벤트 스트림 처리, 관리 프로세스의 일회성 실행 등이 핵심 원칙이다.\n2. [kr-001#overview] (score=0.587) 클라우드 네이티브 아키텍처는 컨테이너, 마이크로서비스, 서비스 메시, 불변 인프라, 선언적 API를 활용하여 탄력적이고 관리 가능하며 관측 가능한 느슨하게 결합된 시스템을 구축하는 접근 방식이다. CNCF(Cloud Native Computing Foundation)에서 정의한 이 접근 방식은 쿠버네티스를 오케스트레이션 플랫폼으로 사용하며, CI/CD 파이프라인을 통해 자동화된 배포를 수행한다.\n3. [kr-002#password_policy] (score=0.467) 비밀번…",
+      "error": null
+    }
+  ]
+}

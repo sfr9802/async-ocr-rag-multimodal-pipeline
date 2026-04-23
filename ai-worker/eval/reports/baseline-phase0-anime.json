@@ -1,0 +1,281 @@
+{
+  "metadata": {
+    "harness": "rag",
+    "embedding_model": "BAAI/bge-m3",
+    "rag_index_dir": "../rag-data",
+    "top_k": 5,
+    "run_at": "2026-04-23T17:12:58",
+    "offline_corpus": {
+      "path": "fixtures\\anime_sample.jsonl",
+      "document_count": 8,
+      "chunk_count": 24,
+      "index_version": "offline-1776931966",
+      "dimension": 1024
+    }
+  },
+  "summary": {
+    "dataset_path": "eval\\datasets\\rag_sample.jsonl",
+    "row_count": 6,
+    "rows_with_expected_doc_ids": 6,
+    "rows_with_expected_keywords": 6,
+    "top_k": 5,
+    "mean_hit_at_k": 1.0,
+    "mean_recall_at_k": 1.0,
+    "mrr": 1.0,
+    "mean_keyword_coverage": 1.0,
+    "mean_dup_rate": 0.4333,
+    "mean_topk_gap": 0.2364,
+    "mean_retrieval_ms": 11.737,
+    "p50_retrieval_ms": 8.627,
+    "p95_retrieval_ms": 24.932,
+    "max_retrieval_ms": 24.932,
+    "mean_generation_ms": 0.035,
+    "mean_total_ms": 11.772,
+    "error_count": 0,
+    "misses": [],
+    "index_version": "offline-1776931966",
+    "embedding_model": "BAAI/bge-m3",
+    "started_at": "2026-04-23T17:12:58",
+    "finished_at": "2026-04-23T17:12:58",
+    "duration_ms": 70.807
+  },
+  "rows": [
+    {
+      "query": "who runs the bookshop at the end of the railway line?",
+      "expected_doc_ids": [
+        "anime-003"
+      ],
+      "expected_keywords": [
+        "bookshop",
+        "translator"
+      ],
+      "retrieved_doc_ids": [
+        "anime-003",
+        "anime-003",
+        "anime-007",
+        "anime-006",
+        "anime-001"
+      ],
+      "retrieval_scores": [
+        0.657938,
+        0.487448,
+        0.397858,
+        0.39714,
+        0.393284
+      ],
+      "hit_at_k": 1.0,
+      "recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "keyword_coverage": 1.0,
+      "dup_rate": 0.2,
+      "topk_gap": 0.264654,
+      "topk_rel_gap": 0.402247,
+      "retrieval_ms": 24.932,
+      "generation_ms": 0.049,
+      "total_ms": 24.981,
+      "index_version": "offline-1776931966",
+      "embedding_model": "BAAI/bge-m3",
+      "notes": "cozy mystery — main character is a retired translator",
+      "answer": "**Query:** who runs the bookshop at the end of the railway line?\n\n**Short answer:** A cozy mystery series about a secondhand bookshop at the last station on a dying railway line.\n\n**Supporting passages:**\n1. [anime-003#overview] (score=0.658) A cozy mystery series about a secondhand bookshop at the last station on a dying railway line. The proprietor, a retired translator, solves small mysteries brought to him by passengers who visit on their final stop before the line closes forever.\n2. [anime-003#characters] (score=0.487) Mr. Kurosawa: The bookshop proprietor. Soft-spoken, in his late seven…",
+      "error": null
+    },
+    {
+      "query": "an anime about an old fisherman who feeds stray cats in a harbor",
+      "expected_doc_ids": [
+        "anime-005"
+      ],
+      "expected_keywords": [
+        "fisherman",
+        "harbor",
+        "cats"
+      ],
+      "retrieved_doc_ids": [
+        "anime-005",
+        "anime-005",
+        "anime-005",
+        "anime-003",
+        "anime-001"
+      ],
+      "retrieval_scores": [
+        0.787861,
+        0.678324,
+        0.534141,
+        0.531759,
+        0.511995
+      ],
+      "hit_at_k": 1.0,
+      "recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "keyword_coverage": 1.0,
+      "dup_rate": 0.4,
+      "topk_gap": 0.275866,
+      "topk_rel_gap": 0.350146,
+      "retrieval_ms": 9.002,
+      "generation_ms": 0.034,
+      "total_ms": 9.037,
+      "index_version": "offline-1776931966",
+      "embedding_model": "BAAI/bge-m3",
+      "notes": "slice of life, almost documentary pacing",
+      "answer": "**Query:** an anime about an old fisherman who feeds stray cats in a harbor\n\n**Short answer:** The Harbor Cats is a lighthearted daily-life anime about the stray cats of a small fishing port and the elderly fisherman who quietly feeds them every morning.\n\n**Supporting passages:**\n1. [anime-005#overview] (score=0.788) The Harbor Cats is a lighthearted daily-life anime about the stray cats of a small fishing port and the elderly fisherman who quietly feeds them every morning. The cats have distinct personalities and a loose social hierarchy that the show takes seriously.\n2. [anime-005#character…",
+      "error": null
+    },
+    {
+      "query": "students who pilot construction mechs to reinforce dams",
+      "expected_doc_ids": [
+        "anime-002"
+      ],
+      "expected_keywords": [
+        "mech",
+        "dam",
+        "academy"
+      ],
+      "retrieved_doc_ids": [
+        "anime-002",
+        "anime-002",
+        "anime-002",
+        "anime-006",
+        "anime-004"
+      ],
+      "retrieval_scores": [
+        0.607826,
+        0.576259,
+        0.517994,
+        0.452795,
+        0.422109
+      ],
+      "hit_at_k": 1.0,
+      "recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "keyword_coverage": 1.0,
+      "dup_rate": 0.4,
+      "topk_gap": 0.185717,
+      "topk_rel_gap": 0.305542,
+      "retrieval_ms": 12.268,
+      "generation_ms": 0.036,
+      "total_ms": 12.304,
+      "index_version": "offline-1776931966",
+      "embedding_model": "BAAI/bge-m3",
+      "notes": "civil engineering mecha, not military",
+      "answer": "**Query:** students who pilot construction mechs to reinforce dams\n\n**Short answer:** The first season centers on a rookie team assigned to reinforce a coastal dam before a seasonal typhoon.\n\n**Supporting passages:**\n1. [anime-002#plot] (score=0.608) The first season centers on a rookie team assigned to reinforce a coastal dam before a seasonal typhoon. The team is built around four students with incompatible piloting styles, and most episodes spend as much time on team dynamics as on mech action. A recurring subplot involves a mysterious series of cracks appearing in dams the protagonists ha…",
+      "error": null
+    },
+    {
+      "query": "weather team stuck in a mountain observatory during a storm",
+      "expected_doc_ids": [
+        "anime-004"
+      ],
+      "expected_keywords": [
+        "storm",
+        "observatory"
+      ],
+      "retrieved_doc_ids": [
+        "anime-004",
+        "anime-004",
+        "anime-004",
+        "anime-002",
+        "anime-002"
+      ],
+      "retrieval_scores": [
+        0.63386,
+        0.600584,
+        0.593702,
+        0.48686,
+        0.419999
+      ],
+      "hit_at_k": 1.0,
+      "recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "keyword_coverage": 1.0,
+      "dup_rate": 0.6,
+      "topk_gap": 0.213861,
+      "topk_rel_gap": 0.337395,
+      "retrieval_ms": 8.251,
+      "generation_ms": 0.029,
+      "total_ms": 8.28,
+      "index_version": "offline-1776931966",
+      "embedding_model": "BAAI/bge-m3",
+      "notes": "survival drama, anemometer subplot",
+      "answer": "**Query:** weather team stuck in a mountain observatory during a storm\n\n**Short answer:** A small team of weather researchers is cut off from the outside world during a prolonged storm and must keep the observatory's instruments running while rationing supplies and managing interpersonal tension.\n\n**Supporting passages:**\n1. [anime-004#overview] (score=0.634) Signal Fires is a survival drama set in a remote mountain observatory. A small team of weather researchers is cut off from the outside world during a prolonged storm and must keep the observatory's instruments running while rationing sup…",
+      "error": null
+    },
+    {
+      "query": "late-night desert radio DJ taking listener requests",
+      "expected_doc_ids": [
+        "anime-008"
+      ],
+      "expected_keywords": [
+        "radio",
+        "DJ",
+        "desert"
+      ],
+      "retrieved_doc_ids": [
+        "anime-008",
+        "anime-008",
+        "anime-008",
+        "anime-003",
+        "anime-007"
+      ],
+      "retrieval_scores": [
+        0.68771,
+        0.586621,
+        0.468192,
+        0.450352,
+        0.430957
+      ],
+      "hit_at_k": 1.0,
+      "recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "keyword_coverage": 1.0,
+      "dup_rate": 0.4,
+      "topk_gap": 0.256753,
+      "topk_rel_gap": 0.373344,
+      "retrieval_ms": 7.928,
+      "generation_ms": 0.029,
+      "total_ms": 7.957,
+      "index_version": "offline-1776931966",
+      "embedding_model": "BAAI/bge-m3",
+      "notes": "tonal, minimalist music anime",
+      "answer": "**Query:** late-night desert radio DJ taking listener requests\n\n**Short answer:** Desert Radio is a minimalist music anime about a late-night radio DJ broadcasting from a solar-powered station in the middle of a vast desert.\n\n**Supporting passages:**\n1. [anime-008#overview] (score=0.688) Desert Radio is a minimalist music anime about a late-night radio DJ broadcasting from a solar-powered station in the middle of a vast desert. Listeners call in with requests and stories, and the DJ plays songs in response. That is almost the entire show.\n2. [anime-008#characters] (score=0.587) DJ Hoshi: The…",
+      "error": null
+    },
+    {
+      "query": "village gardeners who tend luminescent plants above the clouds",
+      "expected_doc_ids": [
+        "anime-001"
+      ],
+      "expected_keywords": [
+        "gardens",
+        "Aoi"
+      ],
+      "retrieved_doc_ids": [
+        "anime-001",
+        "anime-001",
+        "anime-004",
+        "anime-001",
+        "anime-004"
+      ],
+      "retrieval_scores": [
+        0.638487,
+        0.521925,
+        0.459136,
+        0.447839,
+        0.416877
+      ],
+      "hit_at_k": 1.0,
+      "recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "keyword_coverage": 1.0,
+      "dup_rate": 0.6,
+      "topk_gap": 0.22161,
+      "topk_rel_gap": 0.347087,
+      "retrieval_ms": 8.041,
+      "generation_ms": 0.032,
+      "total_ms": 8.073,
+      "index_version": "offline-1776931966",
+      "embedding_model": "BAAI/bge-m3",
+      "notes": "slice-of-life fantasy, intergenerational knowledge transfer",
+      "answer": "**Query:** village gardeners who tend luminescent plants above the clouds\n\n**Short answer:** Celestial Gardeners is a slice-of-life fantasy anime about a quiet village that maintains floating gardens suspended above the clouds.\n\n**Supporting passages:**\n1. [anime-001#overview] (score=0.638) Celestial Gardeners is a slice-of-life fantasy anime about a quiet village that maintains floating gardens suspended above the clouds. The villagers tend rare luminescent plants that only bloom during meteor showers. The story follows a newcomer named Aoi who discovers she can hear the gardens sing. She sl…",
+      "error": null
+    }
+  ]
+}

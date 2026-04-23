@@ -4,23 +4,31 @@ Asynchronous AI processing platform.
 
 ## Benchmarks (measured on this branch)
 
-| Dataset            | Capability | hit@5 | MRR  | CER (OCR) | p50 latency |
-|--------------------|------------|-------|------|-----------|-------------|
-| anime (en, 8 docs) | RAG        | not measured | not measured | n/a       | not measured |
-| kr_sample (kr, 10) | RAG        | not measured | not measured | n/a       | not measured |
-| ocr_sample (en)    | OCR        | n/a   | n/a  | not measured | not measured |
-| ocr_sample (kr)    | OCR        | n/a   | n/a  | not measured | not measured |
+Phase-0 RAG baseline captured on 2026-04-23 with bge-m3 + FAISS IndexFlatIP
+against the committed fixtures. Reports live at
+[`ai-worker/eval/reports/baseline-phase0.json`](ai-worker/eval/reports/baseline-phase0.json)
+(kr_sample) and `baseline-phase0-anime.json`.
 
-> Measured with claude-sonnet-4-6 vision + generation, bge-m3 embedder,
-> FAISS IndexFlatIP, Tesseract kor+eng.
-> Reproduce: `python -m eval.run_eval rag --dataset eval/datasets/rag_sample_kr.jsonl`
+| Dataset            | Capability | hit@5 | recall@5 | MRR    | dup_rate | topk_gap | CER (OCR) | p50 / p95 retrieval ms |
+|--------------------|------------|-------|----------|--------|----------|----------|-----------|------------------------|
+| anime (en, 8 docs) | RAG        | 1.000 | 1.000    | 1.000  | 0.433    | 0.236    | n/a       | 8.6 / 24.9             |
+| kr_sample (kr, 10) | RAG        | 1.000 | 1.000    | 1.000  | 0.340    | 0.233    | n/a       | 8.7 / 27.4             |
+| ocr_sample (en)    | OCR        | n/a   | n/a      | n/a    | n/a      | n/a      | not measured | not measured        |
+| ocr_sample (kr)    | OCR        | n/a   | n/a      | n/a    | n/a      | n/a      | not measured | not measured        |
+
+> Measured with bge-m3 embedder, FAISS IndexFlatIP, ExtractiveGenerator,
+> CUDA-backed sentence-transformers. Both fixtures score a perfect hit@5
+> / recall@5 / MRR — the retriever has no headroom left on these tiny
+> corpora, so the signals the next phase will move are **dup_rate** (a
+> reranker should drop), **topk_gap** (should widen on clean hits), and
+> **p95 retrieval** (agent/batching should hold steady).
 >
-> **Note:** Benchmarks are marked "not measured" because this environment
-> does not have a running PostgreSQL ragmeta schema, FAISS index, or
-> Tesseract binary available to execute the eval harness. To produce real
-> numbers: build the index (`python -m scripts.build_rag_index --fixture both`),
-> ensure Tesseract is installed with `eng+kor` language packs, then run
-> `python -m eval.run_eval rag` and `python -m eval.run_eval ocr`.
+> Reproduce (ragmeta-less, dev machine with the model cached):
+> `python -m eval.run_eval rag --dataset eval/datasets/rag_sample_kr.jsonl --offline-corpus fixtures/kr_sample.jsonl --out-json eval/reports/baseline-phase0.json`.
+>
+> The live production path (`build_rag_index` → bge-m3 → ragmeta →
+> run_eval) still works; OCR rows stay "not measured" because Tesseract
+> + eng/kor language packs are not installed in this environment.
 
 - **Phase 1**: async skeleton (job lifecycle, artifact model, claim/callback,
   Redis dispatch, local-filesystem storage, `MOCK` capability).

@@ -112,6 +112,10 @@ def _build_parser() -> argparse.ArgumentParser:
     rag.add_argument("--top-k", type=int, default=None,
                      help="Override the retriever's top_k for this run. "
                           "Defaults to the worker setting.")
+    rag.add_argument("--offline-corpus", type=Path, default=None,
+                     help="Skip the live ragmeta/FAISS stack and build an "
+                          "in-memory retriever from this JSONL corpus. Uses "
+                          "the configured embedding model but no Postgres.")
     rag.add_argument("--no-csv", action="store_true",
                      help="Skip CSV output.")
 
@@ -172,13 +176,18 @@ def _configure_logging(*, verbose: bool) -> None:
 
 
 def _run_rag_cli(args: argparse.Namespace) -> int:
+    offline_info = None
     try:
-        retriever, generator, settings = _build_rag_stack(args)
+        if args.offline_corpus is not None:
+            retriever, generator, settings, offline_info = _build_offline_rag_stack(args)
+        else:
+            retriever, generator, settings = _build_rag_stack(args)
     except Exception as ex:
         log.error(
             "Failed to build the RAG eval stack (%s: %s). "
             "Make sure the FAISS index is built, the ragmeta schema exists, "
-            "and the configured embedding model matches the one in build.json.",
+            "and the configured embedding model matches the one in build.json. "
+            "For a ragmeta-less run pass --offline-corpus <corpus.jsonl>.",
             type(ex).__name__, ex,
         )
         return 2
@@ -201,7 +210,7 @@ def _run_rag_cli(args: argparse.Namespace) -> int:
         out_json,
         summary=rag_summary_to_dict(summary),
         rows=[rag_row_to_dict(r) for r in rows],
-        metadata=_rag_metadata(settings, top_k),
+        metadata=_rag_metadata(settings, top_k, offline_info=offline_info),
     )
     if not args.no_csv:
         out_csv = args.out_csv or _default_report_path("rag", "csv")
@@ -248,14 +257,61 @@ def _build_rag_stack(args: argparse.Namespace):
     return retriever, ExtractiveGenerator(), settings
 
 
-def _rag_metadata(settings: Any, top_k: int) -> Dict[str, Any]:
-    return {
+def _build_offline_rag_stack(args: argparse.Namespace):
+    """Same bge-m3 embedder as production but an in-memory metadata store.
+
+    The point of this path is to produce a real retrieval-quality baseline
+    on a dev machine that has the embedding model cached but no Postgres.
+    Not a substitute for the live stack in production eval runs.
+    """
+    import tempfile
+    from pathlib import Path as _P
+
+    from app.capabilities.rag.embeddings import SentenceTransformerEmbedder
+    from app.core.config import get_settings
+
+    from eval.harness.offline_corpus import build_offline_rag_stack
+
+    settings = get_settings()
+    top_k = int(args.top_k) if args.top_k is not None else int(settings.rag_top_k)
+
+    embedder = SentenceTransformerEmbedder(
+        model_name=settings.rag_embedding_model,
+        query_prefix=settings.rag_embedding_prefix_query,
+        passage_prefix=settings.rag_embedding_prefix_passage,
+    )
+    tmp_dir = _P(tempfile.mkdtemp(prefix="rag-eval-offline-"))
+    retriever, generator, info = build_offline_rag_stack(
+        _P(args.offline_corpus),
+        embedder=embedder,
+        index_dir=tmp_dir,
+        top_k=top_k,
+    )
+    return retriever, generator, settings, info
+
+
+def _rag_metadata(
+    settings: Any,
+    top_k: int,
+    *,
+    offline_info: Optional[Any] = None,
+) -> Dict[str, Any]:
+    payload: Dict[str, Any] = {
         "harness": "rag",
         "embedding_model": settings.rag_embedding_model,
         "rag_index_dir": str(settings.rag_index_dir),
         "top_k": top_k,
         "run_at": datetime.now().isoformat(timespec="seconds"),
     }
+    if offline_info is not None:
+        payload["offline_corpus"] = {
+            "path": offline_info.corpus_path,
+            "document_count": offline_info.document_count,
+            "chunk_count": offline_info.chunk_count,
+            "index_version": offline_info.index_version,
+            "dimension": offline_info.dimension,
+        }
+    return payload
 
 
 def _rag_csv_columns() -> List[str]:
@@ -264,8 +320,12 @@ def _rag_csv_columns() -> List[str]:
         "expected_doc_ids",
         "retrieved_doc_ids",
         "hit_at_k",
+        "recall_at_k",
         "reciprocal_rank",
         "keyword_coverage",
+        "dup_rate",
+        "topk_gap",
+        "topk_rel_gap",
         "retrieval_ms",
         "generation_ms",
         "total_ms",
@@ -284,13 +344,18 @@ def _print_rag_summary(summary: RagEvalSummary) -> None:
     print(f"  with expected_kwds   : {summary.rows_with_expected_keywords}")
     print(f"  top_k                : {summary.top_k}")
     print(f"  mean hit@k           : {_fmt(summary.mean_hit_at_k)}")
+    print(f"  mean recall@k        : {_fmt(summary.mean_recall_at_k)}")
     print(f"  MRR                  : {_fmt(summary.mrr)}")
     print(f"  mean keyword coverage: {_fmt(summary.mean_keyword_coverage)}")
+    print(f"  mean dup_rate        : {summary.mean_dup_rate:.4f}")
+    print(f"  mean top-k gap       : {_fmt(summary.mean_topk_gap)}")
     print(f"  mean retrieval_ms    : {summary.mean_retrieval_ms:.1f}")
     print(f"  p50 retrieval_ms     : {summary.p50_retrieval_ms:.1f}")
+    print(f"  p95 retrieval_ms     : {summary.p95_retrieval_ms:.1f}")
     print(f"  mean generation_ms   : {summary.mean_generation_ms:.1f}")
     print(f"  mean total_ms        : {summary.mean_total_ms:.1f}")
     print(f"  errors               : {summary.error_count}")
+    print(f"  misses (capped 20)   : {len(summary.misses)}")
     print(f"  index_version        : {summary.index_version}")
     print(f"  embedding_model      : {summary.embedding_model}")
     print()
