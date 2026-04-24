@@ -17,26 +17,20 @@ Core principle: **the LLM is an interpreter, not a sampler.**
 
 ```
 ai-worker/eval/experiments/
-├── active.yaml                          # current search space — git-tracked
+├── active.yaml                 # current search space — git-tracked
 ├── studies/<experiment_id>/
-│   ├── study.db                         # Optuna SQLite — gitignored
-│   ├── plots/*.png                      # matplotlib visualizations — gitignored
-│   ├── config.yaml                      # frozen search-space snapshot — tracked
-│   ├── summary.md                       # metrics + /analyze-study narrative — tracked
-│   ├── round_NN_bundle.json             # skill adapter export — tracked
-│   ├── round_NN_bundle_llm_input.md     # rendered brief for the LLM — tracked
-│   ├── round_NN_analysis.md             # analyze_round output — tracked
-│   ├── round_NN_report.md               # round report — tracked
-│   └── round_NN+1_config.json           # proposed next-round config — tracked
-└── archive/                             # past active.yaml versions
+│   ├── study.db                # Optuna SQLite — gitignored
+│   ├── plots/*.png             # matplotlib visualizations — gitignored
+│   ├── summary.md              # metrics tables + Claude narrative — tracked
+│   └── config.yaml             # frozen search-space snapshot — tracked
+└── archive/                    # past active.yaml versions
 ```
 
-`summary.md` + `config.yaml` give a deterministic replay record for the
-slash-command flow; `round_NN_bundle.json` + `round_NN+1_config.json`
-play the same role for the skill-adapter flow. The binary `study.db` is
-not required to reproduce the finding — if someone deletes it,
-rerunning `scripts.tune` against the frozen `config.yaml` recreates the
-same trials.
+`summary.md` + `config.yaml` give a deterministic replay record: the
+seed, the exact search bounds, and the best trial. The binary
+`study.db` is not required to reproduce the finding — if someone
+deletes it, rerunning `scripts.tune` against the frozen `config.yaml`
+recreates the same trials.
 
 ## Kick off the first study
 
@@ -96,92 +90,7 @@ python -m scripts.tune --experiment <exp> --random-sampler
 
 The `/tune-round` slash command counts past rounds and auto-injects
 `--random-sampler` on rounds 3, 6, 9, … — you can override with an
-explicit argument if you need to hammer a narrow region. The same
-rule applies to the skill-adapter flow described below.
-
-## Alternative: round refinement via the `optuna-round-refinement` skill
-
-Two round-transition flows coexist; pick one per round:
-
-1. **Slash-command flow** (documented above): `/tune-round` → `/analyze-study`
-   fills `summary.md` narrative placeholders → `/propose-next` emits a chat diff.
-   Optimised for human reading.
-2. **Skill-adapter flow** (this section): `/tune-round` → `round_adapter
-   export-bundle` → LLM analyst applies the skill's prompts → `round_adapter
-   apply`. Schema-validated JSON + hash-attested artifacts end-to-end.
-
-### Install the skill once
-
-```bash
-git clone https://github.com/sfr9802/optuna-round-refinement \
-    ~/.claude/skills/optuna-round-refinement
-```
-
-Point `$OPTUNA_ROUND_REFINEMENT_HOME` at a local checkout if you want an
-override; otherwise `scripts.round_adapter` auto-discovers the install
-under `~/.claude/skills/` or `.claude/skills/`.
-
-### Five steps per round
-
-```bash
-# 1. Numerical round (same as the slash-command flow).
-python -m scripts.tune --experiment rag-cheap-sweep-v3 --n-trials 18
-
-# 2. Canonical bundle export from study.db.
-python -m scripts.round_adapter export-bundle --experiment rag-cheap-sweep-v3
-
-# 3. Human-readable brief for the LLM analyst (optional if your LLM
-#    can read the JSON bundle directly).
-python -m scripts.round_adapter render-input \
-    --bundle eval/experiments/studies/rag-cheap-sweep-v3/round_01_bundle.json
-
-# 4. Hand the brief + the skill's prompts/claude_code/{analyze_round,
-#    propose_next_round}.md to the LLM. Save its outputs as
-#    round_NN_analysis.md, round_NN_report.md, round_NN+1_config.json.
-
-# 5. Preview (default) or write the active.yaml mutation.
-python -m scripts.round_adapter apply \
-    --config eval/experiments/studies/rag-cheap-sweep-v3/round_02_config.json
-# --write actually overwrites active.yaml (bumps experiment_id).
-```
-
-### What `apply` guarantees
-
-- `jsonschema.validate` against the skill's
-  `schemas/next_round_config.schema.json`.
-- Cross-checks `provenance.source_bundle_hash` against the on-disk
-  bundle's canonical sha256 (SKILL.md §8.1 enforcement — apply
-  refuses to run on a mismatch).
-- Bumps `experiment_id` (v3 → v4) so `study.db` isolation is kept.
-- Preserves `objective` (mode / dataset / primary_metric /
-  secondary_metrics); the skill config doesn't own these.
-- Translates schema `search_space` + `fixed_params` into the
-  active.yaml shape `scripts.tune` expects.
-- Migrates `dataset` from `fixed_params` into `objective.dataset` if
-  the LLM put it there (both locations are schema-valid; tune.py only
-  reads from objective).
-- Populates `_meta` with full provenance
-  (`created_by: claude-proposed`, `parent_experiment_id`,
-  `source_bundle_hash`, `parent_config_hash`, `generated_at`,
-  `generated_by`, `rationale`).
-
-Flip `_meta.created_by` to `claude-approved` by hand before the next
-`/tune-round` — the string `claude-approved` is the human signature.
-
-### `fixed_params` — non-sweeped axes
-
-The skill's `freeze` action lands at a top-level `fixed_params: {}`
-block in active.yaml (alongside `search_space`). `scripts.tune`
-injects these as `AIPIPELINE_WORKER_<KEY>` env vars on every trial
-subprocess — same code path as `search_space` values, just not
-sampled. Keys that appear in both blocks are rejected at config-load
-time to prevent the search from shadowing a freeze decision.
-
-### Windows note
-
-`round_adapter` forces stdout to UTF-8 in the CLI entry so yaml
-previews carrying em-dashes or Korean operator notes don't fall over
-on CP949 consoles.
+explicit argument if you need to hammer a narrow region.
 
 ## When to use cheap vs. expensive params
 

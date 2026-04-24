@@ -42,6 +42,11 @@
       ]
     }
   },
+  "fixed_params": {
+    "rag_embedding_model": "BAAI/bge-m3",
+    "rag_reranker": "off",
+    "dataset": "eval/datasets/rag_anime_extended_kr.jsonl"
+  },
   "n_trials": 18,
   "trials": [
     {
@@ -530,7 +535,7 @@
   },
   "clusters": [
     {
-      "label": "value=0.8778 plateau (13 trials)",
+      "label": "rag_top_k>=7 plateau (mrr=0.8778)",
       "trial_numbers": [
         0,
         4,
@@ -547,12 +552,13 @@
         17
       ],
       "center": {
-        "value": 0.8778,
-        "size": 13
+        "rag_top_k_min": 7,
+        "rag_top_k_max": 14,
+        "mrr": 0.8778
       }
     },
     {
-      "label": "value=0.8667 plateau (5 trials)",
+      "label": "rag_top_k<7 lower band (mrr=0.8667)",
       "trial_numbers": [
         1,
         2,
@@ -561,10 +567,11 @@
         10
       ],
       "center": {
-        "value": 0.8667,
-        "size": 5
+        "rag_top_k_min": 3,
+        "rag_top_k_max": 5,
+        "mrr": 0.8667
       }
     }
   ],
-  "notes": "v3 — first round wired against a workload with actual headroom."
+  "notes": "Round 1 on anime_extended_kr fixture. TPE with seed=42. Two resume segments (initial 8 + resumed 10 = 18). No pruner. cross_encoder reranker intentionally kept out of search space until HF cache is prewarmed."
 }
