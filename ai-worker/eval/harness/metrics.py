@@ -18,6 +18,19 @@ What's here:
   - p_percentile  : nearest-rank percentile over a list of values
   - topk_gap      : (absolute, relative) score gap between rank 1 and rank k
 
+Retrieval-diagnostic metrics (added for the `retrieval` eval mode that
+measures dense-retrieval baseline quality without invoking a generator):
+
+  - reciprocal_rank_at_k       : MRR with an explicit cutoff (MRR@10)
+  - ndcg_at_k                  : binary-relevance NDCG@k
+  - unique_doc_coverage        : distinct doc_ids in top-k / k
+  - top1_score_margin          : scores[0] - scores[1] (rank-1 vs rank-2)
+  - count_whitespace_tokens    : crude token count for context-length budgets
+  - expected_keyword_match_rate: fraction of expected keywords found in any
+                                 top-k chunk text/section name
+  - normalized_text_hash       : NFKC + lowercase + ws-collapse + sha1[:16]
+                                 — near-duplicate detector for chunk text
+
 None of these handle "language nuance" — CER is raw character edit
 distance after an optional normalization pass, and WER is whitespace
 split. For CJK languages, WER is generally not meaningful; use CER
@@ -26,6 +39,7 @@ only, which is how `ocr_eval.py` defaults per-row language.
 
 from __future__ import annotations
 
+import hashlib
 import math
 import re
 import unicodedata
@@ -442,3 +456,209 @@ def answer_recall_delta(rows: Sequence[object]) -> Optional[float]:
     if not deltas:
         return None
     return round(sum(deltas) / float(len(deltas)), 4)
+
+
+# ---------------------------------------------------------------------------
+# Retrieval-diagnostic metrics (added for the `retrieval` eval mode).
+#
+# These are pure functions over (retrieved ranked list, expected gold,
+# k). They never depend on a generator output — the goal is to measure
+# dense-retrieval baseline quality in isolation. Existing functions
+# above (`hit_at_k`, `recall_at_k`, `reciprocal_rank`, `dup_rate`,
+# `topk_gap`, `keyword_coverage`) are unchanged so the older `rag` eval
+# path keeps producing byte-identical numbers.
+# ---------------------------------------------------------------------------
+
+
+def reciprocal_rank_at_k(
+    retrieved_doc_ids: Sequence[str],
+    expected_doc_ids: Iterable[str],
+    *,
+    k: int,
+) -> Optional[float]:
+    """Reciprocal rank with an explicit cutoff.
+
+    Differs from ``reciprocal_rank`` (which scans the entire ranked list)
+    by capping at the first ``k`` results — matches the standard MRR@k
+    definition. A gold id appearing at rank > k contributes 0.0 just like
+    a complete miss. Returns ``None`` when ``expected_doc_ids`` is empty
+    so the caller can skip the row from aggregation, matching the
+    contract of the other retrieval metrics in this module.
+    """
+    expected = {_normalize_doc_id(d) for d in expected_doc_ids if d}
+    expected.discard("")
+    if not expected:
+        return None
+    cutoff = max(0, int(k))
+    for rank, doc_id in enumerate(list(retrieved_doc_ids)[:cutoff], start=1):
+        if _normalize_doc_id(doc_id) in expected:
+            return 1.0 / rank
+    return 0.0
+
+
+def ndcg_at_k(
+    retrieved_doc_ids: Sequence[str],
+    expected_doc_ids: Iterable[str],
+    *,
+    k: int,
+) -> Optional[float]:
+    """Binary-relevance NDCG@k.
+
+    Each retrieved id is scored 1 if it normalizes into the gold set and
+    0 otherwise. Both the DCG sum and the ideal DCG (which assumes every
+    gold id is packed into the top of the ranking) use the standard
+    ``rel_i / log2(i + 1)`` discount. The denominator is
+    ``min(|gold|, k)`` so a gold set larger than k cannot drag the ideal
+    above 1.0 by counting positions the retriever was never asked about.
+
+    Returns ``None`` when ``expected_doc_ids`` is empty (same contract as
+    ``recall_at_k``). Returns 0.0 when no gold id appears in the top-k.
+    """
+    expected = {_normalize_doc_id(d) for d in expected_doc_ids if d}
+    expected.discard("")
+    if not expected:
+        return None
+    cutoff = max(0, int(k))
+    if cutoff == 0:
+        return 0.0
+
+    dcg = 0.0
+    seen: set[str] = set()
+    for rank, doc_id in enumerate(list(retrieved_doc_ids)[:cutoff], start=1):
+        norm = _normalize_doc_id(doc_id)
+        if not norm or norm in seen:
+            continue
+        seen.add(norm)
+        if norm in expected:
+            dcg += 1.0 / math.log2(rank + 1)
+
+    ideal_hits = min(len(expected), cutoff)
+    idcg = sum(1.0 / math.log2(i + 1) for i in range(1, ideal_hits + 1))
+    if idcg <= 0.0:
+        return 0.0
+    return dcg / idcg
+
+
+def unique_doc_coverage(
+    retrieved_doc_ids: Sequence[str],
+    *,
+    k: int,
+) -> Optional[float]:
+    """Fraction of distinct doc_ids in the top-k slot budget.
+
+    ``len({normalized_doc_ids[:k]}) / k``, in [0.0, 1.0]. The complement
+    of ``dup_rate`` when computed over the same slice — surfaced as its
+    own metric so retrieval reports can quote diversity directly without
+    the caller having to invert.
+
+    Returns ``None`` when ``retrieved_doc_ids`` is empty. Returns 0.0
+    when ``k <= 0`` (no slots to cover, nothing meaningful to report).
+    """
+    if not retrieved_doc_ids:
+        return None
+    cutoff = max(0, int(k))
+    if cutoff == 0:
+        return 0.0
+    top = [_normalize_doc_id(d) for d in retrieved_doc_ids[:cutoff]]
+    top = [d for d in top if d]
+    if not top:
+        return 0.0
+    distinct = len(set(top))
+    return distinct / float(cutoff)
+
+
+def top1_score_margin(scores: Sequence[float]) -> Optional[float]:
+    """Score gap between rank 1 and rank 2.
+
+    A wider margin means the top hit is clearly differentiated from the
+    second; a narrow margin means the retriever is genuinely uncertain
+    between the top two candidates. Distinct from ``topk_gap`` which
+    spans rank 1 to rank k — top1_score_margin asks specifically about
+    "is the leader convincing", not "is the tail far behind".
+
+    Returns ``None`` when fewer than two scores are present (the gap is
+    undefined). Negative values are possible — and meaningful — when the
+    upstream reranker has reordered candidates against the bi-encoder
+    score, so we do NOT clip to >= 0.
+    """
+    if scores is None or len(scores) < 2:
+        return None
+    return float(scores[0]) - float(scores[1])
+
+
+_WS_TOKEN_RE = re.compile(r"\s+")
+
+
+def count_whitespace_tokens(text: str) -> int:
+    """Crude whitespace-tokenized word count.
+
+    Used to estimate ``avg_context_token_count`` — the rough size of the
+    text the retriever would hand to a downstream LLM. This is NOT a
+    BPE / sentencepiece tokenizer; it's a coarse signal sufficient for
+    "is the context budget blowing up?" diagnostics. For CJK text the
+    count under-reports by ~4-6x compared to a real tokenizer, but the
+    relative trend across runs is what the eval is measuring.
+    """
+    if not text:
+        return 0
+    parts = _WS_TOKEN_RE.split(text.strip())
+    return sum(1 for p in parts if p)
+
+
+def expected_keyword_match_rate(
+    chunk_texts: Iterable[str],
+    expected_keywords: Iterable[str],
+    *,
+    case_insensitive: bool = True,
+) -> Optional[float]:
+    """Fraction of expected keywords that appear in ANY retrieved chunk.
+
+    Differs from ``keyword_coverage`` (which scores against a single
+    generated answer string): this scores against the union of all
+    retrieved chunk texts, which is the right denominator for "did the
+    retriever surface evidence for what the eval row asked about".
+
+    Returns ``None`` when ``expected_keywords`` is empty — same skip
+    contract as ``keyword_coverage`` so aggregation drops the row.
+    """
+    keywords = [k for k in expected_keywords if k]
+    if not keywords:
+        return None
+    haystack_parts: List[str] = []
+    for text in chunk_texts:
+        if not text:
+            continue
+        haystack_parts.append(text.lower() if case_insensitive else text)
+    haystack = "\n".join(haystack_parts)
+    if not haystack:
+        return 0.0
+    hits = 0
+    for kw in keywords:
+        needle = kw.lower() if case_insensitive else kw
+        if needle and needle in haystack:
+            hits += 1
+    return hits / len(keywords)
+
+
+def normalized_text_hash(text: str, *, prefix_chars: int = 512) -> str:
+    """NFKC + casefold + whitespace-collapse + sha1[:16] over a prefix.
+
+    A deterministic near-duplicate detector for chunk text. Two chunks
+    that differ only in case, unicode width, or whitespace collapse
+    to the same hash. Truncating to the first ``prefix_chars`` keeps
+    the cost bounded on long body chunks while still discriminating
+    between unrelated passages — same ranks of duplication near the
+    head of two passages is what the duplicate-analysis report flags.
+
+    Returns the empty string for empty input so callers can use
+    "hash present" as a non-empty-text guard.
+    """
+    if not text:
+        return ""
+    folded = unicodedata.normalize("NFKC", text).casefold()
+    collapsed = _WS_TOKEN_RE.sub(" ", folded).strip()
+    if not collapsed:
+        return ""
+    head = collapsed[: max(1, int(prefix_chars))]
+    digest = hashlib.sha1(head.encode("utf-8")).hexdigest()
+    return digest[:16]

@@ -60,10 +60,17 @@ class SentenceTransformerEmbedder(EmbeddingProvider):
         model_name: str,
         query_prefix: str = "",
         passage_prefix: str = "",
+        *,
+        max_seq_length: Optional[int] = None,
+        batch_size: int = 32,
+        show_progress_bar: bool = False,
     ) -> None:
         self._model_name = model_name
         self._query_prefix = query_prefix
         self._passage_prefix = passage_prefix
+        self._max_seq_length = max_seq_length
+        self._batch_size = int(batch_size)
+        self._show_progress_bar = bool(show_progress_bar)
         self._model = None  # lazy
         self._dim: Optional[int] = None
 
@@ -95,8 +102,20 @@ class SentenceTransformerEmbedder(EmbeddingProvider):
         from sentence_transformers import SentenceTransformer
 
         self._model = SentenceTransformer(self._model_name)
+        # Cap the model's input window when the caller asked for it.
+        # Default (None) preserves the model's own max_seq_length, which
+        # for bge-m3 is 8192 — fine for short passages, but pathologically
+        # expensive on a few outlier chunks (~100k chars exist in the
+        # anime corpus) because attention is O(seq_len^2). Setting a cap
+        # truncates only the tail of those long chunks, which is the
+        # right trade-off for offline eval against namu-wiki dumps.
+        if self._max_seq_length is not None:
+            self._model.max_seq_length = int(self._max_seq_length)
         self._dim = int(self._model.get_sentence_embedding_dimension())
-        log.info("Embedding model ready (dim=%d)", self._dim)
+        log.info(
+            "Embedding model ready (dim=%d, max_seq_length=%s)",
+            self._dim, self._model.max_seq_length,
+        )
 
     def _embed(self, texts: List[str]) -> np.ndarray:
         if not texts:
@@ -105,8 +124,8 @@ class SentenceTransformerEmbedder(EmbeddingProvider):
         assert self._model is not None
         vectors = self._model.encode(
             texts,
-            batch_size=32,
-            show_progress_bar=False,
+            batch_size=self._batch_size,
+            show_progress_bar=self._show_progress_bar,
             normalize_embeddings=True,
             convert_to_numpy=True,
         )

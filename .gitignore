@@ -83,8 +83,58 @@ ai-worker/fixtures/corpus_anime_full/
 # sample_check.py HTML reports + reviewer annotation JSONs are local.
 review/
 
+# ---- Retrieval-eval corpora (local-only, large) ----
+# Full source corpora live under ai-worker/eval/corpora/<name>/corpus.jsonl
+# and are too large to commit (e.g. namu_anime_v3 is ~261 MB). The
+# accompanying README.md is committed so contributors know how to
+# re-stage the file from its source path.
+ai-worker/eval/corpora/**/*.jsonl
+!ai-worker/eval/corpora/**/README.md
+# Generated silver query sets are reproducible via
+# eval.harness.generate_eval_queries; keep them local. Hand-authored
+# smoke and gold sets ARE committed (small + verified).
+ai-worker/eval/eval_queries/*_silver_*.jsonl
+ai-worker/eval/eval_queries/*_synthetic_*.jsonl
+ai-worker/eval/eval_queries/_generation_log_*.jsonl
+
 # ---- RAG build artifacts (local-only) ----
 # FAISS index + build manifest are rebuilt from fixtures via
 # scripts/build_rag_index.py; keep them out of git.
 rag-data/*.index
 rag-data/build.json
+
+# ---- Optuna round-refinement run artifacts ----
+# study_bundle.json + llm_input.md emitted by the skill's round_runner
+# are per-run artifacts; only the .gitkeep is tracked so the directory
+# survives a fresh clone.
+ai-worker/eval/experiments/run_output/
+!ai-worker/eval/experiments/run_output/.gitkeep
+
+# ---- Working notes / decision logs / personal context ----
+# Trade-off records, session work logs, and decision/process docs are
+# local-only by default. They typically capture per-author context,
+# private discussion, or in-progress reasoning that does not belong on
+# the main branch. Promote a doc out of these patterns only when it is
+# explicitly meant as canonical project documentation.
+**/*-tradeoffs.md
+**/*-tradeoff.md
+**/*-trade-offs.md
+**/*-trade-off.md
+**/*-session-log.md
+**/*-session-log-*.md
+**/*-worklog.md
+**/*-worklog-*.md
+**/*-personal.md
+**/*-private.md
+**/notes/
+**/_scratch/
+**/_local/
+**/_drafts/
+# Phase 0 baseline tradeoffs / decisions doc — local-only by policy.
+ai-worker/eval/reports/phase0-baseline-tradeoffs.md
+
+# ---- Local Claude state (per-user) ----
+# Scheduled task lockfiles and other Claude-side runtime state.
+.claude/scheduled_tasks.lock
+.claude/sessions/
+.claude/logs/

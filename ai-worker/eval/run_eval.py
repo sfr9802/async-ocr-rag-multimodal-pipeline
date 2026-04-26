@@ -62,6 +62,28 @@ from eval.harness.rag_eval import (
     run_rag_eval,
     summary_to_dict as rag_summary_to_dict,
 )
+from eval.harness.retrieval_eval import (
+    DuplicateAnalysis,
+    RetrievalEvalRow,
+    RetrievalEvalSummary,
+    TopKDumpRow,
+    duplicate_analysis_to_dict,
+    dump_row_to_dict as retrieval_dump_row_to_dict,
+    render_markdown_report,
+    row_to_dict as retrieval_row_to_dict,
+    run_retrieval_eval,
+    summary_to_dict as retrieval_summary_to_dict,
+)
+from eval.harness.miss_analysis import (
+    classify_rows as classify_miss_buckets,
+    miss_analysis_to_dict,
+    render_miss_analysis_markdown,
+)
+from eval.harness.baseline_comparison import (
+    comparison_to_dict,
+    render_comparison_markdown,
+    run_comparison,
+)
 
 
 log = logging.getLogger("eval")
@@ -84,6 +106,12 @@ def main(argv: Optional[List[str]] = None) -> int:
         return _run_ocr_cli(args)
     if args.mode == "multimodal":
         return _run_multimodal_cli(args)
+    if args.mode == "retrieval":
+        return _run_retrieval_cli(args)
+    if args.mode == "retrieval-compare":
+        return _run_retrieval_compare_cli(args)
+    if args.mode == "retrieval-miss-analysis":
+        return _run_miss_analysis_cli(args)
     parser.error(f"unknown mode: {args.mode}")
     return 2  # unreachable
 
@@ -165,6 +193,92 @@ def _build_parser() -> argparse.ArgumentParser:
                     help="Override the vision provider for this run.")
     mm.add_argument("--cross-modal", action="store_true",
                     help="Enable CLIP cross-modal retrieval (text + image RRF).")
+
+    # --- retrieval ---
+    rt = subs.add_parser(
+        "retrieval",
+        help="Run the retrieval-quality eval harness (no generator).",
+    )
+    rt.add_argument("--dataset", required=True, type=Path,
+                    help="Path to the eval-queries JSONL "
+                         "(see ai-worker/eval/eval_queries/README.md).")
+    rt.add_argument("--corpus", type=Path, default=None,
+                    help="Offline corpus JSONL (e.g. "
+                         "eval/corpora/anime_namu_v3/corpus.jsonl). "
+                         "When set, skips the live ragmeta/FAISS stack and "
+                         "builds an in-memory retriever.")
+    rt.add_argument("--out-dir", type=Path, default=None,
+                    help="Directory to drop the four output artifacts into. "
+                         "Defaults to eval/reports/retrieval-<timestamp>/.")
+    rt.add_argument("--top-k", type=int, default=10,
+                    help="Top-k for retrieval scoring + dump (default: 10).")
+    rt.add_argument("--mrr-k", type=int, default=10,
+                    help="Cutoff k for MRR@k aggregation (default: 10).")
+    rt.add_argument("--ndcg-k", type=int, default=10,
+                    help="Cutoff k for NDCG@k aggregation (default: 10).")
+    rt.add_argument("--max-seq-length", type=int, default=1024,
+                    help="Cap the embedding model's max_seq_length when "
+                         "building the offline corpus (default: 1024). "
+                         "Lower → less GPU memory pressure on outlier-long "
+                         "chunks at the cost of truncating their tails. "
+                         "Only used with --corpus.")
+    rt.add_argument("--embed-batch-size", type=int, default=32,
+                    help="Embedding batch size for the offline corpus "
+                         "build (default: 32). Halve this if you still "
+                         "OOM on a small GPU.")
+
+    # --- retrieval-compare ---
+    rc = subs.add_parser(
+        "retrieval-compare",
+        help="Compare two retrieval-eval reports side-by-side.",
+    )
+    rc.add_argument(
+        "--deterministic-report", required=True, type=Path,
+        help="Path to retrieval_eval_report.json from the deterministic run "
+             "(e.g. eval/reports/retrieval-silver200-baseline/"
+             "retrieval_eval_report.json).",
+    )
+    rc.add_argument(
+        "--opus-report", required=True, type=Path,
+        help="Path to retrieval_eval_report.json from the opus run.",
+    )
+    rc.add_argument(
+        "--exclude-answer-type", type=str, default="character_relation",
+        help="answer_type to exclude when computing the "
+             "'deterministic_without_<type>' slice (default: "
+             "character_relation, the type the deterministic generator "
+             "is broken on).",
+    )
+    rc.add_argument(
+        "--out-json", type=Path, required=True,
+        help="Output path for retrieval-baseline-comparison.json.",
+    )
+    rc.add_argument(
+        "--out-md", type=Path, required=True,
+        help="Output path for retrieval-baseline-comparison.md.",
+    )
+
+    # --- retrieval-miss-analysis ---
+    ma = subs.add_parser(
+        "retrieval-miss-analysis",
+        help="Compute miss-bucket analysis from an existing retrieval "
+             "report (no re-embed needed).",
+    )
+    ma.add_argument(
+        "--report-dir", required=True, type=Path,
+        help="Directory containing retrieval_eval_report.json + "
+             "top_k_dump.jsonl (the standard retrieval CLI output dir). "
+             "miss_analysis.json + miss_analysis.md are written into the "
+             "same directory.",
+    )
+    ma.add_argument(
+        "--top-k", type=int, default=10,
+        help="Top-k for the cross-tab classifier (default: 10).",
+    )
+    ma.add_argument(
+        "--sample-limit", type=int, default=25,
+        help="Cap on samples kept for each doc_miss_* bucket (default: 25).",
+    )
 
     return parser
 
@@ -1068,6 +1182,363 @@ def _print_multimodal_summary(summary: MultimodalEvalSummary) -> None:
     print(f"  mean rag_ms         : {summary.mean_rag_latency_ms:.1f}")
     print(f"  vision_provider     : {summary.vision_provider}")
     print()
+
+
+# ---------------------------------------------------------------------------
+# Retrieval CLI path.
+#
+# Builds the same Retriever the production worker uses (or the offline
+# in-memory variant when --corpus is passed) and scores it with the new
+# `retrieval_eval` harness. Generator is intentionally NOT instantiated:
+# this mode measures dense-retrieval baseline quality in isolation.
+# ---------------------------------------------------------------------------
+
+
+def _run_retrieval_cli(args: argparse.Namespace) -> int:
+    import json as _json
+
+    try:
+        if args.corpus is not None:
+            retriever, _, settings, offline_info = _build_offline_retrieval_stack(args)
+            corpus_path: Optional[str] = str(args.corpus)
+        else:
+            retriever, _, settings = _build_rag_stack(args)
+            corpus_path = None
+            offline_info = None
+    except Exception as ex:
+        log.error(
+            "Failed to build the retrieval eval stack (%s: %s). "
+            "For an offline run, pass --corpus <path/to/corpus.jsonl>; "
+            "see eval/corpora/<name>/README.md for re-staging instructions.",
+            type(ex).__name__, ex,
+        )
+        return 2
+
+    dataset = load_jsonl(args.dataset)
+    top_k = int(args.top_k)
+    mrr_k = int(args.mrr_k)
+    ndcg_k = int(args.ndcg_k)
+
+    summary, rows, dump, dup = run_retrieval_eval(
+        dataset,
+        retriever=retriever,
+        top_k=top_k,
+        mrr_k=mrr_k,
+        ndcg_k=ndcg_k,
+        dataset_path=str(args.dataset),
+        corpus_path=corpus_path,
+    )
+
+    out_dir = args.out_dir or _default_retrieval_dir()
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    # 1) retrieval_eval_report.json — summary + per-row + provenance
+    report_payload = {
+        "metadata": _retrieval_metadata(
+            settings, args, top_k, mrr_k, ndcg_k,
+            corpus_path=corpus_path, offline_info=offline_info,
+        ),
+        "summary": retrieval_summary_to_dict(summary),
+        "rows": [retrieval_row_to_dict(r) for r in rows],
+    }
+    report_json = out_dir / "retrieval_eval_report.json"
+    report_json.write_text(
+        _json.dumps(report_payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    log.info("Wrote %s", report_json)
+
+    # 2) retrieval_eval_report.md — human-readable summary
+    report_md = out_dir / "retrieval_eval_report.md"
+    report_md.write_text(
+        render_markdown_report(summary, rows, dup), encoding="utf-8"
+    )
+    log.info("Wrote %s", report_md)
+
+    # 3) top_k_dump.jsonl — one record per (query, rank) pair
+    dump_path = out_dir / "top_k_dump.jsonl"
+    with dump_path.open("w", encoding="utf-8") as fp:
+        for d in dump:
+            fp.write(_json.dumps(retrieval_dump_row_to_dict(d), ensure_ascii=False) + "\n")
+    log.info("Wrote %s (%d rows)", dump_path, len(dump))
+
+    # 4) duplicate_analysis.json — per-query + aggregate
+    dup_path = out_dir / "duplicate_analysis.json"
+    dup_path.write_text(
+        _json.dumps(duplicate_analysis_to_dict(dup), ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    log.info("Wrote %s", dup_path)
+
+    # 5) miss_analysis.{json,md} — 4-bucket cross-tab + capped samples
+    rows_for_miss = [retrieval_row_to_dict(r) for r in rows]
+    dump_for_miss = [retrieval_dump_row_to_dict(d) for d in dump]
+    miss_analysis = classify_miss_buckets(
+        rows_for_miss,
+        dump_rows=dump_for_miss,
+        top_k=top_k,
+    )
+    miss_json_path = out_dir / "miss_analysis.json"
+    miss_json_path.write_text(
+        _json.dumps(miss_analysis_to_dict(miss_analysis), ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    log.info("Wrote %s", miss_json_path)
+    miss_md_path = out_dir / "miss_analysis.md"
+    miss_md_path.write_text(
+        render_miss_analysis_markdown(miss_analysis), encoding="utf-8"
+    )
+    log.info("Wrote %s", miss_md_path)
+
+    try:
+        _print_retrieval_summary(summary, dup, out_dir)
+    except UnicodeEncodeError as ex:  # pragma: no cover — win cp949 fallback
+        log.warning(
+            "Pretty summary print failed (%s); reports already written to %s",
+            ex, out_dir,
+        )
+    return 0
+
+
+def _build_offline_retrieval_stack(args: argparse.Namespace):
+    """Build the in-memory retriever from --corpus.
+
+    Re-uses ``eval.harness.offline_corpus.build_offline_rag_stack`` so the
+    chunk/embed/index path is byte-identical to what the existing offline
+    `rag` mode uses. We discard the generator the helper returns — the
+    retrieval mode never invokes it.
+    """
+    import tempfile
+    from pathlib import Path as _P
+
+    from app.capabilities.rag.embeddings import SentenceTransformerEmbedder
+    from app.core.config import get_settings
+
+    from eval.harness.offline_corpus import build_offline_rag_stack
+
+    settings = get_settings()
+    top_k = int(args.top_k)
+
+    embedder = SentenceTransformerEmbedder(
+        model_name=settings.rag_embedding_model,
+        query_prefix=settings.rag_embedding_prefix_query,
+        passage_prefix=settings.rag_embedding_prefix_passage,
+        # Offline namu-wiki dumps include extreme outlier chunks (>100k
+        # chars). bge-m3 default max_seq_length is 8192 → attention is
+        # O(L^2), so a single outlier in a batch of 32 OOM-thrashes the
+        # GPU and blows up wall-clock by orders of magnitude. Cap to
+        # 1024 tokens so the same retrieval baseline finishes in ~10
+        # minutes instead of 2+ hours; the tail of those rare long
+        # chunks is dropped, which doesn't materially change retrieval
+        # quality on this corpus.
+        max_seq_length=getattr(args, "max_seq_length", 1024),
+        batch_size=getattr(args, "embed_batch_size", 32),
+        show_progress_bar=True,
+    )
+    tmp_dir = _P(tempfile.mkdtemp(prefix="retrieval-eval-offline-"))
+    retriever, generator, info = build_offline_rag_stack(
+        _P(args.corpus),
+        embedder=embedder,
+        index_dir=tmp_dir,
+        top_k=top_k,
+    )
+    return retriever, generator, settings, info
+
+
+def _retrieval_metadata(
+    settings: Any,
+    args: argparse.Namespace,
+    top_k: int,
+    mrr_k: int,
+    ndcg_k: int,
+    *,
+    corpus_path: Optional[str],
+    offline_info: Optional[Any],
+) -> Dict[str, Any]:
+    payload: Dict[str, Any] = {
+        "harness": "retrieval",
+        "embedding_model": settings.rag_embedding_model,
+        "rag_index_dir": str(settings.rag_index_dir),
+        "top_k": top_k,
+        "mrr_k": mrr_k,
+        "ndcg_k": ndcg_k,
+        "reranker": getattr(settings, "rag_reranker", None),
+        "candidate_k": getattr(settings, "rag_candidate_k", None),
+        "dataset": str(args.dataset),
+        "run_at": datetime.now().isoformat(timespec="seconds"),
+    }
+    if corpus_path:
+        payload["corpus_path"] = corpus_path
+    if offline_info is not None:
+        payload["offline_corpus"] = {
+            "path": offline_info.corpus_path,
+            "document_count": offline_info.document_count,
+            "chunk_count": offline_info.chunk_count,
+            "index_version": offline_info.index_version,
+            "dimension": offline_info.dimension,
+        }
+    return payload
+
+
+def _print_retrieval_summary(
+    summary: RetrievalEvalSummary,
+    dup: DuplicateAnalysis,
+    out_dir: Path,
+) -> None:
+    print()
+    print(f"Retrieval eval - {summary.dataset_path}")
+    if summary.corpus_path:
+        print(f"  corpus              : {summary.corpus_path}")
+    print(f"  rows / errors       : {summary.row_count} / {summary.error_count}")
+    print(f"  top_k               : {summary.top_k} (mrr@{summary.mrr_k}, ndcg@{summary.ndcg_k})")
+    print(f"  hit@1 / hit@3 / hit@5: "
+          f"{_fmt(summary.mean_hit_at_1)} / "
+          f"{_fmt(summary.mean_hit_at_3)} / "
+          f"{_fmt(summary.mean_hit_at_5)}")
+    print(f"  mrr@{summary.mrr_k}              : {_fmt(summary.mean_mrr_at_10)}")
+    print(f"  ndcg@{summary.ndcg_k}             : {_fmt(summary.mean_ndcg_at_10)}")
+    print(f"  dup_rate (top-{summary.top_k})   : {_fmt(summary.mean_dup_rate)}")
+    print(f"  unique_doc_coverage : {_fmt(summary.mean_unique_doc_coverage)}")
+    print(f"  top1_score_margin   : {_fmt(summary.mean_top1_score_margin)}")
+    print(f"  avg_ctx_tok_count   : {_fmt(summary.mean_avg_context_token_count)}")
+    print(f"  expected_kw_match   : {_fmt(summary.mean_expected_keyword_match_rate)}")
+    print(f"  retrieval_ms p50/p95/max: "
+          f"{summary.p50_retrieval_ms:.1f} / "
+          f"{summary.p95_retrieval_ms:.1f} / "
+          f"{summary.max_retrieval_ms:.1f}")
+    print(f"  embedding model     : {summary.embedding_model}")
+    print(f"  index version       : {summary.index_version}")
+    print()
+    print(f"  duplicates: doc {dup.queries_with_doc_dup_ratio:.3f}  "
+          f"section {dup.queries_with_section_dup_ratio:.3f}  "
+          f"text {dup.queries_with_text_dup_ratio:.3f}")
+    print()
+    print(f"  artifacts written to {out_dir}/")
+    print()
+
+
+def _default_retrieval_dir() -> Path:
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    return Path(f"eval/reports/retrieval-{timestamp}")
+
+
+# ---------------------------------------------------------------------------
+# Retrieval comparison CLI path.
+#
+# Pure post-processing — reads two ``retrieval_eval_report.json`` files
+# and emits a compare report with three slices: deterministic_all,
+# deterministic_without_<excluded_answer_type>, and opus_all. Intended
+# for the Phase-0 pre-improvement baseline pin so we can reason about
+# what the dense-only retriever actually does on each dataset before
+# touching MMR / reranker / hybrid.
+# ---------------------------------------------------------------------------
+
+
+def _run_retrieval_compare_cli(args: argparse.Namespace) -> int:
+    import json as _json
+
+    det_payload = _json.loads(args.deterministic_report.read_text(encoding="utf-8"))
+    opus_payload = _json.loads(args.opus_report.read_text(encoding="utf-8"))
+
+    det_rows = list(det_payload.get("rows") or [])
+    opus_rows = list(opus_payload.get("rows") or [])
+    det_dataset = (det_payload.get("summary") or {}).get("dataset_path")
+    opus_dataset = (opus_payload.get("summary") or {}).get("dataset_path")
+
+    comparison = run_comparison(
+        deterministic_rows=det_rows,
+        deterministic_dataset_path=det_dataset,
+        opus_rows=opus_rows,
+        opus_dataset_path=opus_dataset,
+        excluded_answer_type=args.exclude_answer_type,
+    )
+
+    args.out_json.parent.mkdir(parents=True, exist_ok=True)
+    args.out_md.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "metadata": {
+            "harness": "retrieval-compare",
+            "deterministic_report": str(args.deterministic_report),
+            "opus_report": str(args.opus_report),
+            "excluded_answer_type": args.exclude_answer_type,
+            "run_at": datetime.now().isoformat(timespec="seconds"),
+        },
+        "comparison": comparison_to_dict(comparison),
+    }
+    args.out_json.write_text(
+        _json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    args.out_md.write_text(
+        render_comparison_markdown(comparison), encoding="utf-8"
+    )
+    log.info("Wrote %s", args.out_json)
+    log.info("Wrote %s", args.out_md)
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# Retrieval miss-analysis CLI path.
+#
+# Pure post-processing — reads ``retrieval_eval_report.json`` +
+# ``top_k_dump.jsonl`` from a previously-generated report dir and emits
+# the miss_analysis pair into the same dir. Used to add the new
+# artifact to historical baselines without paying the embedding cost
+# of re-running retrieval.
+# ---------------------------------------------------------------------------
+
+
+def _run_miss_analysis_cli(args: argparse.Namespace) -> int:
+    import json as _json
+
+    report_dir: Path = args.report_dir
+    if not report_dir.is_dir():
+        log.error("--report-dir must be an existing directory: %s", report_dir)
+        return 2
+
+    report_json = report_dir / "retrieval_eval_report.json"
+    dump_path = report_dir / "top_k_dump.jsonl"
+    if not report_json.exists():
+        log.error("Missing retrieval_eval_report.json in %s", report_dir)
+        return 2
+    if not dump_path.exists():
+        log.error("Missing top_k_dump.jsonl in %s", report_dir)
+        return 2
+
+    payload = _json.loads(report_json.read_text(encoding="utf-8"))
+    rows = list(payload.get("rows") or [])
+
+    dumps: List[Dict[str, Any]] = []
+    with dump_path.open("r", encoding="utf-8") as fp:
+        for line in fp:
+            line = line.strip()
+            if not line:
+                continue
+            dumps.append(_json.loads(line))
+
+    miss_analysis = classify_miss_buckets(
+        rows,
+        dump_rows=dumps,
+        top_k=int(args.top_k),
+        sample_limit=int(args.sample_limit),
+    )
+    out_json = report_dir / "miss_analysis.json"
+    out_md = report_dir / "miss_analysis.md"
+    out_json.write_text(
+        _json.dumps(miss_analysis_to_dict(miss_analysis), ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    out_md.write_text(render_miss_analysis_markdown(miss_analysis), encoding="utf-8")
+    log.info("Wrote %s", out_json)
+    log.info("Wrote %s", out_md)
+    print(
+        f"miss-analysis written for {report_dir.name}: "
+        f"rows_evaluated={miss_analysis.rows_evaluated}, "
+        f"buckets="
+        + ", ".join(
+            f"{b.name}={b.count}" for b in miss_analysis.buckets
+        )
+    )
+    return 0
 
 
 # ---------------------------------------------------------------------------
