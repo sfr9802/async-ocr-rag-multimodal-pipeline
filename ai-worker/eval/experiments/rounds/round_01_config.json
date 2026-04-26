@@ -1,0 +1,60 @@
+{
+  "schema_version": "1.0",
+  "round_id": "round_01",
+  "study_id": "rag-joint-v1",
+  "n_trials": 30,
+  "evaluate": "eval.tune_eval:evaluate",
+  "direction": "maximize",
+  "objective_name": "mean_recall_at_k",
+  "sampler": {
+    "type": "TPESampler",
+    "params": {
+      "n_startup_trials": 8,
+      "multivariate": true
+    },
+    "seed": 42
+  },
+  "pruner": {
+    "type": "NopPruner",
+    "params": {}
+  },
+  "search_space": {
+    "rag_top_k":             { "type": "int",         "low": 3,    "high": 15 },
+    "rag_candidate_k":       { "type": "int",         "low": 10,   "high": 60 },
+    "rag_reranker":          { "type": "categorical", "choices": ["off", "cross_encoder"] },
+    "rag_rerank_batch":      { "type": "int",         "low": 16,   "high": 128 },
+    "rag_use_mmr":           { "type": "categorical", "choices": ["true", "false"] },
+    "rag_mmr_lambda":        { "type": "float",       "low": 0.3,  "high": 0.95 },
+    "rag_query_parser":      { "type": "categorical", "choices": ["off", "regex", "llm"] },
+    "rag_multi_query_rrf_k": { "type": "int",         "low": 20,   "high": 120 },
+    "agent_loop":            { "type": "categorical", "choices": ["on", "off"] },
+    "agent_max_iter":        { "type": "int",         "low": 2,    "high": 4 },
+    "agent_min_stop_conf":   { "type": "float",       "low": 0.5,  "high": 0.85 }
+  },
+  "fixed_params": {
+    "rag_embedding_model": "BAAI/bge-m3",
+    "dataset": "combined_anime_enterprise_kr"
+  },
+  "provenance": {
+    "kind": "initial",
+    "source_round_id": null,
+    "source_bundle_hash": null,
+    "parent_config_hash": null,
+    "generated_at": "2026-04-24T12:00:00Z",
+    "generated_by": {
+      "tool": "claude-code",
+      "model": "claude-opus-4-7",
+      "prompt_version": "phase10-v1",
+      "prompt_path": null
+    },
+    "reviewer": {
+      "kind": "human",
+      "id": "sfr99",
+      "approved_at": null,
+      "comments": null
+    },
+    "rationale": "Initial joint sweep over the combined anime + enterprise KR fixtures (Phase 10, study rag-joint-v1). Search space spans cheap retrieval knobs (rag_top_k, rag_candidate_k, rag_use_mmr / rag_mmr_lambda), the reranker on/off + batch axis, the query-parser tier (off / regex / llm) with its multi-query RRF constant, and agent-loop budgets (agent_loop, agent_max_iter, agent_min_stop_conf). TPE with n_startup_trials=8 to seed broad coverage on an 11-dim mixed space; NopPruner because each trial is a single end-to-end eval call (no per-step learning curve to prune on). Primary metric is mean_recall_at_k on the combined dataset; per-domain recall_at_k_anime / recall_at_k_enterprise are tracked as secondaries so later rounds can spot domain regressions before any narrow. provenance.kind=initial because no parent bundle exists yet; reviewer.approved_at=null leaves the gate explicit for human sign-off before round_02 is proposed.",
+    "diff_summary": []
+  },
+  "notes": "Conditional axes are flat in the schema because next_round_config.schema.json has no native conditional sampling: rag_rerank_batch is only consumed when rag_reranker='cross_encoder', rag_mmr_lambda only when rag_use_mmr='true', rag_multi_query_rrf_k only when rag_query_parser='llm', and agent_max_iter / agent_min_stop_conf only when agent_loop='on'. Optuna will sample every axis on every trial; the underlying capability factories ignore irrelevant values, so the per-axis importance from inactive trials is noise and should be discounted in /analyze-study."
+}
