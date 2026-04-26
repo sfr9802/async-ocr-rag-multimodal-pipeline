@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <title>AI Processing Platform — Test Client</title>
+    <style>
+        body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2em auto; padding: 0 1em; }
+        h1 { border-bottom: 1px solid #ccc; padding-bottom: 0.3em; }
+        section { margin-bottom: 2em; }
+        label { display: block; margin-top: 0.6em; font-weight: 600; }
+        textarea, input, select, button { font: inherit; width: 100%; box-sizing: border-box; padding: 0.4em; margin-top: 0.2em; }
+        button { cursor: pointer; background: #2b7de9; color: white; border: none; padding: 0.6em; }
+        pre { background: #f4f4f4; padding: 0.8em; overflow-x: auto; font-size: 0.85em; }
+        .row { display: flex; gap: 0.5em; }
+        .row > * { flex: 1; }
+    </style>
+</head>
+<body>
+    <h1>AI Processing Platform — Minimal Test Client</h1>
+    <p>Phase 1 uses the <code>MOCK</code> capability, which echoes the input as a JSON response artifact.</p>
+
+    <section>
+        <h2>1. Submit a text job</h2>
+        <label>capability
+            <select id="capability">
+                <option value="MOCK">MOCK</option>
+                <option value="OCR" disabled>OCR (phase 2)</option>
+                <option value="RAG" disabled>RAG (phase 2)</option>
+                <option value="MULTIMODAL" disabled>MULTIMODAL (later)</option>
+            </select>
+        </label>
+        <label>prompt text
+            <textarea id="prompt" rows="4">hello from the test client</textarea>
+        </label>
+        <button onclick="submitJob()">Submit</button>
+        <pre id="submitResult"></pre>
+    </section>
+
+    <section>
+        <h2>2. Poll job status</h2>
+        <div class="row">
+            <input id="jobId" placeholder="job id" />
+            <button onclick="pollJob()">Get status</button>
+            <button onclick="fetchResult()">Get result</button>
+        </div>
+        <pre id="pollResult"></pre>
+    </section>
+
+    <script>
+        const BASE = "http://localhost:8080";
+
+        async function submitJob() {
+            const capability = document.getElementById("capability").value;
+            const text = document.getElementById("prompt").value;
+            const r = await fetch(BASE + "/api/v1/jobs", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ capability, text }),
+            });
+            const body = await r.json();
+            document.getElementById("submitResult").textContent = JSON.stringify(body, null, 2);
+            if (body.jobId) document.getElementById("jobId").value = body.jobId;
+        }
+
+        async function pollJob() {
+            const id = document.getElementById("jobId").value.trim();
+            if (!id) return;
+            const r = await fetch(BASE + "/api/v1/jobs/" + encodeURIComponent(id));
+            document.getElementById("pollResult").textContent = JSON.stringify(await r.json(), null, 2);
+        }
+
+        async function fetchResult() {
+            const id = document.getElementById("jobId").value.trim();
+            if (!id) return;
+            const r = await fetch(BASE + "/api/v1/jobs/" + encodeURIComponent(id) + "/result");
+            document.getElementById("pollResult").textContent = JSON.stringify(await r.json(), null, 2);
+        }
+    </script>
+</body>
+</html>

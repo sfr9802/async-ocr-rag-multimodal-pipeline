@@ -6,6 +6,15 @@ Thumbs.db
 *.iml
 *.swp
 
+# ---- Frontend Vite/React source (bundle output is committed) ----
+# frontend/index.html is the bundled artifact (committed). The Vite source
+# project under frontend/app/ generates it via the web-artifacts-builder skill;
+# its node_modules + build caches do not belong in git.
+frontend/app/node_modules/
+frontend/app/dist/
+frontend/app/.parcel-cache/
+frontend/app/bundle.html
+
 # ---- Claude Code local state ----
 # Per-user permission approvals; .claude/commands/*.md are tracked.
 .claude/settings.local.json

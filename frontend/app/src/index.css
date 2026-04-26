@@ -1,0 +1,141 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Warm parchment with deep ink — restrained dev-tool palette */
+    --background: 36 25% 97%;
+    --foreground: 220 25% 10%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 220 25% 10%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 25% 10%;
+
+    --primary: 220 60% 22%;
+    --primary-foreground: 36 25% 97%;
+
+    --secondary: 36 18% 93%;
+    --secondary-foreground: 220 25% 14%;
+    --muted: 36 18% 94%;
+    --muted-foreground: 220 12% 42%;
+    --accent: 24 92% 52%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 70% 46%;
+    --destructive-foreground: 0 0% 100%;
+    --success: 152 56% 32%;
+    --success-foreground: 0 0% 100%;
+    --warning: 32 92% 46%;
+    --warning-foreground: 220 25% 10%;
+
+    --border: 32 16% 86%;
+    --input: 32 16% 86%;
+    --ring: 220 60% 22%;
+    --radius: 0.5rem;
+
+    /* Per-capability accent colors */
+    --cap-mock: 215 20% 50%;
+    --cap-rag: 200 75% 38%;
+    --cap-ocr: 270 50% 48%;
+    --cap-multimodal: 24 92% 52%;
+  }
+
+  .dark {
+    --background: 220 18% 7%;
+    --foreground: 36 18% 92%;
+
+    --card: 220 18% 10%;
+    --card-foreground: 36 18% 92%;
+    --popover: 220 18% 10%;
+    --popover-foreground: 36 18% 92%;
+
+    --primary: 36 80% 64%;
+    --primary-foreground: 220 25% 10%;
+
+    --secondary: 220 16% 16%;
+    --secondary-foreground: 36 18% 92%;
+    --muted: 220 16% 14%;
+    --muted-foreground: 36 8% 60%;
+    --accent: 24 92% 58%;
+    --accent-foreground: 220 25% 10%;
+
+    --destructive: 0 68% 56%;
+    --destructive-foreground: 36 18% 92%;
+    --success: 152 56% 50%;
+    --success-foreground: 220 25% 10%;
+    --warning: 32 92% 60%;
+    --warning-foreground: 220 25% 10%;
+
+    --border: 220 14% 20%;
+    --input: 220 14% 20%;
+    --ring: 36 80% 64%;
+
+    --cap-mock: 215 14% 60%;
+    --cap-rag: 200 75% 60%;
+    --cap-ocr: 270 50% 64%;
+    --cap-multimodal: 24 92% 60%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html, body, #root {
+    height: 100%;
+  }
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1, "ss01" 1, "cv11" 1;
+    font-size: 14px;
+    line-height: 1.5;
+    letter-spacing: -0.005em;
+  }
+
+  ::selection {
+    background: hsl(var(--primary) / 0.18);
+    color: hsl(var(--primary));
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--border));
+    border-radius: 999px;
+    border: 2px solid hsl(var(--background));
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground) / 0.4);
+  }
+}
+
+@layer utilities {
+  .canvas-bg {
+    background:
+      radial-gradient(1200px 600px at 0% -10%, hsl(var(--primary) / 0.04), transparent 60%),
+      radial-gradient(900px 500px at 100% 0%, hsl(var(--accent) / 0.045), transparent 55%);
+  }
+  .text-balance { text-wrap: balance; }
+  .pretty-pre {
+    font-feature-settings: "calt" 0;
+    font-variant-ligatures: none;
+  }
+}
+
+@keyframes pulse-soft {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+.animate-pulse-soft { animation: pulse-soft 1.6s ease-in-out infinite; }
