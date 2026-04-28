@@ -1,55 +1,52 @@
-# API summary
+# API 요약
 
-Concrete shapes for every HTTP endpoint the platform exposes. All paths
-are relative to `http://localhost:8080`.
+플랫폼이 노출하는 모든 HTTP 엔드포인트의 구체적 모양. 모든 경로는
+`http://localhost:8080` 기준입니다.
 
-Phase 1 established the pipeline (MOCK capability). Phase 2 adds the
-`RAG` capability without changing any endpoint shapes — the job submission,
-status, result, and artifact download endpoints are identical. Only the
-`capability` value in the request body and the artifact `type` values in
-the result change.
+Phase 1 에서 파이프라인 (MOCK capability) 을 확립했습니다. Phase 2 는
+엔드포인트 모양을 바꾸지 않고 `RAG` capability 를 추가합니다 — job 제출,
+상태, 결과, artifact 다운로드 엔드포인트는 모두 동일합니다. 요청 본문의
+`capability` 값과 결과의 artifact `type` 값만 달라집니다.
 
-## Public (client-facing)
+## Public (클라이언트용)
 
 ### `POST /api/v1/jobs`
 
-Submit a text job.
+텍스트 job 제출.
 
-Request (JSON):
+요청 (JSON):
 ```json
 { "capability": "MOCK", "text": "hello" }
 ```
 
-or, to run the text-RAG capability (phase 2):
+또는 text-RAG capability (phase 2) 실행:
 ```json
 { "capability": "RAG", "text": "which anime is about an old fisherman feeding stray harbor cats" }
 ```
 
-Accepted capability values:
+허용되는 capability 값:
 
-| Capability   | Status  | Output artifact types                                                          |
-|--------------|---------|---------------------------------------------------------------------------------|
-| `MOCK`       | phase 1 | `FINAL_RESPONSE` (JSON echo)                                                    |
-| `RAG`        | phase 2 | `RETRIEVAL_RESULT` + `FINAL_RESPONSE`                                           |
-| `OCR`        | phase 2 | `OCR_TEXT` + `OCR_RESULT`                                                       |
-| `MULTIMODAL` | phase 2 v1 | `OCR_TEXT` + `VISION_RESULT` + `RETRIEVAL_RESULT` + `FINAL_RESPONSE` (+ optional `MULTIMODAL_TRACE`) |
-| `AUTO`       | phase 3 | `AGENT_DECISION` + whatever the dispatched sub-capability emits (RAG / OCR / MULTIMODAL artifacts, or an inline `FINAL_RESPONSE` for clarify / direct_answer) |
+| Capability   | 상태       | 출력 artifact 타입                                                              |
+|--------------|------------|---------------------------------------------------------------------------------|
+| `MOCK`       | phase 1    | `FINAL_RESPONSE` (JSON echo)                                                    |
+| `RAG`        | phase 2    | `RETRIEVAL_RESULT` + `FINAL_RESPONSE`                                           |
+| `OCR`        | phase 2    | `OCR_TEXT` + `OCR_RESULT`                                                       |
+| `MULTIMODAL` | phase 2 v1 | `OCR_TEXT` + `VISION_RESULT` + `RETRIEVAL_RESULT` + `FINAL_RESPONSE` (+ 선택적 `MULTIMODAL_TRACE`) |
+| `AUTO`       | phase 3    | `AGENT_DECISION` + 디스패치된 서브-capability 가 emit 한 것 (RAG / OCR / MULTIMODAL artifact, 또는 clarify / direct_answer 의 인라인 `FINAL_RESPONSE`) |
 
-Before submitting a RAG or MULTIMODAL job the worker-side FAISS
-index must be built with `python -m scripts.build_rag_index
---fixture` and the worker must be restarted. Before submitting an
-OCR or MULTIMODAL job Tesseract and PyMuPDF must be available to
-the worker. See `docs/local-run.md`.
+RAG 또는 MULTIMODAL job 을 제출하기 전에 worker 측 FAISS 인덱스를
+`python -m scripts.build_rag_index --fixture` 로 빌드해야 하고 worker
+재시작이 필요. OCR 또는 MULTIMODAL job 을 제출하기 전에 Tesseract 와
+PyMuPDF 가 worker 에서 사용 가능해야 함. `docs/local-run.md` 참조.
 
-**MULTIMODAL v1 definition.** "Multimodal" here means an
-INPUT_FILE (PNG/JPEG/PDF) gets run through OCR + a visual-
-description provider, and the two signals are fused into a
-retrieval query + grounding context that feed the existing text-
-RAG retriever and generator. This is explicitly **not** true
-multimodal retrieval — see `docs/architecture.md` "Multimodal
-v1 limitations" for the full list of deferred items.
+**MULTIMODAL v1 정의.** 여기서 "Multimodal" 은 INPUT_FILE
+(PNG/JPEG/PDF) 이 OCR + visual-description provider 를 통과하고, 두
+신호가 retrieval query + grounding context 로 융합되어 기존 text-RAG
+retriever 와 generator 를 먹인다는 의미입니다. 이는 명시적으로
+진정한 multimodal retrieval 이 **아님** — 보류된 항목 전체 목록은
+`docs/architecture.md` 의 "Multimodal v1 한계" 참조.
 
-Response `202 Accepted`:
+응답 `202 Accepted`:
 ```json
 {
   "jobId": "5d31e42e-...",
@@ -71,21 +68,19 @@ Response `202 Accepted`:
 
 ### `POST /api/v1/jobs` (multipart)
 
-Submit a file job (same path, different content type).
+파일 job 제출 (같은 경로, 다른 content type).
 
-Form fields:
-- `capability` — e.g. `OCR`, `MULTIMODAL`
-- `file` — the binary upload
-- `text` — **optional** accompanying user question/prompt. When
-  present, core-api stages it as a second `INPUT_TEXT` artifact
-  alongside the `INPUT_FILE`. The `MULTIMODAL` capability uses it
-  as the user question in its fusion step. `OCR` and `MOCK` ignore
-  it — they only ever pick up one of `INPUT_FILE` / `INPUT_TEXT`
-  respectively. Omitting the field yields a single-artifact job
-  identical to the pre-multimodal contract, so existing OCR smoke
-  tests are unaffected.
+폼 필드:
+- `capability` — 예: `OCR`, `MULTIMODAL`
+- `file` — 바이너리 업로드
+- `text` — **선택적** 사용자 질문/프롬프트. 존재하면 core-api 가 이를
+  `INPUT_FILE` 옆에 두 번째 `INPUT_TEXT` artifact 로 stage. `MULTIMODAL`
+  capability 는 fusion 단계에서 사용자 질문으로 사용. `OCR` 와 `MOCK`
+  은 무시 — 둘은 각각 `INPUT_FILE` / `INPUT_TEXT` 중 하나만 사용.
+  필드를 생략하면 multimodal 이전 계약과 동일한 단일-artifact job 이
+  되므로 기존 OCR 스모크 테스트는 영향받지 않음.
 
-Example — MULTIMODAL job with an image + user question:
+예시 — 이미지 + 사용자 질문이 있는 MULTIMODAL job:
 ```bash
 curl -X POST http://localhost:8080/api/v1/jobs \
   -F "capability=MULTIMODAL" \
@@ -93,66 +88,64 @@ curl -X POST http://localhost:8080/api/v1/jobs \
   -F "text=what is the total amount on this invoice?"
 ```
 
-Response `202 Accepted`: same shape as the JSON variant. When `text`
-is present the response's `inputs` array contains two entries
-(`INPUT_FILE` + `INPUT_TEXT`), otherwise just `INPUT_FILE`.
+응답 `202 Accepted`: JSON 변형과 같은 모양. `text` 가 있으면 응답의
+`inputs` 배열에 두 항목 (`INPUT_FILE` + `INPUT_TEXT`) 이, 없으면
+`INPUT_FILE` 만 있음.
 
-### Submission contract (capability / input matrix)
+### 제출 계약 (capability / 입력 매트릭스)
 
-Both job-creation endpoints validate the submitted `capability` value
-against the shape of the request BEFORE any bytes are staged in
-storage and BEFORE any job row is persisted. Invalid submissions are
-rejected with a stable error code and the async pipeline is left in a
-pristine state — no `artifact` row, no `job` row, no Redis dispatch.
+두 job-생성 엔드포인트는 모두 바이트가 스토리지에 stage 되기 전에 그리고
+어떤 job row 가 영속화되기 전에 제출된 `capability` 값을 요청 모양에
+대해 검증합니다. 잘못된 제출은 안정적인 에러 코드로 거부되고 비동기
+파이프라인은 깨끗한 상태로 남겨집니다 — `artifact` row 없음, `job`
+row 없음, Redis 디스패치 없음.
 
-| Capability    | Endpoint   | `text` field                | `file` field                      | Allowed file types        |
-|---------------|------------|-----------------------------|-----------------------------------|----------------------------|
-| `MOCK`        | JSON       | required (may be empty)     | —                                 | —                          |
-| `MOCK`        | multipart  | optional                    | **required, non-empty**           | any                        |
-| `RAG`         | JSON       | **required, non-blank**     | —                                 | —                          |
-| `RAG`         | multipart  | **required, non-blank**     | required, non-empty (ignored by worker) | any                  |
-| `OCR`         | JSON       | — (rejected: FILE_REQUIRED) | **required via multipart**        | PNG, JPEG, PDF             |
-| `OCR`         | multipart  | optional (ignored by worker)| **required, non-empty**           | PNG, JPEG, PDF             |
-| `MULTIMODAL`  | JSON       | — (rejected: FILE_REQUIRED) | **required via multipart**        | PNG, JPEG, PDF             |
-| `MULTIMODAL`  | multipart  | optional (user question)    | **required, non-empty**           | PNG, JPEG, PDF             |
-| `AUTO`        | JSON       | required (may be blank)     | —                                 | —                          |
-| `AUTO`        | multipart  | optional (may be blank)     | optional, non-empty; at least ONE of text/file required | PNG, JPEG, PDF when present |
+| Capability    | 엔드포인트 | `text` 필드                  | `file` 필드                           | 허용되는 파일 타입         |
+|---------------|------------|------------------------------|---------------------------------------|----------------------------|
+| `MOCK`        | JSON       | 필수 (빈 값 가능)            | —                                     | —                          |
+| `MOCK`        | multipart  | 선택                         | **필수, non-empty**                   | 모두                       |
+| `RAG`         | JSON       | **필수, non-blank**          | —                                     | —                          |
+| `RAG`         | multipart  | **필수, non-blank**          | 필수, non-empty (worker 가 무시)      | 모두                       |
+| `OCR`         | JSON       | — (거부됨: FILE_REQUIRED)    | **multipart 로 필수**                 | PNG, JPEG, PDF             |
+| `OCR`         | multipart  | 선택 (worker 가 무시)        | **필수, non-empty**                   | PNG, JPEG, PDF             |
+| `MULTIMODAL`  | JSON       | — (거부됨: FILE_REQUIRED)    | **multipart 로 필수**                 | PNG, JPEG, PDF             |
+| `MULTIMODAL`  | multipart  | 선택 (사용자 질문)           | **필수, non-empty**                   | PNG, JPEG, PDF             |
+| `AUTO`        | JSON       | 필수 (blank 가능)            | —                                     | —                          |
+| `AUTO`        | multipart  | 선택 (blank 가능)            | 선택, non-empty; text/file 중 최소 하나 필수 | 있을 경우 PNG, JPEG, PDF |
 
-Validation rules enforced at the API boundary:
+API 경계에서 강제되는 검증 규칙:
 
-1. **Capability is required** and must match the `JobCapability` enum
-   (`MOCK`, `RAG`, `OCR`, `MULTIMODAL`). Blank → `CAPABILITY_REQUIRED`;
-   unknown value → `UNKNOWN_CAPABILITY`.
-2. **File-based capabilities on the JSON endpoint are rejected** with
-   `FILE_REQUIRED`. OCR / MULTIMODAL must use the multipart endpoint.
-3. **RAG requires a non-blank `text` field** on both endpoints —
-   rejected with `TEXT_REQUIRED` when missing, empty, or whitespace-only.
-4. **The multipart endpoint always requires a real file** on every
-   capability. Missing file → `FILE_REQUIRED`. Zero-byte file →
-   `FILE_EMPTY`.
-5. **OCR and MULTIMODAL files must be PNG, JPEG, or PDF.** The
-   validator accepts a match on EITHER the content-type header OR the
-   filename extension (real-world clients sometimes send
-   `application/octet-stream` for known file types, or drop the
-   filename entirely). Anything outside the allowed set →
-   `UNSUPPORTED_FILE_TYPE`.
-6. **MULTIMODAL text is optional.** A blank or missing `text` field
-   is accepted; the worker's fusion layer falls back to a neutral
-   default retrieval query.
-7. **MOCK preserves phase-1 compatibility.** Any file type is
-   accepted for MOCK on multipart (no type gate); MOCK on the JSON
-   endpoint accepts an empty (but non-null) `text` field.
-8. **AUTO requires at least one of text or file on multipart.** The
-   worker-side router can't route a job with no text and no file —
-   rejected fast with `AUTO_NO_INPUT`. A supplied file must still be
-   PNG/JPEG/PDF (same rule as MULTIMODAL). On the JSON endpoint AUTO
-   mirrors MOCK: text must be present (non-null) but can be blank,
-   and there is no file field. Output always includes an
-   `AGENT_DECISION` artifact as the first output.
+1. **Capability 는 필수** 이며 `JobCapability` enum (`MOCK`, `RAG`,
+   `OCR`, `MULTIMODAL`) 과 일치해야 합니다. Blank → `CAPABILITY_REQUIRED`;
+   알 수 없는 값 → `UNKNOWN_CAPABILITY`.
+2. **JSON 엔드포인트의 파일 기반 capability 는 거부됨** —
+   `FILE_REQUIRED`. OCR / MULTIMODAL 은 multipart 엔드포인트를
+   사용해야 함.
+3. **RAG 는 두 엔드포인트 모두에서 non-blank `text` 필드 필요** —
+   누락, 빈 문자열, 공백만 있으면 `TEXT_REQUIRED` 로 거부.
+4. **multipart 엔드포인트는 모든 capability 에서 항상 실제 파일 필요.**
+   파일 누락 → `FILE_REQUIRED`. 0바이트 파일 → `FILE_EMPTY`.
+5. **OCR 와 MULTIMODAL 파일은 PNG, JPEG, PDF 이어야 함.** 검증기는
+   content-type 헤더 또는 파일명 확장자 중 하나만 매치되면 통과
+   (실제 클라이언트는 알려진 파일 타입에 대해 가끔
+   `application/octet-stream` 을 보내거나 파일명을 완전히 빠뜨림).
+   허용 집합 밖의 어떤 것도 → `UNSUPPORTED_FILE_TYPE`.
+6. **MULTIMODAL text 는 선택적.** Blank 또는 누락된 `text` 필드는
+   허용; worker 의 fusion 레이어가 중립적인 기본 retrieval query 로
+   폴백.
+7. **MOCK 은 phase-1 호환성 유지.** multipart 의 MOCK 은 어떤 파일
+   타입도 허용 (타입 게이트 없음); JSON 엔드포인트의 MOCK 은 빈
+   (그러나 non-null) `text` 필드 허용.
+8. **AUTO 는 multipart 에서 text 또는 file 중 최소 하나 필요.**
+   worker 측 라우터는 text 도 file 도 없는 job 을 라우팅할 수 없음 —
+   `AUTO_NO_INPUT` 으로 빠르게 거부. 제공된 파일은 여전히 PNG/JPEG/PDF
+   여야 함 (MULTIMODAL 과 같은 규칙). JSON 엔드포인트의 AUTO 는 MOCK
+   과 미러링: text 가 (non-null 로) 있어야 하지만 blank 가능, file
+   필드 없음. 출력은 항상 첫 번째로 `AGENT_DECISION` artifact 포함.
 
-### Submission examples
+### 제출 예시
 
-Valid — MOCK text job:
+유효 — MOCK 텍스트 job:
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/jobs \
@@ -161,7 +154,7 @@ curl -X POST http://localhost:8080/api/v1/jobs \
 # → 202 Accepted, jobId=..., status=QUEUED
 ```
 
-Valid — RAG text job:
+유효 — RAG 텍스트 job:
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/jobs \
@@ -170,7 +163,7 @@ curl -X POST http://localhost:8080/api/v1/jobs \
 # → 202 Accepted
 ```
 
-Valid — OCR file job:
+유효 — OCR 파일 job:
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/jobs \
@@ -179,7 +172,7 @@ curl -X POST http://localhost:8080/api/v1/jobs \
 # → 202 Accepted
 ```
 
-Valid — MULTIMODAL with file + optional text:
+유효 — 파일 + 선택적 text 가 있는 MULTIMODAL:
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/jobs \
@@ -189,7 +182,7 @@ curl -X POST http://localhost:8080/api/v1/jobs \
 # → 202 Accepted
 ```
 
-Valid — MULTIMODAL with file only (no question):
+유효 — 파일만 있는 MULTIMODAL (질문 없음):
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/jobs \
@@ -198,7 +191,7 @@ curl -X POST http://localhost:8080/api/v1/jobs \
 # → 202 Accepted
 ```
 
-**Invalid** — RAG without text:
+**무효** — text 없는 RAG:
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/jobs \
@@ -209,7 +202,7 @@ curl -X POST http://localhost:8080/api/v1/jobs \
 #   "message": "RAG jobs require a non-blank 'text' field in the JSON body." }
 ```
 
-**Invalid** — OCR on the JSON endpoint (wrong endpoint for a file job):
+**무효** — JSON 엔드포인트의 OCR (파일 job 에 잘못된 엔드포인트):
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/jobs \
@@ -220,7 +213,7 @@ curl -X POST http://localhost:8080/api/v1/jobs \
 #   "message": "OCR jobs require a file upload. Use the multipart endpoint ..." }
 ```
 
-**Invalid** — MULTIMODAL multipart without a file:
+**무효** — 파일 없는 MULTIMODAL multipart:
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/jobs \
@@ -231,7 +224,7 @@ curl -X POST http://localhost:8080/api/v1/jobs \
 #   "message": "MULTIMODAL job requires a 'file' form field on the multipart endpoint." }
 ```
 
-**Invalid** — OCR with a zero-byte file:
+**무효** — 0바이트 파일의 OCR:
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/jobs \
@@ -242,7 +235,7 @@ curl -X POST http://localhost:8080/api/v1/jobs \
 #   "message": "Uploaded file is empty (0 bytes) ..." }
 ```
 
-**Invalid** — OCR with an unsupported file type:
+**무효** — 지원되지 않는 파일 타입의 OCR:
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/jobs \
@@ -253,7 +246,7 @@ curl -X POST http://localhost:8080/api/v1/jobs \
 #   "message": "Unsupported file type for OCR. Received contentType='image/gif' filename='cat.gif'. Supported types: PNG, JPEG, PDF ..." }
 ```
 
-**Invalid** — unknown capability:
+**무효** — 알 수 없는 capability:
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/jobs \
@@ -264,17 +257,17 @@ curl -X POST http://localhost:8080/api/v1/jobs \
 #   "message": "Unknown capability: SUMMARIZE. Accepted values: MOCK, RAG, OCR, MULTIMODAL, AUTO." }
 ```
 
-Valid — AUTO text-only job (router emits `rag` when text is long enough):
+유효 — AUTO 텍스트만 있는 job (text 가 충분히 길면 라우터가 `rag` emit):
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/jobs \
   -H "Content-Type: application/json" \
   -d '{"capability":"AUTO","text":"which anime features harbor cats?"}'
 # → 202 Accepted, jobId=..., status=QUEUED
-# Outputs will be: AGENT_DECISION + RETRIEVAL_RESULT + FINAL_RESPONSE
+# 출력: AGENT_DECISION + RETRIEVAL_RESULT + FINAL_RESPONSE
 ```
 
-Valid — AUTO multipart with text + PDF (router emits `multimodal`):
+유효 — text + PDF 가 있는 AUTO multipart (라우터가 `multimodal` emit):
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/jobs \
@@ -282,10 +275,10 @@ curl -X POST http://localhost:8080/api/v1/jobs \
   -F "file=@/path/to/invoice.pdf" \
   -F "text=what is the total amount"
 # → 202 Accepted
-# Outputs will be: AGENT_DECISION + OCR_TEXT + VISION_RESULT + RETRIEVAL_RESULT + FINAL_RESPONSE
+# 출력: AGENT_DECISION + OCR_TEXT + VISION_RESULT + RETRIEVAL_RESULT + FINAL_RESPONSE
 ```
 
-**Invalid** — AUTO multipart with neither text nor file:
+**무효** — text 도 file 도 없는 AUTO multipart:
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/jobs \
@@ -297,7 +290,7 @@ curl -X POST http://localhost:8080/api/v1/jobs \
 
 ### `GET /api/v1/jobs/{jobId}`
 
-Status view. Returns:
+상태 뷰. 반환:
 ```json
 {
   "jobId": "...",
@@ -311,11 +304,11 @@ Status view. Returns:
 }
 ```
 
-404 if no job with that id exists.
+해당 id 의 job 이 없으면 404.
 
 ### `GET /api/v1/jobs/{jobId}/result`
 
-Full result view with every artifact.
+모든 artifact 가 포함된 풀 결과 뷰.
 ```json
 {
   "jobId": "...",
@@ -327,7 +320,7 @@ Full result view with every artifact.
 }
 ```
 
-For a RAG job, `outputs` contains two entries:
+RAG job 의 경우 `outputs` 에 두 항목 포함:
 
 ```json
 {
@@ -353,8 +346,8 @@ For a RAG job, `outputs` contains two entries:
 }
 ```
 
-The `RETRIEVAL_RESULT` artifact downloads as JSON with this shape
-(produced by `RagCapability._retrieval_payload`):
+`RETRIEVAL_RESULT` artifact 는 다음 모양의 JSON 으로 다운로드됩니다
+(`RagCapability._retrieval_payload` 가 생성):
 
 ```json
 {
@@ -376,12 +369,12 @@ The `RETRIEVAL_RESULT` artifact downloads as JSON with this shape
 }
 ```
 
-The `FINAL_RESPONSE` artifact downloads as markdown produced by the
-extractive generator: a short grounded answer plus a numbered list of
-supporting passages with citations.
+`FINAL_RESPONSE` artifact 는 extractive generator 가 만든 markdown 으로
+다운로드됩니다: 짧은 grounded 답변 + 인용이 포함된 보조 passage 의 번호
+매겨진 리스트.
 
-For a MULTIMODAL job, `outputs` contains four entries (five when
-`AIPIPELINE_WORKER_MULTIMODAL_EMIT_TRACE=true`):
+MULTIMODAL job 의 경우 `outputs` 에 네 항목 포함
+(`AIPIPELINE_WORKER_MULTIMODAL_EMIT_TRACE=true` 면 다섯):
 
 ```json
 {
@@ -402,8 +395,8 @@ For a MULTIMODAL job, `outputs` contains four entries (five when
 }
 ```
 
-The `VISION_RESULT` JSON has this shape (produced by
-`MultimodalCapability._vision_result_json`):
+`VISION_RESULT` JSON 은 다음 모양 (`MultimodalCapability._vision_result_json`
+이 생성):
 
 ```json
 {
@@ -426,18 +419,17 @@ The `VISION_RESULT` JSON has this shape (produced by
 }
 ```
 
-When the vision stage fails, `available` is `false`, `provider` /
-`caption` / `details` / `pageNumber` / `latencyMs` are null, and
-`warnings` records the reason.
+Vision stage 가 실패하면 `available` 이 `false`, `provider` /
+`caption` / `details` / `pageNumber` / `latencyMs` 는 null, 그리고
+`warnings` 가 이유를 기록.
 
-The MULTIMODAL `RETRIEVAL_RESULT` schema is identical to the RAG
-capability's — downstream consumers can treat them identically, the
-only difference is the job's `capability` value in the status endpoint.
+MULTIMODAL `RETRIEVAL_RESULT` 스키마는 RAG capability 와 동일 — 다운스트림
+컨슈머는 동일하게 처리할 수 있고, 유일한 차이는 상태 엔드포인트에서의
+job `capability` 값.
 
-For an AUTO job, `outputs` always begins with an `AGENT_DECISION`
-artifact that records the routing decision, followed by whatever
-artifacts the dispatched sub-capability emitted. The shape depends on
-which action the router selected:
+AUTO job 의 경우 `outputs` 는 항상 라우팅 결정을 기록한 `AGENT_DECISION`
+artifact 로 시작하고, 디스패치된 서브-capability 가 emit 한 artifact 들이
+뒤따릅니다. 모양은 라우터가 어떤 action 을 선택했는지에 따라 달라짐:
 
 ```json
 {
@@ -454,8 +446,8 @@ which action the router selected:
 }
 ```
 
-The `AGENT_DECISION` artifact has this shape (produced by
-`AutoCapability._serialize_decision`):
+`AGENT_DECISION` artifact 는 다음 모양 (`AutoCapability._serialize_decision`
+이 생성):
 
 ```json
 {
@@ -467,38 +459,38 @@ The `AGENT_DECISION` artifact has this shape (produced by
 }
 ```
 
-`action` is one of `rag`, `ocr`, `multimodal`, `direct_answer`, or
-`clarify`. `routerName` is `rule` for the deterministic router,
-`llm-<backend>` for a clean LLM decision, or `llm-<backend>-fallback-rule`
-when the LLM router degraded to the rule path (low confidence,
-schema violation, or provider failure). `parsedQuery` carries the
-same shape as the RAG `parsedQuery` structure when the LLM router
-attached one to a `rag` decision; it is `null` otherwise.
+`action` 은 `rag`, `ocr`, `multimodal`, `direct_answer`, `clarify` 중
+하나. `routerName` 은 결정적 라우터일 때 `rule`, 깨끗한 LLM 결정에서는
+`llm-<backend>`, LLM 라우터가 룰 경로로 강등된 경우 (낮은 confidence,
+schema 위반, provider 실패) `llm-<backend>-fallback-rule`. `parsedQuery`
+는 LLM 라우터가 `rag` 결정에 첨부했을 때 RAG `parsedQuery` 구조와 같은
+모양; 그 외에는 `null`.
 
-Clarify and direct_answer actions emit an inline `FINAL_RESPONSE`
-instead of calling a sub-capability, so the outputs list is just
-`AGENT_DECISION + FINAL_RESPONSE`.
+Clarify 와 direct_answer action 은 서브-capability 호출 대신 인라인으로
+`FINAL_RESPONSE` 를 emit 하므로, outputs 리스트는 `AGENT_DECISION +
+FINAL_RESPONSE` 만.
 
 ### `GET /api/v1/artifacts/{id}/content`
 
-Streams the artifact bytes. Content-Type and Content-Length are set from
-the stored metadata. 404 if unknown.
+Artifact 바이트를 스트리밍. Content-Type 과 Content-Length 는 저장된
+메타데이터에서 설정. 알 수 없으면 404.
 
-## Internal (worker-facing)
+## Internal (worker 용)
 
-These live under `/api/internal/*`. Phase 1 leaves them unauthenticated;
-production deployments must gate them behind a shared secret or mTLS.
+이 엔드포인트들은 `/api/internal/*` 아래에 있습니다. Phase 1 은 이를
+인증 없이 두지만, 프로덕션 배포는 공유 시크릿 또는 mTLS 뒤에 게이팅해야
+합니다.
 
 ### `POST /api/internal/jobs/claim`
 
-Worker asks to take ownership of a job.
+Worker 가 job 의 소유권을 가져가겠다고 요청.
 
-Request:
+요청:
 ```json
 { "jobId": "...", "workerClaimToken": "worker-local-1", "attemptNo": 1 }
 ```
 
-Response (granted):
+응답 (granted):
 ```json
 {
   "granted": true,
@@ -518,7 +510,7 @@ Response (granted):
 }
 ```
 
-Response (denied):
+응답 (denied):
 ```json
 {
   "granted": false,
@@ -530,13 +522,13 @@ Response (denied):
 }
 ```
 
-Reasons: `JOB_NOT_FOUND`, `JOB_TERMINAL`, `ALREADY_CLAIMED`, `CLAIM_RACE`.
+거부 사유: `JOB_NOT_FOUND`, `JOB_TERMINAL`, `ALREADY_CLAIMED`, `CLAIM_RACE`.
 
 ### `POST /api/internal/jobs/callback`
 
-Worker reports the terminal outcome.
+Worker 가 종단 결과를 보고.
 
-Request:
+요청:
 ```json
 {
   "jobId": "...",
@@ -557,27 +549,26 @@ Request:
 }
 ```
 
-Response:
+응답:
 ```json
 { "applied": true, "duplicate": false, "currentStatus": "SUCCEEDED" }
 ```
 
-If the same `callbackId` arrives twice on the same job, the second call
-returns `{ "applied": false, "duplicate": true }` and the job state is
-left untouched.
+같은 job 에 같은 `callbackId` 가 두 번 도착하면, 두 번째 호출은
+`{ "applied": false, "duplicate": true }` 를 반환하고 job 상태는
+변경되지 않은 채로 남습니다.
 
 ### `POST /api/internal/artifacts` (multipart)
 
-Phase 1 substitute for a presigned PUT URL. The worker uploads result
-bytes to core-api and gets back a storage URI it can echo into the
-subsequent callback.
+Phase 1 의 presigned PUT URL 대체. Worker 가 결과 바이트를 core-api 에
+업로드하고 후속 callback 에 echo 할 storage URI 를 받음.
 
-Form fields:
-- `jobId` — job this output belongs to
-- `type` — e.g. `FINAL_RESPONSE`
-- `file` — the binary output
+폼 필드:
+- `jobId` — 이 출력이 속한 job
+- `type` — 예: `FINAL_RESPONSE`
+- `file` — 바이너리 출력
 
-Response:
+응답:
 ```json
 {
   "storageUri": "local://...",
@@ -586,45 +577,44 @@ Response:
 }
 ```
 
-**Important**: this endpoint writes **bytes only**. It does NOT create an
-`artifact` row. The row is created by the subsequent `callback`, which
-references the returned `storageUri`. This matches the semantics of a
-real presigned-upload flow (where the upload lands directly on object
-storage and the DB hears about it only from the callback) and prevents
-the double-write that would otherwise happen when the callback echoes
-the same bytes.
+**중요**: 이 엔드포인트는 **바이트만** 씁니다. `artifact` row 를 만들지
+않습니다. row 는 후속 `callback` 에서 만들어지고, 반환된 `storageUri`
+를 참조합니다. 이는 진짜 presigned-upload 흐름의 의미와 일치하며 (업로드는
+object 스토리지에 직접 도착하고 DB 는 callback 으로부터만 그것에 대해
+들음), 그렇지 않으면 callback 이 같은 바이트를 echo 할 때 발생할 더블
+쓰기를 방지합니다.
 
-## Error envelope
+## 에러 envelope
 
-All 4xx and 5xx responses follow a single shape:
+모든 4xx 와 5xx 응답은 단일 모양을 따릅니다:
 ```json
 { "code": "TEXT_REQUIRED", "message": "RAG jobs require a non-blank 'text' field in the JSON body." }
 ```
 
-### Submission error codes (`POST /api/v1/jobs`)
+### 제출 에러 코드 (`POST /api/v1/jobs`)
 
-These are raised by `JobSubmissionValidator` at the API boundary BEFORE
-any storage write or job-row persistence. A 400 response with one of
-these codes guarantees that the async pipeline has not been touched —
-no `artifact` row was created, no `job` row was inserted, and no Redis
-dispatch was issued. Clients can safely retry with a fixed request.
+이 코드들은 `JobSubmissionValidator` 가 API 경계에서 어떤 스토리지 쓰기
+또는 job-row 영속화 전에 raise. 이 코드 중 하나의 400 응답은 비동기
+파이프라인이 건드려지지 않았음을 보장합니다 — `artifact` row 가 만들어지지
+않았고, `job` row 가 삽입되지 않았고, Redis 디스패치가 발행되지 않았음.
+클라이언트는 수정된 요청으로 안전하게 재시도할 수 있습니다.
 
-| Code                     | HTTP | Meaning                                                                                |
-|---------------------------|------|----------------------------------------------------------------------------------------|
-| `CAPABILITY_REQUIRED`     | 400  | `capability` field is missing / blank / whitespace-only.                               |
-| `UNKNOWN_CAPABILITY`      | 400  | `capability` value is not one of `MOCK`, `RAG`, `OCR`, `MULTIMODAL`, `AUTO`.           |
-| `TEXT_REQUIRED`           | 400  | Capability requires a non-blank `text` field but none was supplied (RAG; MOCK-JSON / AUTO-JSON null). |
-| `FILE_REQUIRED`           | 400  | Capability requires a file upload but none was supplied, or the capability was submitted on the wrong endpoint. |
-| `FILE_EMPTY`              | 400  | A `file` form field was present but carried zero bytes.                                |
-| `UNSUPPORTED_FILE_TYPE`   | 400  | File's content-type and filename extension both fall outside the allowed set for the capability (OCR / MULTIMODAL / AUTO require PNG, JPEG, or PDF when a file is supplied). |
-| `AUTO_NO_INPUT`           | 400  | AUTO multipart job supplied neither a non-blank `text` nor a non-empty `file`.         |
+| 코드                       | HTTP | 의미                                                                                    |
+|----------------------------|------|-----------------------------------------------------------------------------------------|
+| `CAPABILITY_REQUIRED`      | 400  | `capability` 필드가 누락 / blank / 공백만.                                              |
+| `UNKNOWN_CAPABILITY`       | 400  | `capability` 값이 `MOCK`, `RAG`, `OCR`, `MULTIMODAL`, `AUTO` 중 하나가 아님.            |
+| `TEXT_REQUIRED`            | 400  | Capability 가 non-blank `text` 필드를 요구하지만 제공되지 않음 (RAG; MOCK-JSON / AUTO-JSON 의 null). |
+| `FILE_REQUIRED`            | 400  | Capability 가 파일 업로드를 요구하지만 제공되지 않았거나, capability 가 잘못된 엔드포인트로 제출됨. |
+| `FILE_EMPTY`               | 400  | `file` 폼 필드는 있었지만 0 바이트.                                                     |
+| `UNSUPPORTED_FILE_TYPE`    | 400  | 파일의 content-type 과 파일명 확장자가 모두 capability 의 허용 집합 밖 (OCR / MULTIMODAL / AUTO 는 파일 제공 시 PNG, JPEG, PDF 필요). |
+| `AUTO_NO_INPUT`            | 400  | AUTO multipart job 이 non-blank `text` 도 non-empty `file` 도 제공 안 함.               |
 
-### Other known error codes
+### 기타 알려진 에러 코드
 
-| Code                        | Source                                                 |
-|------------------------------|--------------------------------------------------------|
-| `INVALID_ARGUMENT`          | Generic `IllegalArgumentException` from the application layer. |
-| `VALIDATION_ERROR`          | Jakarta Validation constraint failure on a DTO field.  |
-| `INVALID_STATE_TRANSITION`  | Domain state machine refused the transition.           |
-| `CONFLICT`                  | Application-level conflict (idempotency, claim race).  |
-| `INTERNAL_ERROR`            | Fallback for unhandled exceptions. 500 status.         |
+| 코드                          | 출처                                                       |
+|-------------------------------|------------------------------------------------------------|
+| `INVALID_ARGUMENT`            | 애플리케이션 레이어의 일반적인 `IllegalArgumentException`. |
+| `VALIDATION_ERROR`            | DTO 필드의 Jakarta Validation 제약 위반.                   |
+| `INVALID_STATE_TRANSITION`    | 도메인 상태 머신이 전이를 거부.                             |
+| `CONFLICT`                    | 애플리케이션 레벨 충돌 (멱등성, claim race).                |
+| `INTERNAL_ERROR`              | 처리되지 않은 예외에 대한 폴백. 500 상태.                  |
