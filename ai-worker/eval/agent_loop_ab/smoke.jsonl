@@ -1,0 +1,5 @@
+{"query_id": "smoke-001", "query": "FAISS 인덱스를 어떻게 빌드하나요?", "expected_doc_id": "stub-doc-3", "input_kind": "TEXT", "capability": "rag"}
+{"query_id": "smoke-002", "query": "What is bge-m3?", "expected_keywords": ["bge", "embedding"], "input_kind": "TEXT", "capability": "rag"}
+{"query_id": "smoke-003", "query": "에이전트 루프의 critic 역할은?", "input_kind": "TEXT", "capability": "rag"}
+{"query_id": "smoke-004", "query": "How does the LangGraph backend differ from the legacy controller?", "expected_doc_id": "stub-doc-2", "expected_keywords": ["graph", "loop"], "input_kind": "TEXT", "capability": "rag"}
+{"query_id": "smoke-005", "query": "재작성 횟수와 후보 도큐먼트 수의 관계", "input_kind": "TEXT", "capability": "rag", "metadata": {"language": "ko", "difficulty": "hard"}}

@@ -80,6 +80,16 @@ ai-worker/eval/reports/legacy-baseline-final/*
 !ai-worker/eval/reports/legacy-baseline-final/baseline_manifest.json
 ai-worker/eval/datasets/samples/
 
+# ---- Agent loop A/B harness run output ----
+# Each run writes raw_results.jsonl / summary.csv / comparison_summary.json
+# under eval/agent_loop_ab/<run-name>/ plus a FAISS index cache under
+# _indexes/ and a console log under _logs/. Only the README and the
+# tracked smoke fixtures (smoke.csv / smoke.jsonl) are committed.
+ai-worker/eval/agent_loop_ab/_indexes/
+ai-worker/eval/agent_loop_ab/_logs/
+ai-worker/eval/agent_loop_ab/legacy-vs-graph-*/
+ai-worker/eval/agent_loop_ab/smoke-*/
+
 # ---- Optuna tuning artifacts ----
 # Keep summary.md + config.yaml (deterministic replay), drop the
 # binary SQLite study and per-run plots. See docs/tuning.md.
