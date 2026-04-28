@@ -39,6 +39,7 @@ public final class JobResponses {
             String errorCode,
             String errorMessage,
             Instant createdAt,
+            Instant claimedAt,
             Instant updatedAt
     ) {
         public static JobView from(Job job) {
@@ -50,6 +51,7 @@ public final class JobResponses {
                     job.getErrorCode(),
                     job.getErrorMessage(),
                     job.getCreatedAt(),
+                    job.getClaimedAt(),
                     job.getUpdatedAt());
         }
     }
