@@ -133,6 +133,17 @@ class RetrievalEvalRow:
     # Latency + provenance
     retrieval_ms: float = 0.0
     rerank_ms: Optional[float] = None
+    # Phase 2A-L: dense-retrieval wall-clock (FAISS + embedder + parser
+    # + RRF), measured separately from the rerank step. ``None`` when
+    # the retriever doesn't surface it (older RetrievalReport without
+    # the field, or a stub used in tests).
+    dense_retrieval_ms: Optional[float] = None
+    # Phase 2A-L: per-stage rerank breakdown when the cross-encoder
+    # collects stage timings. Keys: ``pair_build_ms``, ``tokenize_ms``,
+    # ``forward_ms``, ``postprocess_ms``, ``total_rerank_ms``. ``None``
+    # for noop / OOM-fallback paths and any reranker that doesn't
+    # expose ``last_breakdown_ms``.
+    rerank_breakdown_ms: Optional[Dict[str, float]] = None
     index_version: Optional[str] = None
     embedding_model: Optional[str] = None
     reranker_name: Optional[str] = None
@@ -179,6 +190,32 @@ class RetrievalEvalSummary:
     p50_rerank_ms: Optional[float] = None
     p95_rerank_ms: Optional[float] = None
     max_rerank_ms: Optional[float] = None
+    # Phase 2A-L extended latency aggregates: p90 + p99 on the headline
+    # retrieval_ms + rerank_ms series, plus dense_retrieval_ms summary
+    # and rerank_breakdown summary. All Optional so older retrieval
+    # reports (without these fields populated by the retriever) round-
+    # trip through asdict() with the same shape.
+    p90_retrieval_ms: Optional[float] = None
+    p99_retrieval_ms: Optional[float] = None
+    p90_rerank_ms: Optional[float] = None
+    p99_rerank_ms: Optional[float] = None
+    dense_retrieval_row_count: int = 0
+    mean_dense_retrieval_ms: Optional[float] = None
+    p50_dense_retrieval_ms: Optional[float] = None
+    p90_dense_retrieval_ms: Optional[float] = None
+    p95_dense_retrieval_ms: Optional[float] = None
+    p99_dense_retrieval_ms: Optional[float] = None
+    max_dense_retrieval_ms: Optional[float] = None
+    # Per-stage rerank breakdown summary. Each value is a dict with
+    # keys ``avg``, ``p50``, ``p90``, ``p95``, ``p99``, ``max``,
+    # ``count`` (rows that contributed). The outer dict's keys are the
+    # stage names emitted by ``CrossEncoderReranker.last_breakdown_ms``
+    # (``pair_build_ms``, ``tokenize_ms``, ``forward_ms``,
+    # ``postprocess_ms``, ``total_rerank_ms``). Empty dict when no row
+    # surfaced a breakdown — preserves the older shape for noop runs.
+    rerank_breakdown_stats: Dict[str, Dict[str, Optional[float]]] = field(
+        default_factory=dict,
+    )
     # Extra hit-cutoff aggregates surfaced for the candidate-recall
     # report (Phase 2A). Keys are the same stringified-int form used on
     # ``RetrievalEvalRow.extra_hits`` so dict round-tripping through
@@ -329,6 +366,26 @@ def run_retrieval_eval(
                     row.rerank_ms = float(rerank_ms_value)
                 except (TypeError, ValueError):
                     row.rerank_ms = None
+            # Phase 2A-L: dense_retrieval_ms + per-stage rerank breakdown.
+            # Both are optional on the RetrievalReport — older stubs and
+            # third-party retrievers may not populate them, in which
+            # case the row stays at the dataclass default (None).
+            dense_ms_value = getattr(report, "dense_retrieval_ms", None)
+            if dense_ms_value is not None:
+                try:
+                    row.dense_retrieval_ms = float(dense_ms_value)
+                except (TypeError, ValueError):
+                    row.dense_retrieval_ms = None
+            breakdown_value = getattr(report, "rerank_breakdown_ms", None)
+            if isinstance(breakdown_value, dict) and breakdown_value:
+                try:
+                    row.rerank_breakdown_ms = {
+                        str(k): float(v)
+                        for k, v in breakdown_value.items()
+                        if v is not None
+                    }
+                except (TypeError, ValueError):
+                    row.rerank_breakdown_ms = None
 
             # Per-row metrics.
             if expected_doc_ids:
@@ -554,13 +611,74 @@ def _aggregate(
     if rerank_latencies:
         mean_rerank_ms = round(statistics.fmean(rerank_latencies), 3)
         p50_rerank_ms = round(statistics.median(rerank_latencies), 3)
+        p90_rerank_ms = round(p_percentile(rerank_latencies, 90.0), 3)
         p95_rerank_ms = round(p_percentile(rerank_latencies, 95.0), 3)
+        p99_rerank_ms = round(p_percentile(rerank_latencies, 99.0), 3)
         max_rerank_ms = round(max(rerank_latencies), 3)
     else:
         mean_rerank_ms = None
         p50_rerank_ms = None
+        p90_rerank_ms = None
         p95_rerank_ms = None
+        p99_rerank_ms = None
         max_rerank_ms = None
+
+    # Phase 2A-L: dense_retrieval_ms aggregate. Distinct from
+    # mean_retrieval_ms (full retrieve() wall-clock) so the topN sweep
+    # can attribute total query time between FAISS-side and reranker-
+    # side. Rows that didn't surface the field (older stub retrievers)
+    # contribute nothing — the aggregate falls to None which the writer
+    # serialises as an explicit absence.
+    dense_latencies = [
+        float(r.dense_retrieval_ms) for r in rows
+        if r.error is None and r.dense_retrieval_ms is not None
+    ]
+    if dense_latencies:
+        mean_dense_ms = round(statistics.fmean(dense_latencies), 3)
+        p50_dense_ms = round(statistics.median(dense_latencies), 3)
+        p90_dense_ms = round(p_percentile(dense_latencies, 90.0), 3)
+        p95_dense_ms = round(p_percentile(dense_latencies, 95.0), 3)
+        p99_dense_ms = round(p_percentile(dense_latencies, 99.0), 3)
+        max_dense_ms = round(max(dense_latencies), 3)
+    else:
+        mean_dense_ms = None
+        p50_dense_ms = None
+        p90_dense_ms = None
+        p95_dense_ms = None
+        p99_dense_ms = None
+        max_dense_ms = None
+
+    # Per-stage rerank breakdown stats (Phase 2A-L). Walk every row's
+    # ``rerank_breakdown_ms`` dict and group values by stage key, then
+    # compute avg / p50 / p90 / p95 / p99 / max / count for each stage.
+    # Stage keys never seen in any row do not appear in the output —
+    # the JSON shape is "what we measured", not "all possible stages".
+    breakdown_buckets: Dict[str, List[float]] = {}
+    for r in rows:
+        if r.error is not None:
+            continue
+        if not isinstance(r.rerank_breakdown_ms, dict):
+            continue
+        for stage, value in r.rerank_breakdown_ms.items():
+            try:
+                value_f = float(value)
+            except (TypeError, ValueError):
+                continue
+            breakdown_buckets.setdefault(stage, []).append(value_f)
+
+    rerank_breakdown_stats: Dict[str, Dict[str, Optional[float]]] = {}
+    for stage, values in breakdown_buckets.items():
+        if not values:
+            continue
+        rerank_breakdown_stats[stage] = {
+            "avg": round(statistics.fmean(values), 3),
+            "p50": round(statistics.median(values), 3),
+            "p90": round(p_percentile(values, 90.0), 3),
+            "p95": round(p_percentile(values, 95.0), 3),
+            "p99": round(p_percentile(values, 99.0), 3),
+            "max": round(max(values), 3),
+            "count": float(len(values)),
+        }
 
     return RetrievalEvalSummary(
         dataset_path=dataset_path,
@@ -585,11 +703,27 @@ def _aggregate(
         p50_retrieval_ms=_p50_or_zero(latencies),
         p95_retrieval_ms=round(p_percentile(latencies, 95.0), 3),
         max_retrieval_ms=round(max(latencies), 3) if latencies else 0.0,
+        p90_retrieval_ms=(
+            round(p_percentile(latencies, 90.0), 3) if latencies else None
+        ),
+        p99_retrieval_ms=(
+            round(p_percentile(latencies, 99.0), 3) if latencies else None
+        ),
         rerank_row_count=len(rerank_latencies),
         mean_rerank_ms=mean_rerank_ms,
         p50_rerank_ms=p50_rerank_ms,
+        p90_rerank_ms=p90_rerank_ms,
         p95_rerank_ms=p95_rerank_ms,
+        p99_rerank_ms=p99_rerank_ms,
         max_rerank_ms=max_rerank_ms,
+        dense_retrieval_row_count=len(dense_latencies),
+        mean_dense_retrieval_ms=mean_dense_ms,
+        p50_dense_retrieval_ms=p50_dense_ms,
+        p90_dense_retrieval_ms=p90_dense_ms,
+        p95_dense_retrieval_ms=p95_dense_ms,
+        p99_dense_retrieval_ms=p99_dense_ms,
+        max_dense_retrieval_ms=max_dense_ms,
+        rerank_breakdown_stats=rerank_breakdown_stats,
         mean_extra_hits=mean_extra_hits,
         index_version=index_version,
         embedding_model=embedding_model,
@@ -701,9 +835,27 @@ def render_markdown_report(
     lines.append("")
     lines.append(f"- mean: {summary.mean_retrieval_ms:.2f}")
     lines.append(f"- p50:  {summary.p50_retrieval_ms:.2f}")
+    if summary.p90_retrieval_ms is not None:
+        lines.append(f"- p90:  {summary.p90_retrieval_ms:.2f}")
     lines.append(f"- p95:  {summary.p95_retrieval_ms:.2f}")
+    if summary.p99_retrieval_ms is not None:
+        lines.append(f"- p99:  {summary.p99_retrieval_ms:.2f}")
     lines.append(f"- max:  {summary.max_retrieval_ms:.2f}")
     lines.append("")
+
+    if summary.dense_retrieval_row_count > 0:
+        lines.append("## Dense retrieval latency (ms)")
+        lines.append("")
+        lines.append(
+            f"- rows with dense_retrieval_ms: {summary.dense_retrieval_row_count}"
+        )
+        lines.append(f"- mean: {_fmt_ms(summary.mean_dense_retrieval_ms)}")
+        lines.append(f"- p50:  {_fmt_ms(summary.p50_dense_retrieval_ms)}")
+        lines.append(f"- p90:  {_fmt_ms(summary.p90_dense_retrieval_ms)}")
+        lines.append(f"- p95:  {_fmt_ms(summary.p95_dense_retrieval_ms)}")
+        lines.append(f"- p99:  {_fmt_ms(summary.p99_dense_retrieval_ms)}")
+        lines.append(f"- max:  {_fmt_ms(summary.max_dense_retrieval_ms)}")
+        lines.append("")
 
     if summary.rerank_row_count > 0:
         lines.append("## Rerank latency (ms)")
@@ -711,8 +863,60 @@ def render_markdown_report(
         lines.append(f"- rows with rerank: {summary.rerank_row_count}")
         lines.append(f"- mean: {_fmt_ms(summary.mean_rerank_ms)}")
         lines.append(f"- p50:  {_fmt_ms(summary.p50_rerank_ms)}")
+        if summary.p90_rerank_ms is not None:
+            lines.append(f"- p90:  {_fmt_ms(summary.p90_rerank_ms)}")
         lines.append(f"- p95:  {_fmt_ms(summary.p95_rerank_ms)}")
+        if summary.p99_rerank_ms is not None:
+            lines.append(f"- p99:  {_fmt_ms(summary.p99_rerank_ms)}")
         lines.append(f"- max:  {_fmt_ms(summary.max_rerank_ms)}")
+        lines.append("")
+
+    if summary.rerank_breakdown_stats:
+        lines.append("## Rerank latency breakdown per stage (ms)")
+        lines.append("")
+        lines.append(
+            "| stage | avg | p50 | p90 | p95 | p99 | max | n |"
+        )
+        lines.append(
+            "|---|---:|---:|---:|---:|---:|---:|---:|"
+        )
+        # Render a stable order so the report diff stays small across
+        # runs even when dict iteration order shifts. The known stages
+        # come first in their natural pipeline order; any unexpected
+        # stage falls to the bottom alphabetically.
+        known_order = [
+            "pair_build_ms",
+            "tokenize_ms",
+            "forward_ms",
+            "postprocess_ms",
+            "total_rerank_ms",
+        ]
+        ordered_stages = [
+            s for s in known_order if s in summary.rerank_breakdown_stats
+        ]
+        ordered_stages.extend(
+            sorted(
+                k for k in summary.rerank_breakdown_stats.keys()
+                if k not in known_order
+            )
+        )
+        for stage in ordered_stages:
+            row = summary.rerank_breakdown_stats[stage]
+            n_value = row.get("count")
+            try:
+                n_int = int(n_value) if n_value is not None else 0
+            except (TypeError, ValueError):
+                n_int = 0
+            lines.append(
+                f"| {stage} | "
+                f"{_fmt_ms(row.get('avg'))} | "
+                f"{_fmt_ms(row.get('p50'))} | "
+                f"{_fmt_ms(row.get('p90'))} | "
+                f"{_fmt_ms(row.get('p95'))} | "
+                f"{_fmt_ms(row.get('p99'))} | "
+                f"{_fmt_ms(row.get('max'))} | "
+                f"{n_int} |"
+            )
         lines.append("")
 
     if summary.per_answer_type:

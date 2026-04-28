@@ -135,6 +135,31 @@ from app.capabilities.rag.token_aware_chunker import (
     TokenAwareConfig,
 )
 from app.capabilities.rag.ingest import _iter_documents
+from eval.harness.boost_eval import (
+    run_boost_retrieval_eval,
+    write_boost_artifacts,
+)
+from eval.harness.boost_failure_analysis import (
+    boost_failure_analysis_to_dict,
+    classify_boost_failures,
+    render_boost_failure_markdown,
+)
+from eval.harness.boost_metadata import load_doc_metadata
+from eval.harness.boost_pareto import (
+    boost_pareto_to_dict,
+    compute_boost_pareto_frontier,
+    render_boost_pareto_markdown,
+)
+from eval.harness.boost_scorer import BoostConfig, MetadataBoostReranker
+from eval.harness.boosting_retriever import BoostingEvalRetriever
+from eval.harness.candidate_miss_analysis import (
+    DEFAULT_DEEP_K as DEFAULT_MISS_DEEP_K,
+    DEFAULT_TOP_KS as DEFAULT_MISS_TOP_KS,
+    candidate_miss_report_to_dict,
+    classify_candidate_misses,
+    render_candidate_miss_markdown,
+)
+from eval.harness.topn_sweep import build_topn_sweep
 
 
 log = logging.getLogger("eval")
@@ -165,6 +190,14 @@ def main(argv: Optional[List[str]] = None) -> int:
         return _run_phase2a_reranker_comparison_cli(args)
     if args.mode == "phase2a-reranker-failure-analysis":
         return _run_phase2a_reranker_failure_cli(args)
+    if args.mode == "phase2a-latency-sweep":
+        return _run_phase2a_latency_sweep_cli(args)
+    if args.mode == "phase2a-latency-breakdown":
+        return _run_phase2a_latency_breakdown_cli(args)
+    if args.mode == "phase2a-topn-sweep":
+        return _run_phase2a_topn_sweep_cli(args)
+    if args.mode == "phase2a-recommended-modes":
+        return _run_phase2a_recommended_modes_cli(args)
     if args.mode == "retrieval-compare":
         return _run_retrieval_compare_cli(args)
     if args.mode == "retrieval-miss-analysis":
@@ -187,6 +220,14 @@ def main(argv: Optional[List[str]] = None) -> int:
         return _run_emit_token_aware_chunks_cli(args)
     if args.mode == "compare-chunker-lengths":
         return _run_compare_chunker_lengths_cli(args)
+    if args.mode == "retrieval-candidate-boost":
+        return _run_retrieval_candidate_boost_cli(args)
+    if args.mode == "retrieval-candidate-miss-analysis":
+        return _run_retrieval_candidate_miss_analysis_cli(args)
+    if args.mode == "retrieval-boost-failure-analysis":
+        return _run_retrieval_boost_failure_analysis_cli(args)
+    if args.mode == "retrieval-boost-pareto":
+        return _run_retrieval_boost_pareto_cli(args)
     parser.error(f"unknown mode: {args.mode}")
     return 2  # unreachable
 
@@ -434,6 +475,161 @@ def _build_parser() -> argparse.ArgumentParser:
     rfail.add_argument(
         "--sample-cap", type=int, default=10,
         help="Cap on per-bucket samples emitted (default: 10).",
+    )
+
+    # --- phase2a-latency-sweep ---
+    #
+    # Phase 2A-L entrypoint. Builds the offline corpus + FAISS index ONCE
+    # and runs the retrieval-eval against it N times — once per
+    # ``dense_top_n`` value — to populate the latency-breakdown topN
+    # sweep + Pareto frontier + recommended-modes documents in a single
+    # command. Reusing the index is the meat of the saving: the
+    # repeated rebuild dominates the per-config wall-clock for a 47k-
+    # chunk corpus.
+    lswp = subs.add_parser(
+        "phase2a-latency-sweep",
+        help="Phase 2A-L: run a topN sweep over an offline corpus, "
+             "then compute the latency-breakdown / Pareto frontier / "
+             "recommended-modes documents.",
+    )
+    lswp.add_argument("--dataset", required=True, type=Path,
+                      help="Eval-queries JSONL.")
+    lswp.add_argument("--corpus", required=True, type=Path,
+                      help="Offline corpus JSONL (B2 token-aware-v1 by "
+                           "default).")
+    lswp.add_argument("--out-dir", type=Path, required=True,
+                      help="Top-level directory; per-topN run dirs are "
+                           "created underneath, plus the sweep / "
+                           "frontier / modes / breakdown documents at "
+                           "the top level.")
+    lswp.add_argument("--final-top-k", type=int, default=10,
+                      help="Final top-k after reranking (default: 10).")
+    lswp.add_argument("--dense-top-n", type=int, action="append",
+                      default=None,
+                      help="Dense top-N values to sweep (repeatable). "
+                           "Defaults to 5 10 15 20 30 50.")
+    lswp.add_argument("--mrr-k", type=int, default=10)
+    lswp.add_argument("--ndcg-k", type=int, default=10)
+    lswp.add_argument("--max-seq-length", type=int, default=1024)
+    lswp.add_argument("--embed-batch-size", type=int, default=32)
+    lswp.add_argument("--reranker-model", type=str,
+                      default="BAAI/bge-reranker-v2-m3")
+    lswp.add_argument("--reranker-batch-size", type=int, default=16)
+    lswp.add_argument("--reranker-max-length", type=int, default=512)
+    lswp.add_argument("--reranker-text-max-chars", type=int, default=800)
+    lswp.add_argument("--reranker-device", type=str, default=None)
+    lswp.add_argument(
+        "--breakdown-anchor-dense-top-n", type=int, default=20,
+        help="Dense top-N to use as the headline latency-breakdown "
+             "anchor (default: 20). The sweep runs all configured "
+             "values; the breakdown doc is rendered from this one.",
+    )
+    lswp.add_argument(
+        "--candidate-recall-extra-hit-k",
+        type=int, action="append", default=None,
+        help="Extra hit@k cutoffs to compute on the dense-only "
+             "candidate-recall sibling run. Phase 2A-L convention is "
+             "10 / 20 / 50. Pass empty to skip the dense-only run.",
+    )
+    lswp.add_argument(
+        "--skip-candidate-recall", action="store_true",
+        help="Skip the dense-only candidate-recall sibling run "
+             "entirely. The sweep still produces accuracy metrics for "
+             "each topN; only candidate_recall@N annotations on the "
+             "sweep table are dropped.",
+    )
+    lswp.add_argument(
+        "--metric", type=str, default="mean_hit_at_1",
+        help="Pareto / recommended-modes accuracy metric "
+             "(default: mean_hit_at_1).",
+    )
+    lswp.add_argument(
+        "--latency", type=str, default="rerank_p95_ms",
+        help="Pareto / recommended-modes latency metric "
+             "(default: rerank_p95_ms).",
+    )
+    lswp.add_argument(
+        "--fast-p95-budget-ms", type=float, default=None,
+        help="When set, fast mode prefers entries whose p95 latency is "
+             "under this budget.",
+    )
+    lswp.add_argument(
+        "--balanced-p95-budget-ms", type=float, default=None,
+        help="When set, balanced mode picks the highest-metric "
+             "frontier point under this latency budget.",
+    )
+    lswp.add_argument(
+        "--quality-target-metric", type=float, default=None,
+        help="Optional quality-mode target value; documented in the "
+             "recommended-modes doc when the chosen entry doesn't "
+             "reach it.",
+    )
+
+    # --- phase2a-latency-breakdown ---
+    lbd = subs.add_parser(
+        "phase2a-latency-breakdown",
+        help="Phase 2A-L post-process: stage-level latency breakdown "
+             "for ONE retrieval-rerank report.",
+    )
+    lbd.add_argument("--report", required=True, type=Path,
+                     help="Path to retrieval_eval_report.json.")
+    lbd.add_argument("--label", type=str, default=None,
+                     help="Optional label printed on the report header.")
+    lbd.add_argument("--out-json", type=Path, required=True)
+    lbd.add_argument("--out-md", type=Path, required=True)
+
+    # --- phase2a-topn-sweep ---
+    tswp = subs.add_parser(
+        "phase2a-topn-sweep",
+        help="Phase 2A-L post-process: assemble the topN sweep report "
+             "from N labelled retrieval reports.",
+    )
+    tswp.add_argument(
+        "--slice", action="append", required=True,
+        help="One labelled report. Format 'label:path/to/"
+             "retrieval_eval_report.json'. Repeatable.",
+    )
+    tswp.add_argument(
+        "--candidate-recall-report", type=Path, default=None,
+        help="Optional dense-only run with mean_extra_hits populated; "
+             "used to annotate every sweep entry with the candidate-"
+             "recall@N upper bound.",
+    )
+    tswp.add_argument("--out-json", type=Path, required=True)
+    tswp.add_argument("--out-md", type=Path, required=True)
+    tswp.add_argument(
+        "--caveat", type=str, action="append", default=None,
+        help="Override the default caveat list (repeatable).",
+    )
+
+    # --- phase2a-recommended-modes ---
+    rmod = subs.add_parser(
+        "phase2a-recommended-modes",
+        help="Phase 2A-L post-process: emit fast / balanced / quality "
+             "recommendations from a topN sweep.",
+    )
+    rmod.add_argument(
+        "--sweep-json", required=True, type=Path,
+        help="Path to topn-sweep.json.",
+    )
+    rmod.add_argument("--out-md", type=Path, required=True)
+    rmod.add_argument("--out-frontier-json", type=Path, default=None)
+    rmod.add_argument("--out-frontier-md", type=Path, default=None)
+    rmod.add_argument("--out-modes-json", type=Path, default=None)
+    rmod.add_argument(
+        "--metric", type=str, default="mean_hit_at_1",
+    )
+    rmod.add_argument(
+        "--latency", type=str, default="rerank_p95_ms",
+    )
+    rmod.add_argument(
+        "--fast-p95-budget-ms", type=float, default=None,
+    )
+    rmod.add_argument(
+        "--balanced-p95-budget-ms", type=float, default=None,
+    )
+    rmod.add_argument(
+        "--quality-target-metric", type=float, default=None,
     )
 
     # --- retrieval-compare ---
@@ -896,6 +1092,173 @@ def _build_parser() -> argparse.ArgumentParser:
              "comparison report "
              "(default: eval/reports/phase1c-token-chunker).",
     )
+
+    # --- retrieval-candidate-boost ---
+    #
+    # Phase 2B entrypoint #1. Wraps the offline retrieval-rerank stack
+    # with a metadata-based boost reranker plugged in BEFORE the
+    # cross-encoder (or used standalone for the boost-only baseline).
+    # All boost weights are CLI-overridable so an experiment matrix
+    # can sweep them without code changes; setting them all to 0 is
+    # a byte-identical baseline against retrieval-rerank with the
+    # same dense_top_n / final_top_k.
+    rcb = subs.add_parser(
+        "retrieval-candidate-boost",
+        help="Phase 2B: dense retrieval + metadata boost (+ optional "
+             "cross-encoder rerank) over an offline corpus.",
+    )
+    rcb.add_argument("--dataset", required=True, type=Path)
+    rcb.add_argument("--corpus", required=True, type=Path,
+                     help="B2 token-aware-v1 corpus JSONL.")
+    rcb.add_argument("--out-dir", type=Path, default=None)
+    rcb.add_argument("--top-n", type=int, default=15,
+                     help="Final top-K returned by the boost stage. "
+                          "Phase 2B keeps this at 5/10/15 — bringing "
+                          "back top-20+ would defeat the goal.")
+    rcb.add_argument("--final-top-k", type=int, default=None,
+                     help="Optional. When a post-rerank stage is "
+                          "attached this caps the final output below "
+                          "--top-n; defaults to --top-n.")
+    rcb.add_argument("--mrr-k", type=int, default=10)
+    rcb.add_argument("--ndcg-k", type=int, default=10)
+    rcb.add_argument("--max-seq-length", type=int, default=1024)
+    rcb.add_argument("--embed-batch-size", type=int, default=32)
+    rcb.add_argument(
+        "--extra-hit-k", type=int, action="append", default=None,
+        help="Additional hit@k cutoff (repeatable). Phase 2B usually "
+             "passes 5/10/15 here so the candidate-recall metrics are "
+             "in the same report.",
+    )
+    # Boost knobs.
+    rcb.add_argument("--title-exact-boost", type=float, default=0.0,
+                     help="Boost added when the doc title appears "
+                          "verbatim in the (normalized) query.")
+    rcb.add_argument("--title-partial-boost", type=float, default=0.0,
+                     help="Boost added when any title token "
+                          "(>= --title-min-len chars) appears in the "
+                          "query. Falls back when --title-exact-boost "
+                          "did not fire.")
+    rcb.add_argument("--section-keyword-boost", type=float, default=0.0,
+                     help="Boost when the chunk's section name appears "
+                          "in the query and is not in --excluded-section.")
+    rcb.add_argument("--section-path-boost", type=float, default=0.0,
+                     help="Boost when ANY of the doc's other section "
+                          "names appears in the query (weaker proxy).")
+    rcb.add_argument("--max-boost", type=float, default=0.30,
+                     help="Per-chunk total boost clamp; set to 0 to "
+                          "disable clamping.")
+    rcb.add_argument("--title-min-len", type=int, default=2,
+                     help="Minimum title-token length for partial match.")
+    rcb.add_argument(
+        "--excluded-section", type=str, action="append", default=None,
+        help="Section names to skip for keyword boost (repeatable). "
+             "Defaults to 본문, 요약 — both appear on every doc.",
+    )
+    rcb.add_argument(
+        "--reranker-model", type=str, default=None,
+        help="Optional cross-encoder reranker model name. When set, "
+             "the cross-encoder runs AFTER the boost reorder.",
+    )
+    rcb.add_argument("--reranker-batch-size", type=int, default=16)
+    rcb.add_argument("--reranker-max-length", type=int, default=512)
+    rcb.add_argument("--reranker-text-max-chars", type=int, default=800)
+    rcb.add_argument("--reranker-device", type=str, default=None)
+    rcb.add_argument("--reranker-oom-fallback-batch-size", type=int,
+                     default=None)
+
+    # --- retrieval-candidate-miss-analysis ---
+    #
+    # Phase 2B entrypoint #2. Reads an existing retrieval report
+    # (typically the candidate-recall sibling that goes deep enough
+    # to surface the corpus_missing rate) and re-tabulates misses at
+    # multiple top-K cutoffs into the eight Phase 2B failure buckets.
+    rcma = subs.add_parser(
+        "retrieval-candidate-miss-analysis",
+        help="Phase 2B: classify Phase 2A retrieval misses into "
+             "title / character / section / lexical / alias / broad "
+             "/ ambiguous / corpus-missing buckets at top-5/10/15.",
+    )
+    rcma.add_argument(
+        "--report", required=True, type=Path,
+        help="retrieval_eval_report.json from a Phase 2A run with "
+             "deep-enough top_k (>= --deep-k).",
+    )
+    rcma.add_argument(
+        "--top-k-dump", type=Path, default=None,
+        help="top_k_dump.jsonl from the same run; enables section / "
+             "lexical bucket detection.",
+    )
+    rcma.add_argument(
+        "--corpus", type=Path, default=None,
+        help="Optional corpus JSONL for doc title / section metadata "
+             "lookup (enables title_mismatch + alias_or_synonym buckets).",
+    )
+    rcma.add_argument(
+        "--top-k", type=int, action="append", default=None,
+        help="Top-K cutoff to evaluate misses at. Repeatable. "
+             "Defaults to (5, 10, 15).",
+    )
+    rcma.add_argument(
+        "--deep-k", type=int, default=DEFAULT_MISS_DEEP_K,
+        help=f"Cutoff for the corpus_missing check "
+             f"(default: {DEFAULT_MISS_DEEP_K}).",
+    )
+    rcma.add_argument(
+        "--sample-limit", type=int, default=25,
+        help="Cap per-bucket sample list (default: 25).",
+    )
+    rcma.add_argument("--out-dir", type=Path, default=None)
+
+    # --- retrieval-boost-failure-analysis ---
+    #
+    # Phase 2B entrypoint #3. Cross-tabs three retrieval reports
+    # (dense baseline, dense+boost, optionally dense+boost+rerank)
+    # into the five outcome groups so a reviewer can inspect every
+    # query the boost rescued or hurt.
+    rbfa = subs.add_parser(
+        "retrieval-boost-failure-analysis",
+        help="Phase 2B: bucket queries by their dense → boost (→ rerank) "
+             "trajectory and emit per-bucket samples.",
+    )
+    rbfa.add_argument("--dense-report", required=True, type=Path)
+    rbfa.add_argument("--boost-report", required=True, type=Path)
+    rbfa.add_argument("--rerank-report", type=Path, default=None,
+                      help="Optional dense+boost+rerank report.")
+    rbfa.add_argument("--boost-dump", type=Path, default=None,
+                      help="Optional boost_dump.jsonl from the boost "
+                           "report; enables per-chunk boost scores in "
+                           "the sample entries.")
+    rbfa.add_argument("--top-k", type=int, default=10)
+    rbfa.add_argument("--sample-limit", type=int, default=30)
+    rbfa.add_argument("--out-dir", type=Path, default=None)
+
+    # --- retrieval-boost-pareto ---
+    #
+    # Phase 2B entrypoint #4. Merges a Phase 2A topN sweep with one
+    # or more Phase 2B sweeps and emits a unified accuracy↔latency
+    # Pareto frontier so a reviewer can see whether boost pushes
+    # the frontier vs the no-boost baseline.
+    rbp = subs.add_parser(
+        "retrieval-boost-pareto",
+        help="Phase 2B: merge Phase 2A baseline + Phase 2B boost "
+             "topN sweeps into one Pareto frontier.",
+    )
+    rbp.add_argument(
+        "--phase2a-sweep", required=True, type=Path,
+        help="Phase 2A topn-sweep.json.",
+    )
+    rbp.add_argument(
+        "--phase2b-sweep", required=True, type=Path,
+        help="Phase 2B boost topn-sweep.json (built from the boost "
+             "retrieval reports via phase2a-topn-sweep CLI mode).",
+    )
+    rbp.add_argument("--metric", type=str, default="mean_hit_at_1")
+    rbp.add_argument("--latency", type=str, default="rerank_p95_ms")
+    rbp.add_argument("--phase2b-label", type=str, default=None,
+                     help="Optional human-readable boost-config label "
+                          "carried in the report alongside each Phase 2B "
+                          "entry.")
+    rbp.add_argument("--out-dir", type=Path, default=None)
 
     return parser
 
@@ -2280,6 +2643,595 @@ def _default_retrieval_rerank_dir() -> Path:
 
 
 # ---------------------------------------------------------------------------
+# Phase 2A-L latency-sweep CLIs.
+# ---------------------------------------------------------------------------
+
+
+_DEFAULT_TOPN_SWEEP = (5, 10, 15, 20, 30, 50)
+_DEFAULT_CANDIDATE_RECALL_KS = (10, 20, 50)
+
+
+def _run_phase2a_latency_sweep_cli(args: argparse.Namespace) -> int:
+    """Phase 2A-L: build a corpus once, run N retrieval-rerank passes.
+
+    Each ``dense_top_n`` value gets its own sub-directory under
+    ``--out-dir`` carrying a full retrieval_eval_report.json (with
+    stage-timing breakdown enabled), the standard top_k_dump /
+    duplicate / miss-analysis sidecars, and the per-config
+    miss-analysis. The top-level ``--out-dir`` then receives the four
+    Phase 2A-L documents:
+
+      - reranker-latency-breakdown.{json,md} (anchored on
+        ``--breakdown-anchor-dense-top-n``)
+      - topn-sweep.{json,md}
+      - accuracy-latency-frontier.{json,md}
+      - recommended-modes.md
+
+    Reusing the corpus + index across runs is the meat of the saving
+    against running ``retrieval-rerank`` six times by hand: a 47k-chunk
+    BGE-M3 build takes minutes whereas the per-config rerank loop is
+    seconds (top5) to a handful of minutes (top50).
+    """
+    import json as _json
+    import tempfile
+    from pathlib import Path as _P
+
+    from app.capabilities.rag.embeddings import SentenceTransformerEmbedder
+    from app.capabilities.rag.reranker import (
+        CrossEncoderReranker,
+        NoOpReranker,
+    )
+    from app.core.config import get_settings
+    from eval.harness.latency_breakdown import (
+        build_latency_breakdown,
+        latency_breakdown_to_dict,
+        render_latency_breakdown_markdown,
+    )
+    from eval.harness.offline_corpus import build_offline_rag_stack
+    from eval.harness.pareto_frontier import (
+        compute_pareto_frontier,
+        pareto_to_dict,
+        render_pareto_markdown,
+    )
+    from eval.harness.recommended_modes import (
+        recommend_modes,
+        recommended_modes_to_dict,
+        render_recommended_modes_markdown,
+    )
+    from eval.harness.topn_sweep import (
+        build_topn_sweep,
+        render_topn_sweep_markdown,
+        topn_sweep_to_dict,
+    )
+
+    final_top_k = int(args.final_top_k)
+    raw_topns = args.dense_top_n if args.dense_top_n else list(_DEFAULT_TOPN_SWEEP)
+    seen: set = set()
+    dense_top_ns: List[int] = []
+    for v in raw_topns:
+        try:
+            iv = int(v)
+        except (TypeError, ValueError):
+            continue
+        if iv <= 0 or iv in seen:
+            continue
+        seen.add(iv)
+        dense_top_ns.append(iv)
+    dense_top_ns.sort()
+    if not dense_top_ns:
+        log.error("No valid --dense-top-n values supplied.")
+        return 2
+    # For Phase 2A-L the sweep is allowed to span dense_top_n values
+    # smaller than --final-top-k (e.g. 5 vs 10). The retriever can only
+    # ever return min(dense_top_n, final_top_k) results, so when
+    # ``n < final_top_k`` we silently reduce the per-config final_top_k
+    # to ``n``. This is the only semantic that makes a "dense_top_n=5"
+    # config meaningfully different from "dense_top_n=10" — without the
+    # reduction the retriever would clamp candidate_k back up to
+    # final_top_k and the small slice would never actually run.
+    for n in dense_top_ns:
+        if n < final_top_k:
+            log.warning(
+                "Phase 2A-L sweep: dense_top_n=%d < final_top_k=%d; "
+                "this config will use effective_final_top_k=%d so the "
+                "smaller candidate pool actually exercises the "
+                "reranker rather than getting clamped up.", n, final_top_k, n,
+            )
+
+    settings = get_settings()
+    embedder = SentenceTransformerEmbedder(
+        model_name=settings.rag_embedding_model,
+        query_prefix=settings.rag_embedding_prefix_query,
+        passage_prefix=settings.rag_embedding_prefix_passage,
+        max_seq_length=int(args.max_seq_length),
+        batch_size=int(args.embed_batch_size),
+        show_progress_bar=True,
+        cuda_alloc_conf=settings.rag_embedding_cuda_alloc_conf or None,
+    )
+    try:
+        reranker = CrossEncoderReranker(
+            model_name=str(args.reranker_model),
+            max_length=int(args.reranker_max_length),
+            batch_size=int(args.reranker_batch_size),
+            text_max_chars=int(args.reranker_text_max_chars),
+            device=args.reranker_device or None,
+            collect_stage_timings=True,
+        )
+    except Exception as ex:
+        log.error(
+            "Failed to construct CrossEncoderReranker (%s: %s).",
+            type(ex).__name__, ex,
+        )
+        return 2
+
+    out_dir = Path(args.out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    tmp_dir = _P(tempfile.mkdtemp(prefix="phase2a-latency-sweep-offline-"))
+    try:
+        max_topn = max(dense_top_ns)
+        log.info(
+            "Building offline corpus with candidate_k=%d (max sweep value); "
+            "FAISS index reused across configs.",
+            max_topn,
+        )
+        retriever, _generator, info = build_offline_rag_stack(
+            _P(args.corpus),
+            embedder=embedder,
+            index_dir=tmp_dir,
+            top_k=final_top_k,
+            reranker=reranker,
+            candidate_k=max_topn,
+        )
+    except Exception as ex:
+        log.error(
+            "Failed to build the rerank retrieval stack (%s: %s).",
+            type(ex).__name__, ex,
+        )
+        return 2
+
+    dataset = load_jsonl(args.dataset)
+
+    sweep_slices: List[Tuple[str, Path]] = []
+    breakdown_anchor_label: Optional[str] = None
+    breakdown_anchor_path: Optional[Path] = None
+
+    breakdown_anchor_n = int(args.breakdown_anchor_dense_top_n)
+
+    # Per-config retrieval-rerank runs. We swap candidate_k on the live
+    # Retriever between calls — the underlying FAISS index + embedder
+    # is the same throughout.
+    for n in dense_top_ns:
+        label = f"top{n}"
+        run_dir = out_dir / f"rerank-{label}"
+        run_dir.mkdir(parents=True, exist_ok=True)
+
+        # When dense_top_n < final_top_k we reduce the per-config top_k
+        # to ``n`` so the candidate pool is actually small. The Retriever
+        # constructor would otherwise clamp candidate_k back up to top_k
+        # and erase the difference between dense_top_n=5 and
+        # dense_top_n=10. Mutating ``_top_k`` + ``_candidate_k`` directly
+        # is intentionally tightly-coupled — these are owned attributes
+        # of the Retriever and the sweep is the lone caller.
+        effective_top_k = min(final_top_k, n)
+        retriever._top_k = effective_top_k  # noqa: SLF001 — owned by us
+        retriever._candidate_k = max(effective_top_k, n)  # noqa: SLF001
+
+        log.info(
+            "Phase 2A-L sweep: dense_top_n=%d, final_top_k=%d "
+            "(effective_top_k=%d), out=%s",
+            n, final_top_k, effective_top_k, run_dir,
+        )
+        summary, rows, dump, dup = run_retrieval_eval(
+            dataset,
+            retriever=retriever,
+            top_k=effective_top_k,
+            mrr_k=int(args.mrr_k),
+            ndcg_k=int(args.ndcg_k),
+            extra_hit_ks=(),
+            dataset_path=str(args.dataset),
+            corpus_path=str(args.corpus),
+        )
+
+        metadata: Dict[str, Any] = {
+            "harness": "phase2a-latency-sweep",
+            "embedding_model": settings.rag_embedding_model,
+            "embedding_max_seq_length": int(args.max_seq_length),
+            "embedding_batch_size": int(args.embed_batch_size),
+            "rag_index_dir": str(settings.rag_index_dir),
+            "corpus_path": str(args.corpus),
+            "dataset": str(args.dataset),
+            "final_top_k": effective_top_k,
+            "requested_final_top_k": final_top_k,
+            "dense_top_n": n,
+            "candidate_k": n,
+            "mrr_k": int(args.mrr_k),
+            "ndcg_k": int(args.ndcg_k),
+            "extra_hit_ks": [],
+            "reranker": "cross_encoder",
+            "reranker_model": str(args.reranker_model),
+            "reranker_batch_size": int(args.reranker_batch_size),
+            "reranker_max_length": int(args.reranker_max_length),
+            "reranker_text_max_chars": int(args.reranker_text_max_chars),
+            "reranker_device": args.reranker_device,
+            "collect_stage_timings": True,
+            "offline_corpus": {
+                "path": info.corpus_path,
+                "document_count": info.document_count,
+                "chunk_count": info.chunk_count,
+                "index_version": info.index_version,
+                "dimension": info.dimension,
+            },
+            "run_at": datetime.now().isoformat(timespec="seconds"),
+        }
+        report_payload = {
+            "metadata": metadata,
+            "summary": retrieval_summary_to_dict(summary),
+            "rows": [retrieval_row_to_dict(r) for r in rows],
+        }
+        report_path = run_dir / "retrieval_eval_report.json"
+        report_path.write_text(
+            _json.dumps(report_payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        (run_dir / "retrieval_eval_report.md").write_text(
+            render_markdown_report(summary, rows, dup), encoding="utf-8",
+        )
+        with (run_dir / "top_k_dump.jsonl").open("w", encoding="utf-8") as fp:
+            for d in dump:
+                fp.write(
+                    _json.dumps(
+                        retrieval_dump_row_to_dict(d), ensure_ascii=False,
+                    ) + "\n"
+                )
+        (run_dir / "duplicate_analysis.json").write_text(
+            _json.dumps(
+                duplicate_analysis_to_dict(dup), ensure_ascii=False, indent=2,
+            ),
+            encoding="utf-8",
+        )
+        sweep_slices.append((label, report_path))
+        if n == breakdown_anchor_n:
+            breakdown_anchor_label = label
+            breakdown_anchor_path = report_path
+
+    # Optional candidate-recall sibling. Uses a NoOpReranker so the
+    # retrieval ordering is bi-encoder-only; the dataset rows pick up
+    # mean_extra_hits via ``extra_hit_ks`` so the sweep aggregator can
+    # quote candidate_recall@N on every entry.
+    candidate_recall_report_path: Optional[Path] = None
+    if not args.skip_candidate_recall:
+        cr_ks_raw = args.candidate_recall_extra_hit_k
+        if cr_ks_raw:
+            cr_ks_seen: set = set()
+            cr_ks: List[int] = []
+            for v in cr_ks_raw:
+                try:
+                    iv = int(v)
+                except (TypeError, ValueError):
+                    continue
+                if iv <= 0 or iv in cr_ks_seen:
+                    continue
+                cr_ks_seen.add(iv)
+                cr_ks.append(iv)
+            cr_ks.sort()
+        else:
+            cr_ks = list(_DEFAULT_CANDIDATE_RECALL_KS)
+        cr_topn = max(cr_ks) if cr_ks else max(dense_top_ns)
+        cr_dir = out_dir / "candidate-recall"
+        cr_dir.mkdir(parents=True, exist_ok=True)
+
+        log.info(
+            "Phase 2A-L candidate-recall sibling: dense_top_n=%d, "
+            "extra_hit_ks=%s", cr_topn, cr_ks,
+        )
+        retriever._reranker = NoOpReranker()  # noqa: SLF001
+        retriever._top_k = cr_topn  # noqa: SLF001
+        retriever._candidate_k = cr_topn  # noqa: SLF001
+
+        cr_summary, cr_rows, cr_dump, cr_dup = run_retrieval_eval(
+            dataset,
+            retriever=retriever,
+            top_k=cr_topn,
+            mrr_k=int(args.mrr_k),
+            ndcg_k=int(args.ndcg_k),
+            extra_hit_ks=tuple(cr_ks),
+            dataset_path=str(args.dataset),
+            corpus_path=str(args.corpus),
+        )
+        cr_metadata = {
+            "harness": "phase2a-latency-sweep:candidate-recall",
+            "embedding_model": settings.rag_embedding_model,
+            "corpus_path": str(args.corpus),
+            "dataset": str(args.dataset),
+            "final_top_k": cr_topn,
+            "dense_top_n": cr_topn,
+            "candidate_k": cr_topn,
+            "extra_hit_ks": list(cr_ks),
+            "reranker": "noop",
+            "offline_corpus": {
+                "path": info.corpus_path,
+                "document_count": info.document_count,
+                "chunk_count": info.chunk_count,
+                "index_version": info.index_version,
+                "dimension": info.dimension,
+            },
+            "run_at": datetime.now().isoformat(timespec="seconds"),
+        }
+        cr_payload = {
+            "metadata": cr_metadata,
+            "summary": retrieval_summary_to_dict(cr_summary),
+            "rows": [retrieval_row_to_dict(r) for r in cr_rows],
+        }
+        candidate_recall_report_path = cr_dir / "retrieval_eval_report.json"
+        candidate_recall_report_path.write_text(
+            _json.dumps(cr_payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        (cr_dir / "retrieval_eval_report.md").write_text(
+            render_markdown_report(cr_summary, cr_rows, cr_dup),
+            encoding="utf-8",
+        )
+
+    # 1) reranker-latency-breakdown anchored on the requested topN.
+    if breakdown_anchor_path is None:
+        breakdown_anchor_label = sweep_slices[0][0]
+        breakdown_anchor_path = sweep_slices[0][1]
+        log.warning(
+            "breakdown_anchor_dense_top_n=%d not in sweep; falling "
+            "back to %s.", breakdown_anchor_n, breakdown_anchor_label,
+        )
+    breakdown = build_latency_breakdown(
+        breakdown_anchor_path, label=breakdown_anchor_label,
+    )
+    (out_dir / "reranker-latency-breakdown.json").write_text(
+        _json.dumps(
+            latency_breakdown_to_dict(breakdown),
+            ensure_ascii=False, indent=2,
+        ),
+        encoding="utf-8",
+    )
+    (out_dir / "reranker-latency-breakdown.md").write_text(
+        render_latency_breakdown_markdown(breakdown), encoding="utf-8",
+    )
+
+    # 2) topn-sweep.
+    sweep_report = build_topn_sweep(
+        sweep_slices, candidate_recall_path=candidate_recall_report_path,
+    )
+    (out_dir / "topn-sweep.json").write_text(
+        _json.dumps(
+            topn_sweep_to_dict(sweep_report), ensure_ascii=False, indent=2,
+        ),
+        encoding="utf-8",
+    )
+    (out_dir / "topn-sweep.md").write_text(
+        render_topn_sweep_markdown(sweep_report), encoding="utf-8",
+    )
+
+    # 3) Pareto frontier.
+    frontier_report = compute_pareto_frontier(
+        sweep_report,
+        metric=str(args.metric),
+        latency=str(args.latency),
+    )
+    (out_dir / "accuracy-latency-frontier.json").write_text(
+        _json.dumps(
+            pareto_to_dict(frontier_report), ensure_ascii=False, indent=2,
+        ),
+        encoding="utf-8",
+    )
+    (out_dir / "accuracy-latency-frontier.md").write_text(
+        render_pareto_markdown(frontier_report), encoding="utf-8",
+    )
+
+    # 4) Recommended modes.
+    modes_report = recommend_modes(
+        sweep_report, frontier_report,
+        fast_p95_budget_ms=args.fast_p95_budget_ms,
+        balanced_p95_budget_ms=args.balanced_p95_budget_ms,
+        quality_target_metric=args.quality_target_metric,
+    )
+    (out_dir / "recommended-modes.md").write_text(
+        render_recommended_modes_markdown(modes_report),
+        encoding="utf-8",
+    )
+    (out_dir / "recommended-modes.json").write_text(
+        _json.dumps(
+            recommended_modes_to_dict(modes_report),
+            ensure_ascii=False, indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    print(
+        f"phase2a-latency-sweep: {len(sweep_slices)} configs swept; "
+        f"breakdown anchor={breakdown_anchor_label}, "
+        f"out_dir={out_dir}"
+    )
+    return 0
+
+
+def _run_phase2a_latency_breakdown_cli(args: argparse.Namespace) -> int:
+    """Post-process: emit a stage-level latency breakdown for one report."""
+    import json as _json
+
+    from eval.harness.latency_breakdown import (
+        build_latency_breakdown,
+        latency_breakdown_to_dict,
+        render_latency_breakdown_markdown,
+    )
+
+    try:
+        report = build_latency_breakdown(
+            Path(args.report), label=args.label,
+        )
+    except FileNotFoundError as ex:
+        log.error("%s", ex)
+        return 2
+
+    args.out_json.parent.mkdir(parents=True, exist_ok=True)
+    args.out_md.parent.mkdir(parents=True, exist_ok=True)
+    args.out_json.write_text(
+        _json.dumps(
+            latency_breakdown_to_dict(report), ensure_ascii=False, indent=2,
+        ),
+        encoding="utf-8",
+    )
+    args.out_md.write_text(
+        render_latency_breakdown_markdown(report), encoding="utf-8",
+    )
+    log.info("Wrote %s and %s", args.out_json, args.out_md)
+    return 0
+
+
+def _run_phase2a_topn_sweep_cli(args: argparse.Namespace) -> int:
+    import json as _json
+
+    from eval.harness.topn_sweep import (
+        build_topn_sweep,
+        render_topn_sweep_markdown,
+        topn_sweep_to_dict,
+    )
+
+    slices: List[Tuple[str, Path]] = []
+    for entry in args.slice:
+        label, _, path = str(entry).partition(":")
+        if not label or not path:
+            log.error(
+                "Bad --slice value %r; expected 'label:path/to/"
+                "retrieval_eval_report.json'.",
+                entry,
+            )
+            return 2
+        slices.append((label.strip(), Path(path.strip())))
+
+    try:
+        report = build_topn_sweep(
+            slices,
+            candidate_recall_path=args.candidate_recall_report,
+            caveats=args.caveat,
+        )
+    except FileNotFoundError as ex:
+        log.error("%s", ex)
+        return 2
+
+    args.out_json.parent.mkdir(parents=True, exist_ok=True)
+    args.out_md.parent.mkdir(parents=True, exist_ok=True)
+    args.out_json.write_text(
+        _json.dumps(topn_sweep_to_dict(report), ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    args.out_md.write_text(
+        render_topn_sweep_markdown(report), encoding="utf-8",
+    )
+    log.info("Wrote %s and %s", args.out_json, args.out_md)
+    return 0
+
+
+def _run_phase2a_recommended_modes_cli(args: argparse.Namespace) -> int:
+    import json as _json
+
+    from eval.harness.pareto_frontier import (
+        compute_pareto_frontier,
+        pareto_to_dict,
+        render_pareto_markdown,
+    )
+    from eval.harness.recommended_modes import (
+        recommend_modes,
+        recommended_modes_to_dict,
+        render_recommended_modes_markdown,
+    )
+    from eval.harness.topn_sweep import (
+        TopNSweepEntry,
+        TopNSweepReport,
+    )
+
+    sweep_path = Path(args.sweep_json)
+    if not sweep_path.exists():
+        log.error("topn-sweep.json not found at %s", sweep_path)
+        return 2
+    payload = _json.loads(sweep_path.read_text(encoding="utf-8"))
+
+    raw_entries = payload.get("entries") or []
+    entries: List[TopNSweepEntry] = []
+    for raw in raw_entries:
+        # Re-hydrate via field-by-field construction so a stale on-disk
+        # schema with extra fields doesn't crash the dataclass init —
+        # we only pull the fields the dataclass declares.
+        kwargs = {
+            f.name: raw.get(f.name)
+            for f in TopNSweepEntry.__dataclass_fields__.values()
+        }
+        # Nested dicts default to {}; the dataclass annotates them
+        # with field(default_factory=dict).
+        if kwargs.get("candidate_recall") is None:
+            kwargs["candidate_recall"] = {}
+        if kwargs.get("rerank_row_count") is None:
+            kwargs["rerank_row_count"] = 0
+        if kwargs.get("total_query_row_count") is None:
+            kwargs["total_query_row_count"] = 0
+        if kwargs.get("dense_retrieval_row_count") is None:
+            kwargs["dense_retrieval_row_count"] = 0
+        try:
+            entries.append(TopNSweepEntry(**kwargs))
+        except TypeError as ex:
+            log.error(
+                "topn-sweep.json entry incompatible with current "
+                "TopNSweepEntry schema (%s). Field set on disk: %s",
+                ex, sorted(raw.keys()),
+            )
+            return 2
+
+    sweep_report = TopNSweepReport(
+        schema=payload.get("schema") or "phase2a-topn-sweep.v1",
+        entries=entries,
+        caveats=list(payload.get("caveats") or []),
+    )
+    frontier = compute_pareto_frontier(
+        sweep_report,
+        metric=str(args.metric),
+        latency=str(args.latency),
+    )
+    modes = recommend_modes(
+        sweep_report, frontier,
+        fast_p95_budget_ms=args.fast_p95_budget_ms,
+        balanced_p95_budget_ms=args.balanced_p95_budget_ms,
+        quality_target_metric=args.quality_target_metric,
+    )
+
+    args.out_md.parent.mkdir(parents=True, exist_ok=True)
+    args.out_md.write_text(
+        render_recommended_modes_markdown(modes), encoding="utf-8",
+    )
+    if args.out_modes_json:
+        args.out_modes_json.parent.mkdir(parents=True, exist_ok=True)
+        args.out_modes_json.write_text(
+            _json.dumps(
+                recommended_modes_to_dict(modes),
+                ensure_ascii=False, indent=2,
+            ),
+            encoding="utf-8",
+        )
+    if args.out_frontier_json:
+        args.out_frontier_json.parent.mkdir(parents=True, exist_ok=True)
+        args.out_frontier_json.write_text(
+            _json.dumps(
+                pareto_to_dict(frontier), ensure_ascii=False, indent=2,
+            ),
+            encoding="utf-8",
+        )
+    if args.out_frontier_md:
+        args.out_frontier_md.parent.mkdir(parents=True, exist_ok=True)
+        args.out_frontier_md.write_text(
+            render_pareto_markdown(frontier), encoding="utf-8",
+        )
+
+    log.info("Wrote %s", args.out_md)
+    return 0
+
+
+# ---------------------------------------------------------------------------
 # Phase 2A reranker comparison + failure-analysis CLIs (post-processing).
 # ---------------------------------------------------------------------------
 
@@ -3594,6 +4546,420 @@ def _run_compare_chunker_lengths_cli(args: argparse.Namespace) -> int:
             for r in rows
         )
     )
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# Phase 2B candidate-boost CLIs.
+# ---------------------------------------------------------------------------
+
+
+def _default_phase2b_dir(suffix: str) -> Path:
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    return Path(f"eval/reports/phase2b-{suffix}-{timestamp}")
+
+
+def _build_boost_config(args: argparse.Namespace) -> BoostConfig:
+    """Translate CLI flags into a BoostConfig with safety validation."""
+    excluded: Tuple[str, ...]
+    if args.excluded_section:
+        excluded = tuple(s for s in args.excluded_section if s)
+    else:
+        from eval.harness.boost_scorer import DEFAULT_EXCLUDED_SECTIONS
+        excluded = DEFAULT_EXCLUDED_SECTIONS
+    cfg = BoostConfig(
+        title_exact_boost=float(args.title_exact_boost),
+        title_partial_boost=float(args.title_partial_boost),
+        section_keyword_boost=float(args.section_keyword_boost),
+        section_path_boost=float(args.section_path_boost),
+        max_boost=float(args.max_boost),
+        title_min_len=int(args.title_min_len),
+        excluded_sections=excluded,
+    )
+    errors = cfg.validate()
+    if errors:
+        raise SystemExit(
+            "Invalid boost config:\n  - " + "\n  - ".join(errors)
+        )
+    return cfg
+
+
+def _run_retrieval_candidate_boost_cli(args: argparse.Namespace) -> int:
+    """Phase 2B: dense + boost (+ optional rerank) over an offline corpus.
+
+    Mirrors the structure of ``_run_retrieval_rerank_cli`` so the same
+    embedder / corpus path / extra-hit-k machinery is re-used. The
+    additional work is:
+
+      1. Build a NoOp-reranker base ``Retriever`` whose top_k equals
+         ``--top-n`` (so the boost stage sees a candidate pool of
+         that exact size; matches the spec's "don't grow the pool").
+      2. Build the ``MetadataBoostReranker`` from the CLI flags.
+      3. Optionally build a cross-encoder reranker that runs AFTER
+         the boost reorder.
+      4. Wrap (1)-(3) in a ``BoostingEvalRetriever`` and drive it
+         through ``run_boost_retrieval_eval``.
+      5. Persist the eight Phase 2B artifacts to ``--out-dir``.
+    """
+    import json as _json
+    import tempfile
+    from pathlib import Path as _P
+
+    from app.capabilities.rag.embeddings import SentenceTransformerEmbedder
+    from app.capabilities.rag.reranker import CrossEncoderReranker, NoOpReranker
+    from app.core.config import get_settings
+    from eval.harness.offline_corpus import build_offline_rag_stack
+
+    top_n = int(args.top_n)
+    final_top_k = int(args.final_top_k) if args.final_top_k is not None else top_n
+    if final_top_k > top_n:
+        log.error(
+            "--final-top-k (%d) must be <= --top-n (%d). The boost stage "
+            "cannot grow the candidate pool beyond what dense retrieval "
+            "produced; the eval would be evaluating chunks the boost "
+            "stage never saw.",
+            final_top_k, top_n,
+        )
+        return 2
+
+    boost_cfg = _build_boost_config(args)
+
+    settings = get_settings()
+    embedder = SentenceTransformerEmbedder(
+        model_name=settings.rag_embedding_model,
+        query_prefix=settings.rag_embedding_prefix_query,
+        passage_prefix=settings.rag_embedding_prefix_passage,
+        max_seq_length=int(args.max_seq_length),
+        batch_size=int(args.embed_batch_size),
+        show_progress_bar=True,
+        cuda_alloc_conf=settings.rag_embedding_cuda_alloc_conf or None,
+    )
+
+    post_reranker = None
+    if args.reranker_model:
+        try:
+            post_reranker = CrossEncoderReranker(
+                model_name=str(args.reranker_model),
+                max_length=int(args.reranker_max_length),
+                batch_size=int(args.reranker_batch_size),
+                text_max_chars=int(args.reranker_text_max_chars),
+                device=args.reranker_device or None,
+                oom_fallback_batch_size=(
+                    int(args.reranker_oom_fallback_batch_size)
+                    if args.reranker_oom_fallback_batch_size is not None
+                    else None
+                ),
+            )
+        except Exception as ex:
+            log.error(
+                "Failed to construct CrossEncoderReranker (%s: %s).",
+                type(ex).__name__, ex,
+            )
+            return 2
+
+    tmp_dir = _P(tempfile.mkdtemp(prefix="retrieval-boost-offline-"))
+    try:
+        base_retriever, _generator, info = build_offline_rag_stack(
+            _P(args.corpus),
+            embedder=embedder,
+            index_dir=tmp_dir,
+            top_k=top_n,           # base produces the candidate pool
+            reranker=NoOpReranker(),
+            candidate_k=top_n,
+        )
+    except Exception as ex:
+        log.error(
+            "Failed to build the boost retrieval stack (%s: %s).",
+            type(ex).__name__, ex,
+        )
+        return 2
+
+    doc_metadata = load_doc_metadata(_P(args.corpus))
+    boost_reranker = MetadataBoostReranker(
+        config=boost_cfg, doc_metadata=doc_metadata,
+    )
+    boost_retriever = BoostingEvalRetriever(
+        base_retriever=base_retriever,
+        boost_reranker=boost_reranker,
+        post_reranker=post_reranker,
+        boost_top_k=top_n,
+        final_top_k=final_top_k,
+    )
+
+    dataset = load_jsonl(args.dataset)
+    extra_hit_ks = _resolve_extra_hit_ks(
+        getattr(args, "extra_hit_k", None), top_k=final_top_k,
+    )
+
+    artifacts = run_boost_retrieval_eval(
+        dataset,
+        retriever=boost_retriever,
+        final_top_k=final_top_k,
+        boost_top_k=top_n,
+        mrr_k=int(args.mrr_k),
+        ndcg_k=int(args.ndcg_k),
+        extra_hit_ks=extra_hit_ks,
+        dataset_path=str(args.dataset),
+        corpus_path=str(args.corpus),
+        config=boost_cfg.to_dict(),
+    )
+
+    out_dir = args.out_dir or _default_phase2b_dir("candidate-boost")
+    out_dir = Path(out_dir)
+    metadata: Dict[str, Any] = {
+        "harness": "retrieval-candidate-boost",
+        "embedding_model": settings.rag_embedding_model,
+        "embedding_max_seq_length": int(args.max_seq_length),
+        "embedding_batch_size": int(args.embed_batch_size),
+        "rag_index_dir": str(settings.rag_index_dir),
+        "corpus_path": str(args.corpus),
+        "dataset": str(args.dataset),
+        "top_n": top_n,
+        "final_top_k": final_top_k,
+        "extra_hit_ks": list(extra_hit_ks),
+        "boost_config": boost_cfg.to_dict(),
+        "post_reranker": (
+            None if post_reranker is None
+            else {
+                "name": post_reranker.name,
+                "model": str(args.reranker_model),
+                "batch_size": int(args.reranker_batch_size),
+                "max_length": int(args.reranker_max_length),
+                "text_max_chars": int(args.reranker_text_max_chars),
+                "device": args.reranker_device,
+            }
+        ),
+        "offline_corpus": {
+            "path": info.corpus_path,
+            "document_count": info.document_count,
+            "chunk_count": info.chunk_count,
+            "index_version": info.index_version,
+            "dimension": info.dimension,
+        },
+        "run_at": datetime.now().isoformat(timespec="seconds"),
+    }
+    write_boost_artifacts(artifacts, out_dir, metadata=metadata)
+
+    print()
+    print(f"retrieval-candidate-boost — {out_dir}")
+    print(
+        f"  hit@1={_fmt(artifacts.summary.mean_hit_at_1)} "
+        f"hit@3={_fmt(artifacts.summary.mean_hit_at_3)} "
+        f"hit@5={_fmt(artifacts.summary.mean_hit_at_5)} "
+        f"mrr@10={_fmt(artifacts.summary.mean_mrr_at_10)} "
+        f"ndcg@10={_fmt(artifacts.summary.mean_ndcg_at_10)}"
+    )
+    print(
+        f"  boost: applied={artifacts.boost_summary.boost_applied_count} "
+        f"title_match={artifacts.boost_summary.title_match_count} "
+        f"section_match={artifacts.boost_summary.section_match_count} "
+        f"avg_boost={artifacts.boost_summary.avg_boost_score:.4f} "
+        f"rescued={artifacts.boost_summary.boosted_rescued_count} "
+        f"regressed={artifacts.boost_summary.boosted_regressed_count}"
+    )
+    print()
+    return 0
+
+
+def _read_report_rows(path: Path) -> List[Mapping[str, Any]]:
+    """Read the ``rows`` payload from a retrieval_eval_report.json."""
+    import json as _json
+    with Path(path).open("r", encoding="utf-8") as fp:
+        data = _json.load(fp)
+    return data.get("rows", []) or []
+
+
+def _read_dump_rows(path: Optional[Path]) -> List[Mapping[str, Any]]:
+    """Read top_k_dump.jsonl entries; tolerates a None path (returns [])."""
+    if path is None:
+        return []
+    import json as _json
+    out: List[Mapping[str, Any]] = []
+    with Path(path).open("r", encoding="utf-8") as fp:
+        for line in fp:
+            line = line.strip()
+            if not line:
+                continue
+            out.append(_json.loads(line))
+    return out
+
+
+def _build_doc_meta_for_miss_analysis(
+    corpus_path: Optional[Path],
+) -> Dict[str, Mapping[str, Any]]:
+    """Return doc_id → minimal {title, section_names} dict for the analyzer."""
+    if corpus_path is None:
+        return {}
+    raw = load_doc_metadata(Path(corpus_path))
+    return {
+        did: {"title": meta.title, "section_names": meta.section_names}
+        for did, meta in raw.items()
+    }
+
+
+def _run_retrieval_candidate_miss_analysis_cli(args: argparse.Namespace) -> int:
+    """Phase 2B: classify Phase 2A misses into the eight failure buckets."""
+    import json as _json
+
+    rows = _read_report_rows(args.report)
+    if not rows:
+        log.error(
+            "No rows found in %s — is this a retrieval_eval_report.json?",
+            args.report,
+        )
+        return 2
+    dump_rows = _read_dump_rows(args.top_k_dump)
+    doc_meta = _build_doc_meta_for_miss_analysis(args.corpus)
+
+    top_ks: Tuple[int, ...]
+    if args.top_k:
+        top_ks = tuple(sorted({int(k) for k in args.top_k if int(k) > 0}))
+    else:
+        top_ks = DEFAULT_MISS_TOP_KS
+
+    report = classify_candidate_misses(
+        rows,
+        dump_rows=dump_rows,
+        doc_metadata=doc_meta,
+        top_ks=top_ks,
+        deep_k=int(args.deep_k),
+        sample_limit=int(args.sample_limit),
+    )
+
+    out_dir = args.out_dir or _default_phase2b_dir("candidate-boost")
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "candidate-miss-topk-analysis.json").write_text(
+        _json.dumps(
+            candidate_miss_report_to_dict(report),
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    (out_dir / "candidate-miss-topk-analysis.md").write_text(
+        render_candidate_miss_markdown(report),
+        encoding="utf-8",
+    )
+
+    print()
+    print(f"retrieval-candidate-miss-analysis — {out_dir}")
+    print(f"  rows_evaluated: {report.rows_evaluated}")
+    for tkr in report.per_top_k:
+        print(
+            f"  top-{tkr.top_k}: missed={tkr.queries_missed} "
+            f"miss_rate={tkr.miss_rate:.4f}"
+        )
+    print()
+    return 0
+
+
+def _run_retrieval_boost_failure_analysis_cli(args: argparse.Namespace) -> int:
+    """Phase 2B: cross-tab dense → boost → rerank trajectories."""
+    import json as _json
+
+    dense_rows = _read_report_rows(args.dense_report)
+    boost_rows = _read_report_rows(args.boost_report)
+    rerank_rows = (
+        _read_report_rows(args.rerank_report)
+        if args.rerank_report is not None
+        else None
+    )
+    boost_dump = _read_dump_rows(args.boost_dump) if args.boost_dump else None
+
+    analysis = classify_boost_failures(
+        dense_rows=dense_rows,
+        boost_rows=boost_rows,
+        rerank_rows=rerank_rows,
+        boost_dump=boost_dump,
+        top_k=int(args.top_k),
+        sample_limit=int(args.sample_limit),
+    )
+
+    out_dir = args.out_dir or _default_phase2b_dir("candidate-boost")
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "boost-failure-analysis.json").write_text(
+        _json.dumps(
+            boost_failure_analysis_to_dict(analysis),
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    (out_dir / "boost-failure-analysis.md").write_text(
+        render_boost_failure_markdown(analysis),
+        encoding="utf-8",
+    )
+
+    print()
+    print(f"retrieval-boost-failure-analysis — {out_dir}")
+    print(f"  queries_evaluated: {analysis.queries_evaluated}")
+    for stat in analysis.groups:
+        print(f"  {stat.name}: {stat.count} ({stat.ratio:.4f})")
+    print()
+    return 0
+
+
+def _run_retrieval_boost_pareto_cli(args: argparse.Namespace) -> int:
+    """Phase 2B: build the Phase 2A + Phase 2B unified Pareto frontier."""
+    import json as _json
+    from dataclasses import asdict as _asdict
+
+    from eval.harness.topn_sweep import (
+        TopNSweepEntry,
+        TopNSweepReport,
+    )
+
+    def _load_sweep(path: Path) -> TopNSweepReport:
+        with Path(path).open("r", encoding="utf-8") as fp:
+            data = _json.load(fp)
+        entries: List[TopNSweepEntry] = []
+        for entry in data.get("entries", []) or []:
+            kwargs = dict(entry)
+            entries.append(TopNSweepEntry(**kwargs))
+        return TopNSweepReport(
+            schema=str(data.get("schema") or "phase2a-topn-sweep.v1"),
+            entries=entries,
+            caveats=list(data.get("caveats") or []),
+        )
+
+    sweep_a = _load_sweep(args.phase2a_sweep)
+    sweep_b = _load_sweep(args.phase2b_sweep)
+
+    report = compute_boost_pareto_frontier(
+        phase2a_sweep=sweep_a,
+        phase2b_sweep=sweep_b,
+        metric=str(args.metric),
+        latency=str(args.latency),
+        phase2b_label=args.phase2b_label,
+    )
+
+    out_dir = args.out_dir or _default_phase2b_dir("candidate-boost")
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "boost-pareto-frontier.json").write_text(
+        _json.dumps(
+            boost_pareto_to_dict(report), ensure_ascii=False, indent=2,
+        ),
+        encoding="utf-8",
+    )
+    (out_dir / "boost-pareto-frontier.md").write_text(
+        render_boost_pareto_markdown(report),
+        encoding="utf-8",
+    )
+
+    print()
+    print(f"retrieval-boost-pareto — {out_dir}")
+    on_frontier = [e for e in report.entries if e.on_frontier]
+    print(f"  on-frontier points: {len(on_frontier)}")
+    for e in sorted(on_frontier, key=lambda e: e.latency_ms):
+        print(
+            f"  - {e.track}::{e.label}: "
+            f"{report.metric_field}={e.metric:.4f} "
+            f"{report.latency_field}={e.latency_ms:.2f}"
+        )
+    print()
     return 0
 
 
