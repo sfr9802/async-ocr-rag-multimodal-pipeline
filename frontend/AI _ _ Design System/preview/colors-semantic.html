@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Colors — Semantic States</title>
+<link rel="stylesheet" href="../colors_and_type.css"/>
+<style>
+  body { margin: 0; padding: 18px 22px; font-family: var(--font-sans); }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .card { border-radius: 8px; padding: 12px 14px; display:flex; flex-direction:column; gap:8px; }
+  .name { font-family: var(--font-mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.16em; font-weight: 500; }
+  .swatches { display: flex; gap: 6px; }
+  .pill { font-family: var(--font-mono); font-size: 10px; padding: 3px 8px; border-radius: 999px; border: 1px solid; }
+  .lead { font-family: var(--font-mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.18em; color: hsl(var(--muted-foreground)); margin: 0 0 12px; }
+</style>
+</head>
+<body>
+  <div class="lead">Semantic States · used as 12% tint + 35% border, never solid</div>
+  <div class="grid">
+    <div class="card" style="background: hsl(var(--success) / 0.12); border:1px solid hsl(var(--success) / 0.35); color: hsl(var(--success));">
+      <div class="name">success · 성공</div>
+      <div class="swatches">
+        <span class="pill" style="border-color: hsl(var(--success) / 0.35); background: hsl(var(--success) / 0.12);">152 56% 32%</span>
+      </div>
+      <div style="font-family: var(--font-mono); font-size: 10px; opacity:.8;">core-api 온라인 · SUCCEEDED</div>
+    </div>
+    <div class="card" style="background: hsl(var(--warning) / 0.12); border:1px solid hsl(var(--warning) / 0.35); color: hsl(var(--warning));">
+      <div class="name">warning · 실행 중</div>
+      <div class="swatches">
+        <span class="pill" style="border-color: hsl(var(--warning) / 0.35); background: hsl(var(--warning) / 0.12);">32 92% 46%</span>
+      </div>
+      <div style="font-family: var(--font-mono); font-size: 10px; opacity:.8;">RUNNING · pulse-soft</div>
+    </div>
+    <div class="card" style="background: hsl(var(--destructive) / 0.10); border:1px solid hsl(var(--destructive) / 0.40); color: hsl(var(--destructive));">
+      <div class="name">destructive · 실패</div>
+      <div class="swatches">
+        <span class="pill" style="border-color: hsl(var(--destructive) / 0.40); background: hsl(var(--destructive) / 0.10);">0 70% 46%</span>
+      </div>
+      <div style="font-family: var(--font-mono); font-size: 10px; opacity:.8;">FAILED · 오프라인</div>
+    </div>
+  </div>
+</body>
+</html>

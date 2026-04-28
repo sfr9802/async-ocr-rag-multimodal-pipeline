@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Colors — Capability Hues</title>
+<link rel="stylesheet" href="../colors_and_type.css"/>
+<style>
+  body { margin: 0; padding: 18px 22px; font-family: var(--font-sans); }
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  .cap { border: 1px solid hsl(var(--border)); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 8px; background: hsl(var(--card)); }
+  .row { display:flex; align-items:center; gap: 8px; }
+  .dot { width: 8px; height: 8px; border-radius: 999px; }
+  .name { font-family: var(--font-mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.18em; }
+  .desc { font-family: var(--font-mono); font-size: 10px; color: hsl(var(--muted-foreground)); }
+  .hex { font-family: var(--font-mono); font-size: 9.5px; color: hsl(var(--muted-foreground)); }
+  .lead { font-family: var(--font-mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.18em; color: hsl(var(--muted-foreground)); margin: 0 0 12px; }
+</style>
+</head>
+<body>
+  <div class="lead">Capability Hues · sidebar dot · picker icon · active ring</div>
+  <div class="grid">
+    <div class="cap">
+      <div class="row"><span class="dot" style="background: hsl(var(--cap-mock));"></span><span class="name" style="color: hsl(var(--cap-mock));">MOCK</span></div>
+      <div class="desc">echo · slate</div>
+      <div class="hex">215 20% 50%</div>
+    </div>
+    <div class="cap">
+      <div class="row"><span class="dot" style="background: hsl(var(--cap-rag));"></span><span class="name" style="color: hsl(var(--cap-rag));">RAG</span></div>
+      <div class="desc">retrieval · teal</div>
+      <div class="hex">200 75% 38%</div>
+    </div>
+    <div class="cap">
+      <div class="row"><span class="dot" style="background: hsl(var(--cap-ocr));"></span><span class="name" style="color: hsl(var(--cap-ocr));">OCR</span></div>
+      <div class="desc">extraction · violet</div>
+      <div class="hex">270 50% 48%</div>
+    </div>
+    <div class="cap">
+      <div class="row"><span class="dot" style="background: hsl(var(--cap-multimodal));"></span><span class="name" style="color: hsl(var(--cap-multimodal));">MULTIMODAL</span></div>
+      <div class="desc">vision + text</div>
+      <div class="hex">24 92% 52%</div>
+    </div>
+  </div>
+</body>
+</html>

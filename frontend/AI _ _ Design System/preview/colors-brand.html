@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Colors — Brand</title>
+<link rel="stylesheet" href="../colors_and_type.css"/>
+<style>
+  body { margin: 0; padding: 18px 22px; }
+  .row { display: flex; gap: 14px; align-items: stretch; }
+  .swatch { flex: 1; border-radius: 10px; padding: 12px 14px; min-height: 92px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid hsl(var(--border)); }
+  .swatch .name { font-family: var(--font-mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.16em; }
+  .swatch .hex { font-family: var(--font-mono); font-size: 11px; opacity: 0.85; }
+  .lead { font-family: var(--font-mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.18em; color: hsl(var(--muted-foreground)); margin: 0 0 12px; }
+</style>
+</head>
+<body>
+  <div class="lead">Brand · 2 colors carry the mark</div>
+  <div class="row">
+    <div class="swatch" style="background: hsl(var(--primary)); color: hsl(var(--primary-foreground));">
+      <div class="name">primary · navy ink</div>
+      <div>
+        <div style="font-family:var(--font-sans); font-size:13px; font-weight:600;">Logo, focus ring, primary CTA</div>
+        <div class="hex">hsl(220 60% 22%) · #16305A</div>
+      </div>
+    </div>
+    <div class="swatch" style="background: hsl(var(--accent)); color: hsl(var(--accent-foreground));">
+      <div class="name">accent · signal orange</div>
+      <div>
+        <div style="font-family:var(--font-sans); font-size:13px; font-weight:600;">Logo dot, Sparkles, multimodal</div>
+        <div class="hex">hsl(24 92% 52%) · #F36A12</div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"/>
+<title>Status Badges</title>
+<link rel="stylesheet" href="../colors_and_type.css"/>
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+<style>
+  body { margin: 0; padding: 18px 22px; font-family: var(--font-sans); }
+  .lead { font-family: var(--font-mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.18em; color: hsl(var(--muted-foreground)); margin: 0 0 14px; }
+  .row { display:flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .pill { display:inline-flex; align-items:center; gap:6px; padding: 4px 10px; font-size: 12px; font-weight: 500; border-radius: 999px; border: 1px solid; font-variant-numeric: tabular-nums; }
+  .dot { width: 8px; height: 8px; border-radius: 999px; display: inline-block; }
+  .muted { background: hsl(var(--muted)); color: hsl(var(--muted-foreground)); border-color: hsl(var(--border)); }
+  .warning { background: hsl(var(--warning) / 0.12); color: hsl(var(--warning)); border-color: hsl(var(--warning) / 0.35); }
+  .success { background: hsl(var(--success) / 0.12); color: hsl(var(--success)); border-color: hsl(var(--success) / 0.35); }
+  .destructive { background: hsl(var(--destructive) / 0.12); color: hsl(var(--destructive)); border-color: hsl(var(--destructive) / 0.35); }
+  .lucide { width: 13px; height: 13px; }
+  .spin { animation: rot 1s linear infinite; } @keyframes rot { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+  <div class="lead">Status Badges · 7 lifecycle states · pill + icon or dot</div>
+  <div class="row">
+    <span class="pill muted"><i data-lucide="circle-dashed"></i>대기</span>
+    <span class="pill muted"><i data-lucide="circle-dashed"></i>큐 대기</span>
+    <span class="pill warning"><i data-lucide="loader-2" class="spin"></i>실행 중</span>
+    <span class="pill success"><i data-lucide="check-circle-2"></i>성공</span>
+    <span class="pill destructive"><i data-lucide="circle-alert"></i>실패</span>
+    <span class="pill muted"><i data-lucide="circle-slash"></i>취소됨</span>
+  </div>
+  <div class="lead" style="margin: 18px 0 12px;">withDot variant · used in headers</div>
+  <div class="row">
+    <span class="pill muted"><span class="dot" style="background: hsl(var(--muted-foreground)/.6);"></span>대기</span>
+    <span class="pill warning"><span class="dot animate-pulse-soft" style="background: hsl(var(--warning));"></span>실행 중</span>
+    <span class="pill success"><span class="dot" style="background: hsl(var(--success));"></span>성공</span>
+    <span class="pill destructive"><span class="dot" style="background: hsl(var(--destructive));"></span>실패</span>
+  </div>
+  <script>lucide.createIcons();</script>
+</body>
+</html>

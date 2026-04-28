@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"/>
+<title>Buttons</title>
+<link rel="stylesheet" href="../colors_and_type.css"/>
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+<style>
+  body { margin: 0; padding: 18px 22px; font-family: var(--font-sans); }
+  .lead { font-family: var(--font-mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.18em; color: hsl(var(--muted-foreground)); margin: 0 0 12px; }
+  .row { display:flex; gap: 10px; align-items:center; margin-bottom: 12px; flex-wrap: wrap; }
+  button { font: inherit; cursor: pointer; display:inline-flex; align-items:center; justify-content:center; gap:8px; white-space: nowrap; border-radius: 6px; font-size: 14px; font-weight: 500; transition: background-color .15s, color .15s, border-color .15s; border: 1px solid transparent; height: 36px; padding: 0 16px; }
+  button .lucide { width: 14px; height: 14px; }
+  .primary { background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); box-shadow: var(--shadow-sm); }
+  .primary:hover { background: hsl(var(--primary)/.9); }
+  .secondary { background: hsl(var(--secondary)); color: hsl(var(--secondary-foreground)); }
+  .secondary:hover { background: hsl(var(--secondary)/.8); }
+  .outline { border-color: hsl(var(--input)); background: hsl(var(--background)); color: hsl(var(--foreground)); }
+  .outline:hover { background: hsl(var(--accent) / .08); border-color: hsl(var(--border)); }
+  .ghost { background: transparent; color: hsl(var(--foreground)); }
+  .ghost:hover { background: hsl(var(--foreground)/.04); }
+  .destructive { background: hsl(var(--destructive)); color: hsl(var(--destructive-foreground)); }
+  .destructive:hover { background: hsl(var(--destructive)/.9); }
+  .sm { height: 32px; padding: 0 12px; font-size: 12px; }
+  .icon { width: 32px; height: 32px; padding: 0; }
+  .lbl { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.14em; color: hsl(var(--muted-foreground)); width: 80px; }
+</style>
+</head>
+<body>
+  <div class="lead">Buttons · 5 variants · 3 sizes</div>
+  <div class="row"><span class="lbl">default</span>
+    <button class="primary"><i data-lucide="corner-down-left"></i>전송</button>
+    <button class="secondary">비우기</button>
+    <button class="outline">저장</button>
+    <button class="ghost"><i data-lucide="trash-2"></i>제거</button>
+    <button class="destructive">삭제</button>
+  </div>
+  <div class="row"><span class="lbl">small</span>
+    <button class="primary sm"><i data-lucide="corner-down-left"></i>전송</button>
+    <button class="ghost sm"><i data-lucide="trash-2"></i>비우기</button>
+    <button class="outline sm"><i data-lucide="external-link"></i>열기</button>
+    <button class="ghost sm"><i data-lucide="download"></i>다운로드</button>
+    <button class="icon ghost"><i data-lucide="settings-2"></i></button>
+    <button class="icon ghost"><i data-lucide="moon"></i></button>
+  </div>
+  <script>lucide.createIcons();</script>
+</body>
+</html>

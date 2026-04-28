@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Type — Scale</title>
+<link rel="stylesheet" href="../colors_and_type.css"/>
+<style>
+  body { margin: 0; padding: 18px 22px; font-family: var(--font-sans); }
+  .lead { font-family: var(--font-mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.18em; color: hsl(var(--muted-foreground)); margin: 0 0 14px; }
+  table { width: 100%; border-collapse: collapse; }
+  td { padding: 5px 0; vertical-align: baseline; }
+  .label { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.14em; color: hsl(var(--muted-foreground)); width: 90px; }
+  .px { font-family: var(--font-mono); font-size: 10px; color: hsl(var(--muted-foreground)); width: 70px; }
+</style>
+</head>
+<body>
+  <div class="lead">Type Scale · small & tight, no display heading > 14</div>
+  <table>
+    <tr><td class="label">3xl</td><td class="px">24px</td><td style="font-size:24px; font-weight:600; letter-spacing:-0.01em;">24 · used in mocks</td></tr>
+    <tr><td class="label">2xl</td><td class="px">20px</td><td style="font-size:20px; font-weight:600;">20 · empty-state title</td></tr>
+    <tr><td class="label">xl</td><td class="px">16px</td><td style="font-size:16px; font-weight:600;">16 · max in production UI</td></tr>
+    <tr><td class="label">lg</td><td class="px">13.5px</td><td style="font-size:13.5px; font-weight:600;">13.5 · product mark</td></tr>
+    <tr><td class="label">md</td><td class="px">12.5px</td><td style="font-size:12.5px;">12.5 · body / list rows</td></tr>
+    <tr><td class="label">sm</td><td class="px">11.5px</td><td style="font-size:11.5px;">11.5 · tab labels</td></tr>
+    <tr><td class="label">xs</td><td class="px">10.5px</td><td style="font-size:10.5px;">10.5 · mono captions</td></tr>
+    <tr><td class="label">xxs</td><td class="px">9.5px</td><td style="font-size:9.5px;">9.5 · timeline microlabel</td></tr>
+  </table>
+</body>
+</html>

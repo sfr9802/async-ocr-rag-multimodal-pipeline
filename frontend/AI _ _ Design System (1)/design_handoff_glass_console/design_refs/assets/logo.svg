@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" aria-label="AI 파이프라인 콘솔 logo">
+  <rect x="0.75" y="0.75" width="30.5" height="30.5" rx="9" fill="#1A1530" opacity="0.08"></rect>
+  <rect x="0.75" y="0.75" width="30.5" height="30.5" rx="9" fill="none" stroke="#1A1530" stroke-opacity="0.28" stroke-width="0.75"></rect>
+  <path d="M9 22 L13 10 L19 10 L23 22" stroke="#1A1530" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"></path>
+  <path d="M11 18 L21 18" stroke="#1A1530" stroke-width="2" stroke-linecap="round"></path>
+  <circle cx="23" cy="22" r="2.4" fill="#6A3AFF"></circle>
+</svg>

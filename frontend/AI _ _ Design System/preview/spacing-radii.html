@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Spacing & Radii</title>
+<link rel="stylesheet" href="../colors_and_type.css"/>
+<style>
+  body { margin: 0; padding: 18px 22px; font-family: var(--font-sans); }
+  .lead { font-family: var(--font-mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.18em; color: hsl(var(--muted-foreground)); margin: 0 0 12px; }
+  .row { display:flex; gap: 12px; align-items: end; margin-bottom: 14px; }
+  .b { background: hsl(var(--primary) / 0.14); border: 1px solid hsl(var(--primary) / 0.3); height: 32px; display:flex; flex-direction:column; align-items:center; justify-content:center; }
+  .l { font-family: var(--font-mono); font-size: 9.5px; color: hsl(var(--muted-foreground)); margin-top: 4px; text-transform: uppercase; letter-spacing: 0.14em; }
+  .grid2 { display:flex; gap: 14px; }
+  .rad { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .rd { width: 50px; height: 50px; background: hsl(var(--card)); border: 1px solid hsl(var(--border)); box-shadow: var(--shadow-soft); }
+</style>
+</head>
+<body>
+  <div class="lead">Spacing · 4 · 8 · 12 · 16 · 20 · 24 · 32 · 40</div>
+  <div class="row">
+    <div><div class="b" style="width:4px;"></div><div class="l">1 · 4</div></div>
+    <div><div class="b" style="width:8px;"></div><div class="l">2 · 8</div></div>
+    <div><div class="b" style="width:12px;"></div><div class="l">3 · 12</div></div>
+    <div><div class="b" style="width:16px;"></div><div class="l">4 · 16</div></div>
+    <div><div class="b" style="width:20px;"></div><div class="l">5 · 20</div></div>
+    <div><div class="b" style="width:24px;"></div><div class="l">6 · 24</div></div>
+    <div><div class="b" style="width:32px;"></div><div class="l">8 · 32</div></div>
+    <div><div class="b" style="width:40px;"></div><div class="l">10 · 40</div></div>
+  </div>
+  <div class="lead" style="margin-top: 10px;">Radii · 4 · 6 · 8 · 12 · pill</div>
+  <div class="grid2">
+    <div class="rad"><div class="rd" style="border-radius:4px;"></div><div class="l">sm · 4</div></div>
+    <div class="rad"><div class="rd" style="border-radius:6px;"></div><div class="l">md · 6</div></div>
+    <div class="rad"><div class="rd" style="border-radius:8px;"></div><div class="l">lg · 8 default</div></div>
+    <div class="rad"><div class="rd" style="border-radius:12px;"></div><div class="l">xl · 12</div></div>
+    <div class="rad"><div class="rd" style="border-radius:999px;"></div><div class="l">pill</div></div>
+  </div>
+</body>
+</html>

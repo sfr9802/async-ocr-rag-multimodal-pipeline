@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"/>
+<title>Sidebar Job Card</title>
+<link rel="stylesheet" href="../colors_and_type.css"/>
+<style>
+  body { margin: 0; padding: 22px; font-family: var(--font-sans); background: hsl(var(--card) / 0.4); }
+  .lead { font-family: var(--font-mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.18em; color: hsl(var(--muted-foreground)); margin: 0 0 8px; }
+  .bucket { padding: 4px 8px; font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.18em; color: hsl(var(--muted-foreground) / 0.7); }
+  .row { position: relative; display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid transparent; cursor: pointer; }
+  .row.active { border-color: hsl(var(--border) / 0.8); background: hsl(var(--card)); box-shadow: var(--shadow-soft); }
+  .row.active::before { content: ""; position:absolute; left:0; top:10px; bottom:10px; width: 2.5px; background: hsl(var(--primary)); border-top-right-radius: 2px; border-bottom-right-radius: 2px; }
+  .row:hover:not(.active) { background: hsl(var(--foreground) / 0.03); }
+  .head { display:flex; align-items:center; justify-content: space-between; gap: 8px; }
+  .cap { display:inline-flex; align-items:center; gap: 6px; font-family: var(--font-mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.14em; color: hsl(var(--muted-foreground)); }
+  .dot { width: 6px; height: 6px; border-radius: 999px; }
+  .pill { display:inline-flex; align-items:center; gap:5px; padding: 2px 8px; font-size: 11px; font-weight: 500; border-radius: 999px; border: 1px solid; font-variant-numeric: tabular-nums; }
+  .pill .d { width: 6px; height: 6px; border-radius: 999px; }
+  .preview { font-size: 12.5px; line-height: 1.4; color: hsl(var(--foreground) / 0.85); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .meta { display:flex; justify-content: space-between; font-family: var(--font-mono); font-size: 10px; color: hsl(var(--muted-foreground) / 0.8); }
+</style>
+</head>
+<body>
+  <div class="bucket">Today</div>
+  <div class="row active">
+    <div class="head">
+      <span class="cap"><span class="dot" style="background: hsl(var(--cap-rag));"></span>RAG</span>
+      <span class="pill" style="background: hsl(var(--warning) / 0.12); color: hsl(var(--warning)); border-color: hsl(var(--warning) / 0.35);"><span class="d animate-pulse-soft" style="background: hsl(var(--warning));"></span>실행 중</span>
+    </div>
+    <div class="preview">anime about an old fisherman feeding stray harbor cats</div>
+    <div class="meta"><span>a3f9c2</span><span>2m ago</span></div>
+  </div>
+  <div class="row" style="margin-top: 6px;">
+    <div class="head">
+      <span class="cap"><span class="dot" style="background: hsl(var(--cap-multimodal));"></span>MULTIMODAL</span>
+      <span class="pill" style="background: hsl(var(--success) / 0.12); color: hsl(var(--success)); border-color: hsl(var(--success) / 0.35);"><span class="d" style="background: hsl(var(--success));"></span>성공</span>
+    </div>
+    <div class="preview">demo_sample.pdf — What metrics are shown?</div>
+    <div class="meta"><span>7e1b4d</span><span>14m ago</span></div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Colors — Surface & Neutrals</title>
+<link rel="stylesheet" href="../colors_and_type.css"/>
+<style>
+  body { margin: 0; padding: 18px 22px; }
+  .grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; }
+  .sw { border: 1px solid hsl(var(--border)); border-radius: 8px; height: 90px; display: flex; flex-direction: column; justify-content: flex-end; padding: 8px 10px; }
+  .sw .n { font-family: var(--font-mono); font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.14em; }
+  .sw .h { font-family: var(--font-mono); font-size: 9.5px; opacity: 0.7; }
+  .lead { font-family: var(--font-mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.18em; color: hsl(var(--muted-foreground)); margin: 0 0 12px; }
+</style>
+</head>
+<body>
+  <div class="lead">Surface & Neutrals · warm parchment, deep ink</div>
+  <div class="grid">
+    <div class="sw" style="background: hsl(var(--background)); color: hsl(var(--foreground));"><div class="n">background</div><div class="h">36 25% 97%</div></div>
+    <div class="sw" style="background: hsl(var(--card)); color: hsl(var(--foreground));"><div class="n">card</div><div class="h">0 0% 100%</div></div>
+    <div class="sw" style="background: hsl(var(--muted)); color: hsl(var(--foreground));"><div class="n">muted</div><div class="h">36 18% 94%</div></div>
+    <div class="sw" style="background: hsl(var(--secondary)); color: hsl(var(--foreground));"><div class="n">secondary</div><div class="h">36 18% 93%</div></div>
+    <div class="sw" style="background: hsl(var(--border)); color: hsl(var(--foreground));"><div class="n">border</div><div class="h">32 16% 86%</div></div>
+    <div class="sw" style="background: hsl(var(--muted-foreground)); color: white;"><div class="n">muted-fg</div><div class="h">220 12% 42%</div></div>
+    <div class="sw" style="background: hsl(var(--foreground)); color: hsl(var(--background));"><div class="n">foreground</div><div class="h">220 25% 10%</div></div>
+    <div class="sw" style="background: hsl(220 18% 7%); color: hsl(36 18% 92%);"><div class="n">dark.bg</div><div class="h">220 18% 7%</div></div>
+    <div class="sw" style="background: hsl(220 18% 10%); color: hsl(36 18% 92%);"><div class="n">dark.card</div><div class="h">220 18% 10%</div></div>
+    <div class="sw" style="background: hsl(220 16% 16%); color: hsl(36 18% 92%);"><div class="n">dark.secondary</div><div class="h">220 16% 16%</div></div>
+    <div class="sw" style="background: hsl(220 14% 20%); color: hsl(36 18% 92%);"><div class="n">dark.border</div><div class="h">220 14% 20%</div></div>
+    <div class="sw" style="background: hsl(36 18% 92%); color: hsl(220 25% 10%);"><div class="n">dark.fg</div><div class="h">36 18% 92%</div></div>
+  </div>
+</body>
+</html>

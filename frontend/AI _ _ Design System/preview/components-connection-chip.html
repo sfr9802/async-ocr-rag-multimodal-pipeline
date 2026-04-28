@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"/>
+<title>Connection Chip</title>
+<link rel="stylesheet" href="../colors_and_type.css"/>
+<style>
+  body { margin: 0; padding: 22px; font-family: var(--font-sans); }
+  .lead { font-family: var(--font-mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.18em; color: hsl(var(--muted-foreground)); margin: 0 0 12px; }
+  .row { display:flex; gap: 10px; flex-wrap: wrap; }
+  .chip { display:inline-flex; align-items:center; gap: 7px; padding: 4px 10px; border-radius: 999px; border: 1px solid; font-size: 11px; font-weight: 500; }
+  .dot { width: 6px; height: 6px; border-radius: 999px; }
+  .uc { font-family: var(--font-mono); text-transform: uppercase; letter-spacing: 0.12em; }
+  .online { border-color: hsl(var(--success)/.35); background: hsl(var(--success)/.10); color: hsl(var(--success)); }
+  .offline { border-color: hsl(var(--destructive)/.4); background: hsl(var(--destructive)/.10); color: hsl(var(--destructive)); }
+  .checking { border-color: hsl(var(--border)); color: hsl(var(--muted-foreground)); }
+</style>
+</head>
+<body>
+  <div class="lead">Connection Chip · header right · core-api ping</div>
+  <div class="row">
+    <span class="chip checking"><span class="dot animate-pulse-soft" style="background: hsl(var(--muted-foreground)/.6);"></span><span class="uc">확인 중</span></span>
+    <span class="chip online"><span class="dot" style="background: hsl(var(--success));"></span><span class="uc">core-api 온라인</span></span>
+    <span class="chip offline"><span class="dot" style="background: hsl(var(--destructive));"></span><span class="uc">오프라인</span></span>
+  </div>
+</body>
+</html>

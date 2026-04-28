@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"/>
+<title>Capability Picker</title>
+<link rel="stylesheet" href="../colors_and_type.css"/>
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+<style>
+  body { margin: 0; padding: 18px 22px; font-family: var(--font-sans); background: hsl(var(--background)); }
+  .lead { font-family: var(--font-mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.18em; color: hsl(var(--muted-foreground)); margin: 0 0 12px; }
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .pick { background: hsl(var(--background)); border: 1px solid hsl(var(--border)); border-radius: 6px; padding: 12px; display: flex; flex-direction: column; gap: 8px; cursor: pointer; }
+  .pick.active { background: hsl(var(--card)); box-shadow: var(--shadow-soft); border-color: hsl(var(--cap-multimodal) / 0.4); outline: 2px solid hsl(var(--cap-multimodal) / 0.5); }
+  .pick .top { display:flex; align-items:center; justify-content:space-between; }
+  .pick .lucide { width: 16px; height: 16px; color: hsl(var(--muted-foreground)); }
+  .pick.active .lucide { color: hsl(var(--cap-multimodal)); }
+  .pick.rag.active .lucide { color: hsl(var(--cap-rag)); }
+  .tag { font-family: var(--font-mono); font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.18em; color: hsl(var(--muted-foreground) / 0.7); }
+  .pick.active .tag { color: hsl(var(--cap-multimodal)); }
+  .name { font-size: 14px; font-weight: 600; letter-spacing: -0.01em; }
+</style>
+</head>
+<body>
+  <div class="lead">Capability Picker · 4-up · active = ring + tinted icon + shadow</div>
+  <div class="grid">
+    <div class="pick"><div class="top"><i data-lucide="brain"></i><span class="tag">에코</span></div><div class="name">Mock</div></div>
+    <div class="pick"><div class="top"><i data-lucide="file-text"></i><span class="tag">검색</span></div><div class="name">RAG</div></div>
+    <div class="pick"><div class="top"><i data-lucide="image"></i><span class="tag">추출</span></div><div class="name">OCR</div></div>
+    <div class="pick active"><div class="top"><i data-lucide="layers"></i><span class="tag">비전 + 텍스트</span></div><div class="name">멀티모달</div></div>
+  </div>
+  <script>lucide.createIcons();</script>
+</body>
+</html>

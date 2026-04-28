@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"/>
+<title>Brand Mark</title>
+<link rel="stylesheet" href="../colors_and_type.css"/>
+<style>
+  body { margin: 0; padding: 22px; font-family: var(--font-sans); }
+  .row { display:flex; gap: 24px; align-items: center; }
+  .mark { display:inline-flex; align-items:center; gap: 10px; }
+  .mark .label { line-height: 1.2; }
+  .mark .name { font-size: 13.5px; font-weight: 600; letter-spacing: -0.01em; }
+  .mark .sub { font-family: var(--font-mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.14em; color: hsl(var(--muted-foreground)); }
+  .lead { font-family: var(--font-mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.18em; color: hsl(var(--muted-foreground)); margin: 0 0 12px; }
+  img { display: block; }
+</style>
+</head>
+<body>
+  <div class="lead">Brand Mark · stylized A + signal-orange dot</div>
+  <div class="row">
+    <img src="../assets/logo.svg" width="56" height="56" alt="logo lg"/>
+    <img src="../assets/logo.svg" width="32" height="32" alt="logo md"/>
+    <img src="../assets/logo.svg" width="20" height="20" alt="logo sm"/>
+    <div class="mark">
+      <img src="../assets/logo.svg" width="28" height="28" alt="logo"/>
+      <div class="label">
+        <div class="name">AI 파이프라인 콘솔</div>
+        <div class="sub">async · ocr · rag · multimodal</div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

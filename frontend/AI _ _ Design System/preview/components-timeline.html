@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"/>
+<title>Job Timeline</title>
+<link rel="stylesheet" href="../colors_and_type.css"/>
+<style>
+  body { margin: 0; padding: 22px; font-family: var(--font-sans); background: hsl(var(--muted) / 0.25); }
+  .lead { font-family: var(--font-mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.18em; color: hsl(var(--muted-foreground)); margin: 0 0 12px; }
+  .timeline { display:flex; flex-wrap:wrap; align-items:center; gap: 6px 8px; font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.16em; color: hsl(var(--muted-foreground)); }
+  .ev { display:inline-flex; align-items:center; gap: 6px; }
+  .dot { width: 6px; height: 6px; border-radius: 999px; }
+  .conn { display:inline-flex; align-items:center; gap: 6px; }
+  .conn .l { width: 12px; height: 1px; background: hsl(var(--border)); }
+  .conn.dashed .l { background: transparent; border-top: 1px dashed hsl(var(--border)); }
+  .dur { font-variant-numeric: tabular-nums; letter-spacing: 0; text-transform: none; color: hsl(var(--muted-foreground) / 0.8); }
+  .lbl-sn { letter-spacing: -0.005em; text-transform: none; color: hsl(var(--muted-foreground)); }
+  .lbl-sn .uc { text-transform: uppercase; letter-spacing: 0.16em; }
+  .active .uc { color: hsl(var(--foreground)); }
+</style>
+</head>
+<body>
+  <div class="lead">Job Timeline · server vs client events · duration connectors</div>
+  <div class="timeline" role="list">
+    <span class="ev"><span class="dot" style="background: hsl(var(--muted-foreground)/.55);"></span><span class="lbl-sn"><span class="uc">대기</span></span></span>
+    <span class="conn dashed"><span class="l"></span><span class="dur">82ms</span><span class="l"></span></span>
+    <span class="ev"><span class="dot" style="background: hsl(var(--muted-foreground)/.55);"></span><span class="lbl-sn"><span class="uc">큐 대기</span><span style="color: hsl(var(--muted-foreground)/.7);">*</span></span></span>
+    <span class="conn"><span class="l"></span><span class="dur">1.4s</span><span class="l"></span></span>
+    <span class="ev active"><span class="dot animate-pulse-soft" style="background: hsl(var(--warning));"></span><span class="lbl-sn"><span class="uc">실행 중</span></span></span>
+    <span style="margin-left:6px; padding: 2px 8px; border:1px solid hsl(var(--border)/.7); background: hsl(var(--background)/.6); border-radius: 999px; font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.18em;">시도 #2</span>
+  </div>
+  <div class="lead" style="margin-top: 22px;">Terminal — succeeded</div>
+  <div class="timeline">
+    <span class="ev"><span class="dot" style="background: hsl(var(--muted-foreground)/.55);"></span><span class="lbl-sn"><span class="uc">대기</span></span></span>
+    <span class="conn"><span class="l"></span><span class="dur">120ms</span><span class="l"></span></span>
+    <span class="ev"><span class="dot" style="background: hsl(var(--warning));"></span><span class="lbl-sn"><span class="uc">실행 중</span></span></span>
+    <span class="conn"><span class="l"></span><span class="dur">2.6s</span><span class="l"></span></span>
+    <span class="ev"><span class="dot" style="background: hsl(var(--success));"></span><span class="lbl-sn"><span class="uc">성공</span></span></span>
+  </div>
+</body>
+</html>

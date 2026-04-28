@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"/>
+<title>File Dropzone</title>
+<link rel="stylesheet" href="../colors_and_type.css"/>
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+<style>
+  body { margin: 0; padding: 22px; font-family: var(--font-sans); }
+  .lead { font-family: var(--font-mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.18em; color: hsl(var(--muted-foreground)); margin: 0 0 10px; }
+  .drop { border: 2px dashed hsl(var(--border)); background: hsl(var(--muted)/.15); border-radius: 6px; padding: 22px; display:flex; flex-direction:column; align-items:center; gap: 6px; color: hsl(var(--muted-foreground)); }
+  .drop .lucide { width: 16px; height: 16px; }
+  .drop .t { font-size: 13px; font-weight: 500; color: hsl(var(--foreground)/.85); }
+  .drop .sub { font-family: var(--font-mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.14em; }
+  .file { display:flex; align-items:center; justify-content:space-between; padding: 10px 12px; border: 1px solid hsl(var(--border)); background: hsl(var(--secondary)/.4); border-radius: 6px; margin-top: 12px; }
+  .file .l { display:flex; align-items:center; gap: 10px; }
+  .icon-tile { width: 32px; height: 32px; display:grid; place-items:center; background: hsl(var(--background)); border: 1px solid hsl(var(--border)); border-radius: 6px; }
+  .icon-tile .lucide { width: 14px; height: 14px; color: hsl(var(--muted-foreground)); }
+  .file .name { font-size: 13px; font-weight: 500; }
+  .file .meta { font-family: var(--font-mono); font-size: 10.5px; color: hsl(var(--muted-foreground)); }
+  .x { width: 28px; height: 28px; display:grid; place-items:center; border-radius: 6px; cursor: pointer; }
+  .x:hover { background: hsl(var(--foreground)/.04); }
+  .x .lucide { width: 14px; height: 14px; }
+</style>
+</head>
+<body>
+  <div class="lead">File Dropzone · empty + filled states</div>
+  <div class="drop">
+    <i data-lucide="upload"></i>
+    <div class="t">파일을 드롭하거나 클릭하여 선택</div>
+    <div class="sub">png · jpeg · pdf</div>
+  </div>
+  <div class="file">
+    <div class="l">
+      <div class="icon-tile"><i data-lucide="file-text"></i></div>
+      <div>
+        <div class="name">demo_sample.pdf</div>
+        <div class="meta">12.1 KB · application/pdf</div>
+      </div>
+    </div>
+    <div class="x"><i data-lucide="x"></i></div>
+  </div>
+  <script>lucide.createIcons();</script>
+</body>
+</html>

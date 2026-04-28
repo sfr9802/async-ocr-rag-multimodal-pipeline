@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"/>
+<title>Iconography</title>
+<link rel="stylesheet" href="../colors_and_type.css"/>
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+<style>
+  body { margin: 0; padding: 18px 22px; font-family: var(--font-sans); }
+  .lead { font-family: var(--font-mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.18em; color: hsl(var(--muted-foreground)); margin: 0 0 12px; }
+  .grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 10px; }
+  .ic { display:flex; flex-direction:column; align-items:center; gap: 6px; padding: 10px 4px; border: 1px solid hsl(var(--border)); border-radius: 6px; background: hsl(var(--card)); }
+  .ic .lucide { width: 18px; height: 18px; color: hsl(var(--foreground)); stroke-width: 2; }
+  .ic .n { font-family: var(--font-mono); font-size: 9px; text-transform: uppercase; letter-spacing: 0.12em; color: hsl(var(--muted-foreground)); }
+</style>
+</head>
+<body>
+  <div class="lead">Iconography · lucide-react · 2px stroke · currentColor</div>
+  <div class="grid">
+    <div class="ic"><i data-lucide="activity"></i><div class="n">activity</div></div>
+    <div class="ic"><i data-lucide="brain"></i><div class="n">brain</div></div>
+    <div class="ic"><i data-lucide="check-circle-2"></i><div class="n">check</div></div>
+    <div class="ic"><i data-lucide="circle-alert"></i><div class="n">alert</div></div>
+    <div class="ic"><i data-lucide="circle-dashed"></i><div class="n">dashed</div></div>
+    <div class="ic"><i data-lucide="circle-slash"></i><div class="n">slash</div></div>
+    <div class="ic"><i data-lucide="copy"></i><div class="n">copy</div></div>
+    <div class="ic"><i data-lucide="corner-down-left"></i><div class="n">enter</div></div>
+    <div class="ic"><i data-lucide="download"></i><div class="n">download</div></div>
+    <div class="ic"><i data-lucide="external-link"></i><div class="n">external</div></div>
+    <div class="ic"><i data-lucide="file-text"></i><div class="n">file</div></div>
+    <div class="ic"><i data-lucide="hash"></i><div class="n">hash</div></div>
+    <div class="ic"><i data-lucide="image"></i><div class="n">image</div></div>
+    <div class="ic"><i data-lucide="inbox"></i><div class="n">inbox</div></div>
+    <div class="ic"><i data-lucide="layers"></i><div class="n">layers</div></div>
+    <div class="ic"><i data-lucide="loader-2"></i><div class="n">loader</div></div>
+    <div class="ic"><i data-lucide="moon"></i><div class="n">moon</div></div>
+    <div class="ic"><i data-lucide="settings-2"></i><div class="n">settings</div></div>
+    <div class="ic"><i data-lucide="sparkles"></i><div class="n">sparkles</div></div>
+    <div class="ic"><i data-lucide="sun"></i><div class="n">sun</div></div>
+    <div class="ic"><i data-lucide="trash-2"></i><div class="n">trash</div></div>
+    <div class="ic"><i data-lucide="upload"></i><div class="n">upload</div></div>
+    <div class="ic"><i data-lucide="x"></i><div class="n">x</div></div>
+    <div class="ic"><i data-lucide="file-warning"></i><div class="n">warn</div></div>
+  </div>
+  <script>lucide.createIcons();</script>
+</body>
+</html>

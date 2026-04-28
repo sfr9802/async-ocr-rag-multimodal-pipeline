@@ -1,0 +1,400 @@
+/* =============================================================
+   AI 파이프라인 콘솔 — Color & Type Foundations (Light Glass)
+   Source: explorations/glass/ — light glass 방향이 본 디자인
+           시스템으로 승격됨. 파치먼트 변종은 colors_and_type-parchment.css
+           에 보존.
+   Scope:  cream-lavender 표면 + 그라데이션 글래스 패널 + 깊은 잉크,
+           바이올렛/시안/로즈의 채도 낮은 액센트.
+   ============================================================= */
+
+/* -------------------------------------------------------------
+   1. RAW HSL TOKENS  (light = default, dark = .dark scope)
+   ------------------------------------------------------------- */
+:root {
+  /* ----- Surface ----- */
+  --background: 252 33% 97%;          /* #F5F3FB — cream lavender */
+  --foreground: 245 35% 12%;          /* #16142A — deep blue-ink */
+  --card: 0 0% 100%;
+  --card-foreground: 245 35% 12%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 245 35% 12%;
+
+  /* ----- Brand ----- */
+  --primary: 250 38% 13%;             /* #1A1530 — quiet ink-violet (button) */
+  --primary-foreground: 0 0% 100%;
+  --accent: 254 100% 61%;             /* #6A3AFF — accent violet */
+  --accent-foreground: 0 0% 100%;
+
+  /* ----- Neutrals ----- */
+  --secondary: 252 25% 94%;
+  --secondary-foreground: 245 35% 14%;
+  --muted: 252 25% 94%;
+  --muted-foreground: 245 18% 42%;
+
+  /* ----- Semantic ----- */
+  --destructive: 354 64% 51%;         /* #D23541 */
+  --destructive-foreground: 0 0% 100%;
+  --success: 152 76% 30%;             /* #128A4A */
+  --success-foreground: 0 0% 100%;
+  --warning: 36 100% 39%;             /* #C97A00 */
+  --warning-foreground: 0 0% 100%;
+
+  /* ----- Lines & focus ----- */
+  --border: 245 35% 88%;              /* rgba(22,20,42,0.13) approx */
+  --input: 245 35% 88%;
+  --ring: 254 100% 61%;
+  --radius: 0.625rem;                 /* 10px — softer base for glass */
+
+  /* ----- Per-capability accents ----- */
+  --cap-mock: 245 18% 42%;            /* neutral muted ink */
+  --cap-rag: 192 100% 38%;            /* #0099C4 — cyan */
+  --cap-ocr: 254 100% 61%;            /* #6A3AFF — violet */
+  --cap-multimodal: 336 62% 51%;      /* #D4316F — rose */
+
+  /* ----- Glass surface tokens (NEW — translucent on aurora bg) ----- */
+  --glass-panel: 255 255 255 / 0.55;            /* main frosted panel */
+  --glass-panel-2: 255 255 255 / 0.4;           /* sub-panel / row idle */
+  --glass-panel-3: 255 255 255 / 0.7;           /* sub-panel / row hover, top hit, file row */
+  --glass-panel-strong: 255 255 255 / 0.85;     /* topbar over content */
+
+  --hairline: 22 20 42 / 0.08;        /* subtle hairline */
+  --hairline-2: 22 20 42 / 0.13;      /* default border on inner cards */
+  --hairline-strong: 22 20 42 / 0.22; /* dashed dropzone, kbd, accents */
+
+  --aurora-veil: 245 243 251 / 0;    /* used in linear gradient overlay */
+
+  /* ----- Glass-tinted shadows (violet bias instead of pure black) ----- */
+  --shadow-glass-panel:
+    0 1px 0 rgba(255, 255, 255, 0.7) inset,
+    0 24px 60px -28px rgba(58, 30, 120, 0.18),
+    0 2px 6px -2px rgba(58, 30, 120, 0.08);
+  --shadow-glass-pop:
+    0 12px 32px -10px rgba(58, 30, 120, 0.22),
+    0 2px 6px -2px rgba(58, 30, 120, 0.10);
+  --shadow-glass-button:
+    0 6px 16px -8px rgba(26, 21, 48, 0.28),
+    0 0 0 1px rgba(255, 255, 255, 0.10) inset;
+}
+
+.dark {
+  /* ----- Dark glass v2 — clean dark, contained aurora ----- */
+  --background: 222 33% 5%;           /* #07090F — deep night */
+  --foreground: 252 100% 97%;         /* #F4F1FF — soft white */
+  --card: 230 23% 10%;
+  --card-foreground: 252 100% 97%;
+  --popover: 230 23% 10%;
+  --popover-foreground: 252 100% 97%;
+
+  --primary: 252 100% 97%;            /* invert — light ink button on dark */
+  --primary-foreground: 250 38% 13%;
+  --accent: 263 100% 78%;             /* #B890FF — accent violet (light) */
+  --accent-foreground: 222 33% 5%;
+
+  --secondary: 230 18% 14%;
+  --secondary-foreground: 252 100% 97%;
+  --muted: 230 18% 14%;
+  --muted-foreground: 252 100% 70%;
+
+  --destructive: 354 100% 76%;        /* #FF8089 */
+  --destructive-foreground: 222 33% 5%;
+  --success: 152 80% 71%;             /* #79F0B2 */
+  --success-foreground: 222 33% 5%;
+  --warning: 36 100% 73%;             /* #FFD47A */
+  --warning-foreground: 222 33% 5%;
+
+  --border: 252 100% 97%;             /* used with /0.14 elsewhere */
+  --input: 252 100% 97%;
+  --ring: 263 100% 78%;
+
+  --cap-mock: 252 100% 70%;
+  --cap-rag: 192 100% 68%;            /* #5EE0FF */
+  --cap-ocr: 263 100% 78%;             /* #B890FF */
+  --cap-multimodal: 336 100% 78%;     /* #FF8FB1 */
+
+  /* glass surfaces flip dark */
+  --glass-panel: 18 21 32 / 0.66;
+  --glass-panel-2: 255 255 255 / 0.025;
+  --glass-panel-3: 255 255 255 / 0.045;
+  --glass-panel-strong: 7 9 15 / 0.72;
+
+  --hairline: 255 255 255 / 0.09;
+  --hairline-2: 255 255 255 / 0.14;
+  --hairline-strong: 255 255 255 / 0.24;
+
+  --shadow-glass-panel:
+    0 1px 0 rgba(255, 255, 255, 0.05) inset,
+    0 24px 60px -24px rgba(0, 0, 0, 0.6),
+    0 2px 8px -2px rgba(0, 0, 0, 0.4);
+  --shadow-glass-pop:
+    0 12px 32px -10px rgba(0, 0, 0, 0.55),
+    0 2px 6px -2px rgba(0, 0, 0, 0.35);
+  --shadow-glass-button:
+    0 6px 16px -8px rgba(0, 0, 0, 0.45),
+    0 0 0 1px rgba(255, 255, 255, 0.06) inset;
+}
+
+/* -------------------------------------------------------------
+   2. RGB / HEX-FACING ALIASES
+   ------------------------------------------------------------- */
+:root {
+  --c-bg: hsl(var(--background));
+  --c-fg: hsl(var(--foreground));
+  --c-card: hsl(var(--card));
+  --c-muted: hsl(var(--muted));
+  --c-muted-fg: hsl(var(--muted-foreground));
+  --c-border: hsl(var(--border));
+  --c-primary: hsl(var(--primary));
+  --c-accent: hsl(var(--accent));
+  --c-success: hsl(var(--success));
+  --c-warning: hsl(var(--warning));
+  --c-destructive: hsl(var(--destructive));
+
+  --c-cap-mock: hsl(var(--cap-mock));
+  --c-cap-rag: hsl(var(--cap-rag));
+  --c-cap-ocr: hsl(var(--cap-ocr));
+  --c-cap-multimodal: hsl(var(--cap-multimodal));
+
+  --c-hairline: rgb(var(--hairline));
+  --c-hairline-2: rgb(var(--hairline-2));
+  --c-hairline-strong: rgb(var(--hairline-strong));
+  --c-glass-panel: rgb(var(--glass-panel));
+  --c-glass-panel-2: rgb(var(--glass-panel-2));
+  --c-glass-panel-3: rgb(var(--glass-panel-3));
+  --c-glass-panel-strong: rgb(var(--glass-panel-strong));
+}
+
+/* -------------------------------------------------------------
+   3. TYPOGRAPHY — system stack (KR + EN + mono)
+   ------------------------------------------------------------- */
+:root {
+  --font-sans:
+    system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans CJK KR",
+    "Helvetica Neue", Arial, sans-serif;
+
+  --font-mono:
+    ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+    "Liberation Mono", monospace;
+
+  --fs-xxs: 9.5px;
+  --fs-xs: 10.5px;
+  --fs-sm: 11.5px;
+  --fs-md: 12.5px;
+  --fs-base: 14px;
+  --fs-lg: 13.5px;
+  --fs-xl: 16px;
+  --fs-2xl: 20px;
+  --fs-3xl: 24px;
+
+  --tracking-tight: -0.005em;
+  --tracking-snug: -0.01em;
+  --tracking-eyebrow: 0.14em;
+  --tracking-tag: 0.16em;
+  --tracking-wide: 0.18em;
+
+  --leading-tight: 1.25;
+  --leading-snug: 1.4;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.65;
+}
+
+/* -------------------------------------------------------------
+   4. SEMANTIC TYPE STYLES
+   ------------------------------------------------------------- */
+.t-product-mark {
+  font-family: var(--font-sans);
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: var(--tracking-snug);
+  line-height: var(--leading-tight);
+  color: hsl(var(--foreground));
+}
+
+.t-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-eyebrow);
+  color: hsl(var(--muted-foreground));
+}
+
+.t-section-label {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-tag);
+  color: hsl(var(--muted-foreground));
+}
+
+.t-body {
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  line-height: var(--leading-snug);
+  letter-spacing: var(--tracking-tight);
+  color: hsl(var(--foreground));
+}
+
+.t-body-muted {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  line-height: var(--leading-relaxed);
+  color: hsl(var(--muted-foreground));
+}
+
+.t-mono {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-feature-settings: "calt" 0;
+  font-variant-ligatures: none;
+  color: hsl(var(--foreground));
+}
+
+.t-mono-tag {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-tag);
+  color: hsl(var(--muted-foreground) / 0.8);
+}
+
+.t-numeric {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* -------------------------------------------------------------
+   5. SHADOWS, RADII, SPACING
+   ------------------------------------------------------------- */
+:root {
+  --shadow-soft:
+    0 1px 0 rgba(255, 255, 255, 0.7) inset,
+    0 4px 14px -6px rgba(58, 30, 120, 0.10),
+    0 2px 4px -2px rgba(58, 30, 120, 0.06);
+
+  --shadow-sm:
+    0 1px 2px rgba(58, 30, 120, 0.08);
+
+  --shadow-pop: var(--shadow-glass-pop);
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 22px;     /* main panel */
+  --radius-pill: 999px;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+}
+
+/* -------------------------------------------------------------
+   6. SIGNATURE BACKGROUND — aurora bleed under glass panels.
+      Use on .canvas-bg (legacy alias) or via utility classes
+      .glass-stage / .glass-veil / .glass-grain.
+   ------------------------------------------------------------- */
+.canvas-bg,
+.glass-stage,
+body.glass-bg {
+  position: relative;
+  background:
+    radial-gradient(120vw 80vh at 50% -20%, #ffe9f4 0%, transparent 60%),
+    hsl(var(--background));
+}
+.dark .canvas-bg,
+.dark .glass-stage,
+body.dark.glass-bg {
+  background:
+    radial-gradient(120vw 80vh at 50% -20%, rgba(255, 93, 200, 0.08) 0%, transparent 60%),
+    hsl(var(--background));
+}
+
+/* The two aurora blobs that bleed off-screen — placed via fixed
+   pseudo-elements on a dedicated stage element. Use as:
+     <div class="glass-aurora" aria-hidden="true"></div>
+*/
+.glass-aurora {
+  position: fixed; inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.glass-aurora::before,
+.glass-aurora::after {
+  content: "";
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(110px);
+  opacity: 0.55;
+  mix-blend-mode: multiply;
+  animation: glass-aurora-drift 22s ease-in-out infinite alternate;
+}
+.glass-aurora::before {
+  width: 60vw; height: 60vw;
+  left: -18vw; top: -22vw;
+  background: radial-gradient(circle at 30% 30%, #c9b8ff 0%, #ffd5e8 55%, transparent 75%);
+}
+.glass-aurora::after {
+  width: 65vw; height: 65vw;
+  right: -22vw; bottom: -28vw;
+  background: radial-gradient(circle at 70% 70%, #ffd1e0 0%, #b9e6ff 55%, transparent 75%);
+  animation-direction: alternate-reverse;
+  animation-duration: 28s;
+}
+.dark .glass-aurora::before,
+.dark .glass-aurora::after {
+  filter: blur(120px);
+  opacity: 0.22;
+  mix-blend-mode: screen;
+}
+.dark .glass-aurora::before {
+  background: radial-gradient(circle at 30% 30%, #6a4dff 0%, transparent 60%);
+}
+.dark .glass-aurora::after {
+  background: radial-gradient(circle at 70% 70%, #ff5dc8 0%, #5ee0ff 60%, transparent 75%);
+}
+
+@keyframes glass-aurora-drift {
+  0%   { transform: translate(0, 0) rotate(0deg); }
+  100% { transform: translate(8vw, 5vh) rotate(40deg); }
+}
+
+/* -------------------------------------------------------------
+   7. ANIMATION
+   ------------------------------------------------------------- */
+@keyframes pulse-soft {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.55; }
+}
+.animate-pulse-soft { animation: pulse-soft 1.6s ease-in-out infinite; }
+
+/* -------------------------------------------------------------
+   8. BASE
+   ------------------------------------------------------------- */
+* { box-sizing: border-box; }
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+body {
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-family: var(--font-sans);
+  font-size: var(--fs-base);
+  line-height: var(--leading-normal);
+  letter-spacing: var(--tracking-tight);
+  word-break: keep-all;
+  font-feature-settings: "rlig" 1, "calt" 1, "ss01" 1, "cv11" 1;
+}
+::selection {
+  background: hsl(var(--accent) / 0.22);
+  color: hsl(var(--foreground));
+}

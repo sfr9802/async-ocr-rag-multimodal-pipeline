@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Shadows</title>
+<link rel="stylesheet" href="../colors_and_type.css"/>
+<style>
+  body { margin: 0; padding: 22px; font-family: var(--font-sans); background: hsl(var(--background)); }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+  .card { background: hsl(var(--card)); border: 1px solid hsl(var(--border)); border-radius: 8px; padding: 14px; height: 90px; display: flex; flex-direction: column; justify-content: space-between; }
+  .l { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.16em; color: hsl(var(--muted-foreground)); }
+  .v { font-family: var(--font-mono); font-size: 10px; color: hsl(var(--muted-foreground) / 0.8); }
+</style>
+</head>
+<body>
+  <div class="grid">
+    <div class="card" style="box-shadow: var(--shadow-sm);"><div class="l">shadow-sm</div><div class="v">borders, hairline lift</div></div>
+    <div class="card" style="box-shadow: var(--shadow-soft);"><div class="l">shadow-soft</div><div class="v">cards · workhorse</div></div>
+    <div class="card" style="box-shadow: var(--shadow-pop);"><div class="l">shadow-pop</div><div class="v">popovers · dropdowns</div></div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,292 @@
+/* =============================================================
+   AI 파이프라인 콘솔 — Color & Type Foundations
+   Source: frontend/app/src/index.css (HSL token model, shadcn-style)
+   Scope:  warm parchment + deep ink, restrained dev-tool palette,
+           orange accent, per-capability hue strip.
+   ============================================================= */
+
+/* No webfont @import — we follow the OS system stack on purpose.
+   The product’s production CSS doesn’t pin a UI font either, so this
+   matches what users actually see on their own machine. */
+
+/* -------------------------------------------------------------
+   1. RAW HSL TOKENS  (light = default, dark = .dark scope)
+   ------------------------------------------------------------- */
+:root {
+  /* ----- Surface ----- */
+  --background: 36 25% 97%;          /* #FAF7F2 — warm parchment */
+  --foreground: 220 25% 10%;         /* #14181F — deep ink */
+  --card: 0 0% 100%;
+  --card-foreground: 220 25% 10%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 220 25% 10%;
+
+  /* ----- Brand ----- */
+  --primary: 220 60% 22%;            /* #16305A — navy ink */
+  --primary-foreground: 36 25% 97%;
+  --accent: 24 92% 52%;              /* #F36A12 — signal orange */
+  --accent-foreground: 0 0% 100%;
+
+  /* ----- Neutrals ----- */
+  --secondary: 36 18% 93%;
+  --secondary-foreground: 220 25% 14%;
+  --muted: 36 18% 94%;
+  --muted-foreground: 220 12% 42%;
+
+  /* ----- Semantic ----- */
+  --destructive: 0 70% 46%;
+  --destructive-foreground: 0 0% 100%;
+  --success: 152 56% 32%;
+  --success-foreground: 0 0% 100%;
+  --warning: 32 92% 46%;
+  --warning-foreground: 220 25% 10%;
+
+  /* ----- Lines & focus ----- */
+  --border: 32 16% 86%;
+  --input: 32 16% 86%;
+  --ring: 220 60% 22%;
+  --radius: 0.5rem;                   /* 8px — base radius */
+
+  /* ----- Per-capability accents (sidebar dots, ring on cards) ----- */
+  --cap-mock: 215 20% 50%;            /* slate     — MOCK */
+  --cap-rag: 200 75% 38%;             /* teal-blue — RAG */
+  --cap-ocr: 270 50% 48%;             /* violet    — OCR */
+  --cap-multimodal: 24 92% 52%;       /* orange    — MULTIMODAL */
+}
+
+.dark {
+  --background: 220 18% 7%;
+  --foreground: 36 18% 92%;
+  --card: 220 18% 10%;
+  --card-foreground: 36 18% 92%;
+  --popover: 220 18% 10%;
+  --popover-foreground: 36 18% 92%;
+
+  --primary: 36 80% 64%;              /* warm gold flips to lead */
+  --primary-foreground: 220 25% 10%;
+  --accent: 24 92% 58%;
+  --accent-foreground: 220 25% 10%;
+
+  --secondary: 220 16% 16%;
+  --secondary-foreground: 36 18% 92%;
+  --muted: 220 16% 14%;
+  --muted-foreground: 36 8% 60%;
+
+  --destructive: 0 68% 56%;
+  --destructive-foreground: 36 18% 92%;
+  --success: 152 56% 50%;
+  --success-foreground: 220 25% 10%;
+  --warning: 32 92% 60%;
+  --warning-foreground: 220 25% 10%;
+
+  --border: 220 14% 20%;
+  --input: 220 14% 20%;
+  --ring: 36 80% 64%;
+
+  --cap-mock: 215 14% 60%;
+  --cap-rag: 200 75% 60%;
+  --cap-ocr: 270 50% 64%;
+  --cap-multimodal: 24 92% 60%;
+}
+
+/* -------------------------------------------------------------
+   2. RGB / HEX-FACING ALIASES — for CSS that prefers full colors
+   ------------------------------------------------------------- */
+:root {
+  --c-bg: hsl(var(--background));
+  --c-fg: hsl(var(--foreground));
+  --c-card: hsl(var(--card));
+  --c-muted: hsl(var(--muted));
+  --c-muted-fg: hsl(var(--muted-foreground));
+  --c-border: hsl(var(--border));
+  --c-primary: hsl(var(--primary));
+  --c-accent: hsl(var(--accent));
+  --c-success: hsl(var(--success));
+  --c-warning: hsl(var(--warning));
+  --c-destructive: hsl(var(--destructive));
+
+  --c-cap-mock: hsl(var(--cap-mock));
+  --c-cap-rag: hsl(var(--cap-rag));
+  --c-cap-ocr: hsl(var(--cap-ocr));
+  --c-cap-multimodal: hsl(var(--cap-multimodal));
+}
+
+/* -------------------------------------------------------------
+   3. TYPOGRAPHY — system stack tuned for KR + EN + mono
+   ------------------------------------------------------------- */
+:root {
+  /* OS-native system stack — no webfont. Latin via system-ui /
+     -apple-system / Segoe UI; Hangul falls through to Apple SD
+     Gothic Neo on macOS, Malgun Gothic on Windows, Noto Sans CJK
+     on Linux. The mono stack is whatever the OS ships. */
+  --font-sans:
+    system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans CJK KR",
+    "Helvetica Neue", Arial, sans-serif;
+
+  --font-mono:
+    ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+    "Liberation Mono", monospace;
+
+  /* Display sizes — minimal scale; the app is dense. */
+  --fs-xxs: 9.5px;     /* uppercase microlabels (timeline status) */
+  --fs-xs: 10.5px;     /* mono captions, eyebrow tags */
+  --fs-sm: 11.5px;     /* tab labels, status pill */
+  --fs-md: 12.5px;     /* body copy, list items */
+  --fs-base: 14px;     /* root */
+  --fs-lg: 13.5px;     /* header product mark */
+  --fs-xl: 16px;
+  --fs-2xl: 20px;
+  --fs-3xl: 24px;
+
+  /* Tracking — letter-spacing is a strong signal in this UI. */
+  --tracking-tight: -0.005em;       /* body */
+  --tracking-snug: -0.01em;         /* product mark */
+  --tracking-eyebrow: 0.14em;       /* uppercase mono labels */
+  --tracking-tag: 0.16em;           /* tighter eyebrow / sidebar */
+  --tracking-wide: 0.18em;          /* attempt pill, slim eyebrow */
+
+  --leading-tight: 1.25;
+  --leading-snug: 1.4;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.65;
+}
+
+/* -------------------------------------------------------------
+   4. SEMANTIC TYPE STYLES
+   ------------------------------------------------------------- */
+.t-product-mark {
+  font-family: var(--font-sans);
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: var(--tracking-snug);
+  line-height: var(--leading-tight);
+  color: hsl(var(--foreground));
+}
+
+.t-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-eyebrow);
+  color: hsl(var(--muted-foreground));
+}
+
+.t-section-label {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-tag);
+  color: hsl(var(--muted-foreground));
+}
+
+.t-body {
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  line-height: var(--leading-snug);
+  letter-spacing: var(--tracking-tight);
+  color: hsl(var(--foreground));
+}
+
+.t-body-muted {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  line-height: var(--leading-relaxed);
+  color: hsl(var(--muted-foreground));
+}
+
+.t-mono {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-feature-settings: "calt" 0;
+  font-variant-ligatures: none;
+  color: hsl(var(--foreground));
+}
+
+.t-mono-tag {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-tag);
+  color: hsl(var(--muted-foreground) / 0.8);
+}
+
+.t-numeric {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* -------------------------------------------------------------
+   5. SHADOWS, RADII, SPACING — used across cards & popovers
+   ------------------------------------------------------------- */
+:root {
+  --shadow-soft:
+    0 1px 0 hsl(220 25% 10% / 0.02),
+    0 4px 14px -6px hsl(220 25% 10% / 0.06),
+    0 2px 4px -2px hsl(220 25% 10% / 0.04);
+
+  --shadow-sm:
+    0 1px 2px hsl(220 25% 10% / 0.06);
+
+  --shadow-pop:
+    0 8px 24px -8px hsl(220 25% 10% / 0.18),
+    0 2px 6px -2px hsl(220 25% 10% / 0.08);
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;        /* default --radius */
+  --radius-xl: 12px;
+  --radius-pill: 999px;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+}
+
+/* -------------------------------------------------------------
+   6. SIGNATURE BACKGROUND — used on app shell only
+   ------------------------------------------------------------- */
+.canvas-bg {
+  background:
+    radial-gradient(1200px 600px at 0% -10%, hsl(var(--primary) / 0.04), transparent 60%),
+    radial-gradient(900px 500px at 100% 0%,  hsl(var(--accent)  / 0.045), transparent 55%);
+}
+
+/* -------------------------------------------------------------
+   7. ANIMATION
+   ------------------------------------------------------------- */
+@keyframes pulse-soft {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.55; }
+}
+.animate-pulse-soft { animation: pulse-soft 1.6s ease-in-out infinite; }
+
+/* -------------------------------------------------------------
+   8. BASE
+   ------------------------------------------------------------- */
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+body {
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-family: var(--font-sans);
+  font-size: var(--fs-base);
+  line-height: var(--leading-normal);
+  letter-spacing: var(--tracking-tight);
+  font-feature-settings: "rlig" 1, "calt" 1, "ss01" 1, "cv11" 1;
+}
+::selection {
+  background: hsl(var(--primary) / 0.18);
+  color: hsl(var(--primary));
+}
