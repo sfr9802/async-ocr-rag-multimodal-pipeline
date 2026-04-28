@@ -2,122 +2,89 @@
 
 비동기 AI 처리 플랫폼.
 
-## 벤치마크 (현재 브랜치 기준 측정값)
+## 벤치마크
 
-Phase-0 RAG 베이스라인은 2026-04-23에 bge-m3 + FAISS IndexFlatIP 조합으로
-커밋된 픽스처에 대해 측정했습니다. 리포트는
-[`ai-worker/eval/reports/baseline-phase0.json`](ai-worker/eval/reports/baseline-phase0.json)
-(kr_sample) 와 `baseline-phase0-anime.json` 에 있습니다.
+`anime_silver_200` (1,764 docs, 200 deterministic synthetic queries) +
+커밋된 fixture 두 개로 측정. 환경: RTX 5080 (16 GB), bge-m3 임베더,
+FAISS `IndexFlatIP`. 상세 리포트는
+[`ai-worker/eval/reports/`](ai-worker/eval/reports/) 아래 — phase별
+하위 디렉토리에 JSON + Markdown 모두 커밋되어 있음.
 
-| 데이터셋             | 능력(Capability) | hit@5 | recall@5 | MRR    | dup_rate | topk_gap | CER (OCR) | p50 / p95 retrieval ms |
-|----------------------|------------------|-------|----------|--------|----------|----------|-----------|------------------------|
-| anime (en, 8 docs)   | RAG              | 1.000 | 1.000    | 1.000  | 0.433    | 0.236    | n/a       | 8.6 / 24.9             |
-| kr_sample (kr, 10)   | RAG              | 1.000 | 1.000    | 1.000  | 0.340    | 0.233    | n/a       | 8.7 / 27.4             |
-| ocr_sample (en)      | OCR              | n/a   | n/a      | n/a    | n/a      | n/a      | not measured | not measured        |
-| ocr_sample (kr)      | OCR              | n/a   | n/a      | n/a    | n/a      | n/a      | not measured | not measured        |
+**Phase 0 — fixture baseline** (`baseline-phase0*.json`)
 
-> bge-m3 임베더, FAISS IndexFlatIP, ExtractiveGenerator,
-> CUDA 백엔드 sentence-transformers 조합으로 측정. 두 픽스처 모두 hit@5 /
-> recall@5 / MRR이 만점이라 — 이 작은 코퍼스 위에서 retriever는 더 끌어올릴
-> 여지가 없습니다. 다음 단계에서 움직일 신호는 **dup_rate** (reranker 도입 시
-> 떨어져야 함), **topk_gap** (clean hit에서 더 벌어져야 함), 그리고
-> **p95 retrieval** (agent/배칭 도입 후에도 안정적이어야 함) 입니다.
->
-> 재현 (ragmeta 없이, 모델이 캐시된 개발 머신 기준):
-> `python -m eval.run_eval rag --dataset eval/datasets/rag_sample_kr.jsonl --offline-corpus fixtures/kr_sample.jsonl --out-json eval/reports/baseline-phase0.json`.
->
-> 라이브 프로덕션 경로 (`build_rag_index` → bge-m3 → ragmeta →
-> run_eval) 는 그대로 동작하지만, 이 환경에는 Tesseract 와 eng/kor
-> 언어팩이 설치되어 있지 않아 OCR 행은 "not measured" 로 남아 있습니다.
+| dataset            | hit@5 | recall@5 | MRR  | dup_rate | topk_gap | p50/p95 ret (ms) |
+|--------------------|------:|---------:|-----:|---------:|---------:|-----------------:|
+| anime (en, 8 docs) | 1.000 | 1.000    | 1.000 | 0.433   | 0.236    | 8.6 / 24.9       |
+| kr_sample (kr, 10) | 1.000 | 1.000    | 1.000 | 0.340   | 0.233    | 8.7 / 27.4       |
 
-- **Phase 1**: 비동기 스켈레톤 (job 생명주기, artifact 모델, claim/callback,
-  Redis 디스패치, 로컬 파일시스템 스토리지, `MOCK` capability).
-- **Phase 1.1**: 타깃 스택 (Spring Boot 4.0.3, Java 21, PostgreSQL 18,
-  Python 3.12, Redis) 으로 안정화하고 end-to-end 검증.
-- **Phase 2**: 진짜 **text-RAG capability** 를 추가 — FAISS 벡터 인덱스,
-  sentence-transformers 임베딩, extractive grounded generation, RAG
-  메타데이터를 PostgreSQL의 별도 `ragmeta` 스키마에 저장 (MongoDB
-  사용 안 함). `MOCK` capability 도 그대로 유지.
-- **Phase 1B (corpus preprocess)**: namu-wiki anime 코퍼스에 prefix /
-  inline-edit-marker strip 적용해 평균 chunk 토큰 수 축소.
-- **Phase 1C (token-aware chunker)**: 1024-token hard-cap chunker 도입
-  → >1024 token chunk 0개, avg context token 531 → 293.
-- **Phase 2A (cross-encoder reranker)**: B2 corpus 위에 bge-reranker-v2-m3
-  cross-encoder를 후처리로 추가 — dense top-N candidate를 재정렬해 hit@1 /
-  MRR / NDCG 모두 Phase 0/B1/B2 dense 대비 개선. production default는
-  여전히 `rag_reranker="off"` (NoOp) 으로 두고, eval CLI 에서만 활성화
-  (`retrieval-rerank` 서브커맨드).
+OCR 행은 이 환경에 Tesseract / 언어팩이 없어 not measured.
 
-실제 OCR, 파일/PDF 파싱, multimodal capability는 이후 phase 에서 도입됩니다.
+**Phase 2A — silver-200 cross-encoder reranker progression**
+(`phase2a-reranker/`)
 
-### Retrieval quality progression — silver-200 (namu-wiki anime, 1,764 docs)
+| run                                 | hit@1 | hit@3 | hit@5 | MRR@10 | NDCG@10 | rerank p95 ms |
+|-------------------------------------|------:|------:|------:|-------:|--------:|--------------:|
+| B1 dense (combined-old)             | 0.560 | 0.670 | 0.685 | 0.617  | 0.643   | –             |
+| B2 dense (token-aware-v1)           | 0.540 | 0.665 | 0.680 | 0.604  | 0.631   | –             |
+| **B2 + rerank top20**               | 0.605 | 0.680 | 0.700 | 0.653  | 0.675   | 706           |
+| **B2 + rerank top50**               | **0.615** | **0.700** | **0.715** | **0.666** | **0.689** | 1840 |
 
-200개의 결정적 합성 query 셋 (`anime_silver_200.jsonl`) 에 대해 측정.
-B1 (combined-old) 과 B2 (combined-token-aware-v1) 는 서로 다른 chunk
-granularity 를 갖는 corpus 이므로 candidate population 자체가 다름 —
-hit@k 차이는 chunker 효과 + reranker 효과가 섞여 있음을 유의.
+Reranker: `BAAI/bge-reranker-v2-m3`, batch=16, max_len=512, final_top_k=10.
+B1 ↔ B2는 chunk granularity가 달라 hit@k 차이는 chunker + reranker 합산
+효과로 봐야 함. Production default는 `rag_reranker="off"`; reranker는
+eval CLI(`retrieval-rerank`)에서만 활성화.
 
-| run                                 | hit@1 | hit@3 | hit@5 | MRR@10 | NDCG@10 | avg ctx tokens | rerank p95 (ms) |
-|-------------------------------------|------:|------:|------:|-------:|--------:|---------------:|----------------:|
-| B1 dense (combined-old chunker)     | 0.5600 | 0.6700 | 0.6850 | 0.6167 | 0.6428 |        531.05 |               – |
-| B2 dense (token-aware-v1 chunker)   | 0.5400 | 0.6650 | 0.6800 | 0.6044 | 0.6314 |        292.77 |               – |
-| **B2 + cross-encoder rerank top20** | 0.6050 | 0.6800 | 0.7000 | 0.6526 | 0.6748 |        294.20 |             706 |
-| **B2 + cross-encoder rerank top50** | **0.6150** | **0.7000** | **0.7150** | **0.6657** | **0.6885** | 295.03 |       1840 |
-
-> Reranker: `BAAI/bge-reranker-v2-m3` (multilingual M3 cross-encoder),
-> batch_size=16, max_length=512. dense_top_n 후보를 final_top_k=10 으로
-> 재정렬. RTX 5080 (16 GB) GPU 기준 측정.
-
-**Candidate-recall ceiling** (B2 dense top-50 으로 측정한 reranker 성능
-상한):
+**Candidate-recall ceiling (B2 dense top-50)** — reranker는 candidate
+순서만 바꾸므로 recall@N이 hit@k 상한.
 
 | metric | value |
-|---|---:|
-| hit@10 | 0.7150 |
-| hit@20 | 0.7700 |
-| hit@50 | 0.8000 |
+|--------|------:|
+| hit@10 | 0.715 |
+| hit@20 | 0.770 |
+| hit@50 | 0.800 |
 
-> reranker 는 candidate set 안의 순서만 바꿈 — candidate recall@N 이
-> reranker 의 hit@k 상한. dense_top_n 을 키우면 latency / GPU 메모리
-> 비용이 선형보다 빠르게 증가하므로, 회복 가능한 query 수와 비교해서
-> 결정해야 함.
+**Phase 2A-L — selected_baseline (top10)** (`legacy-baseline-final/`):
+hit@1=0.620, hit@3=0.675, hit@5=0.705, MRR@10=0.654, total query p95
+350 ms. Agent loop legacy backend는 이 manifest를 reference로 사용.
 
-Phase 2A 산출물 (Markdown / JSON 모두 커밋됨):
-
-- [`ai-worker/eval/reports/phase2a-reranker/candidate-recall-b2.md`](ai-worker/eval/reports/phase2a-reranker/candidate-recall-b2.md)
-  — B2 dense top-50 hit@1/3/5/10/20/50
-- [`ai-worker/eval/reports/phase2a-reranker/reranker-comparison.md`](ai-worker/eval/reports/phase2a-reranker/reranker-comparison.md)
-  — 5-slice 비교 (B1 dense / B2 dense / candidate-recall / B2 rerank top20 / B2 rerank top50)
-- [`ai-worker/eval/reports/phase2a-reranker/reranker-failure-analysis.md`](ai-worker/eval/reports/phase2a-reranker/reranker-failure-analysis.md)
-  — dense ↔ rerank cross-tab: rescued 25 / regressed 12 / both-miss 67 / both-hit 96, 각 진단 버킷에 dense top-5 + rerank top-5 미리보기 포함.
-
-재현:
+**재현**
 
 ```bash
 cd ai-worker
 
-# 1. Candidate-recall (B2 dense top-50)
+# Phase 2A — candidate-recall + rerank sweep
 python -m eval.run_eval retrieval \
     --corpus  eval/corpora/anime_namu_v3_token_chunked/corpus.combined.token-aware-v1.jsonl \
     --dataset eval/eval_queries/anime_silver_200.jsonl \
     --top-k 50 --extra-hit-k 10 --extra-hit-k 20 --extra-hit-k 50 \
     --out-dir eval/reports/phase2a-reranker/candidate-recall-b2
 
-# 2. B2 + rerank top20 / top50
-python -m eval.run_eval retrieval-rerank \
-    --corpus  eval/corpora/anime_namu_v3_token_chunked/corpus.combined.token-aware-v1.jsonl \
-    --dataset eval/eval_queries/anime_silver_200.jsonl \
-    --dense-top-n 20 --final-top-k 10 \
-    --reranker-model BAAI/bge-reranker-v2-m3 --reranker-batch-size 16 \
-    --out-dir eval/reports/retrieval-silver200-combined-token-aware-v1-rerank-top20
+for N in 20 50; do
+  python -m eval.run_eval retrieval-rerank \
+      --corpus  eval/corpora/anime_namu_v3_token_chunked/corpus.combined.token-aware-v1.jsonl \
+      --dataset eval/eval_queries/anime_silver_200.jsonl \
+      --dense-top-n $N --final-top-k 10 \
+      --reranker-model BAAI/bge-reranker-v2-m3 --reranker-batch-size 16 \
+      --out-dir eval/reports/retrieval-silver200-combined-token-aware-v1-rerank-top$N
+done
 
-python -m eval.run_eval retrieval-rerank \
-    --corpus  eval/corpora/anime_namu_v3_token_chunked/corpus.combined.token-aware-v1.jsonl \
-    --dataset eval/eval_queries/anime_silver_200.jsonl \
-    --dense-top-n 50 --final-top-k 10 \
-    --reranker-model BAAI/bge-reranker-v2-m3 --reranker-batch-size 16 \
-    --out-dir eval/reports/retrieval-silver200-combined-token-aware-v1-rerank-top50
+# Phase 0 — fixture baseline (ragmeta 없이)
+python -m eval.run_eval rag \
+    --dataset eval/datasets/rag_sample_kr.jsonl \
+    --offline-corpus fixtures/kr_sample.jsonl \
+    --out-json eval/reports/baseline-phase0.json
 ```
+
+## Phase timeline
+
+- **1** — 비동기 스켈레톤 (job/artifact, claim/callback, Redis 디스패치, MOCK).
+- **1.1** — 타깃 스택(Spring Boot 4.0.3 / Java 21 / PG 18 / Py 3.12 / Redis) 안정화 + E2E 검증.
+- **2** — text-RAG capability (FAISS + sentence-transformers + extractive generator + ragmeta 스키마).
+- **1B** — namu-wiki 코퍼스 prefix / inline-edit-marker strip.
+- **1C** — token-aware chunker (1024-token hard cap, avg ctx tokens 531 → 293).
+- **2A** — bge-reranker-v2-m3 cross-encoder 후처리, eval CLI 전용. Production default는 그대로 NoOp.
+
+OCR / 파일·PDF 파싱 / multimodal은 이후 phase에서.
 
 ## 스택
 
@@ -178,156 +145,54 @@ python -m eval.run_eval retrieval-rerank \
   `ai-worker/app/capabilities/mock_processor.py` 에 살고, `rag/` ,
   `ocr/`, `multimodal/` 은 phase 2+ 에서 켜질 빈 패키지입니다.
 
-## 두 가지 데이터베이스 실행 모드
-
-Phase 1.1 은 Postgres 를 띄우는 두 가지 방법을 지원합니다. 정확히 하나만
-고르세요.
-
-- **Mode A (기본): 기존 Postgres 컨테이너 재사용** (예: RIA 같은 다른
-  프로젝트에서 이미 띄워둔 것). 그 안에 전용 `aipipeline` 데이터베이스와
-  유저를 만들어 다른 무엇과도 충돌하지 않게 합니다. 이 compose 는
-  redis 만 띄웁니다.
-- **Mode B: 독립 인프라 compose**. 자체 `postgres:18` 을 호스트 포트
-  `5433` 으로 띄워서 `5432` 위의 어떤 것과도 충돌하지 않습니다. core-api는
-  `independent` Spring 프로파일로 실행해야 합니다.
-
-정확한 부트스트랩 명령, 트러블슈팅 목록, Windows 전용 팁은
-[`docs/local-run.md`](docs/local-run.md) 참조.
-
 ## 실행
 
-짧은 버전 (Mode A. `:5432` 에 이미 Postgres 컨테이너가 있고, 문서대로
-`aipipeline` DB + 유저가 부트스트랩되어 있다고 가정):
+Mode A (기본 — 기존 Postgres `:5432` 재사용, `aipipeline` DB/유저 부트스트랩
+완료 가정). Mode B (독립 `postgres:18` on `:5433`, core-api는
+`independent` 프로파일) 는 [`docs/local-run.md`](docs/local-run.md) 참조.
 
 ```bash
-docker compose up -d redis                                                  # 터미널 1
-(cd core-api && mvn spring-boot:run)                                        # 터미널 2
-(cd ai-worker && pip install -r requirements.txt && python -m app.main)     # 터미널 3
-python scripts/e2e_smoke.py                                                 # 터미널 4
+docker compose up -d redis                                              # 1
+(cd core-api && mvn spring-boot:run)                                    # 2
+(cd ai-worker && pip install -r requirements.txt && python -m app.main) # 3
+python scripts/e2e_smoke.py                                             # 4
 ```
 
-### 내부 엔드포인트 인증
-
-모든 `/api/internal/**` 엔드포인트 (claim, callback, artifact 업로드) 는
-공유 시크릿 헤더 (`X-Internal-Secret`) 로 게이팅됩니다. core-api 와
-worker 가 사용하는 환경변수 이름은 **다르지만** 실제 시크릿 값은
-**반드시 같아야** 합니다:
+**내부 엔드포인트 인증** — `/api/internal/**` 는 `X-Internal-Secret` 으로
+게이팅. 두 서비스 시크릿 값은 같아야 함; 둘 다 미설정이면 core-api는
+WARN 후 패스스루(개발 편의).
 
 | 서비스    | 환경변수                            |
 |-----------|-------------------------------------|
 | core-api  | `AIPIPELINE_INTERNAL_SECRET`        |
 | ai-worker | `AIPIPELINE_WORKER_INTERNAL_SECRET` |
 
-둘 다 미설정이면 core-api 는 **개발용 패스스루 모드**로 동작합니다
-(시작 시 WARN 한 번 로그가 찍히고, 모든 internal 요청이 헤더 없이
-허용됨). 로컬 개발과 CI 의 마찰을 줄이기 위함입니다.
-
-```bash
-# 인증을 강제하는 프로덕션 스타일 실행:
-export AIPIPELINE_INTERNAL_SECRET=change-me-in-production
-export AIPIPELINE_WORKER_INTERNAL_SECRET=change-me-in-production
-(cd core-api && mvn spring-boot:run)      # 터미널 2
-(cd ai-worker && python -m app.main)      # 터미널 3
-```
-
-### S3 / MinIO 스토리지 백엔드
-
-기본적으로 artifact 는 로컬 파일시스템에 저장됩니다 (`backend=local`).
-대신 MinIO (S3 호환) 를 쓰려면:
-
-```bash
-# 1. MinIO 시작 + 버킷 자동 생성
-docker compose --profile minio up -d minio minio-bootstrap
-
-# 2. 환경변수 설정 (또는 .env 에 추가)
-export AIPIPELINE_STORAGE_BACKEND=s3
-export AIPIPELINE_STORAGE_S3_ENDPOINT=http://localhost:9000
-export AIPIPELINE_STORAGE_S3_BUCKET=aipipeline-artifacts
-export AIPIPELINE_WORKER_S3_ENDPOINT=http://localhost:9000
-export AIPIPELINE_WORKER_S3_ACCESS_KEY=aipipeline
-export AIPIPELINE_WORKER_S3_SECRET_KEY=aipipeline_secret
-
-# 3. core-api 와 worker 를 평소대로 시작
-```
-
-MinIO 콘솔은 `http://localhost:9001` 에서 접근 가능 (user:
-`aipipeline`, password: `aipipeline_secret`).
-
-기대되는 스모크 출력:
-```
-[1/4] submitting text job ...
-...
-[4/4] downloading output artifact content ...
-     parsed JSON keys = ['jobId', 'capability', ...]
-OK - pipeline survived the round trip.
-```
+**S3 / MinIO 스토리지** — 기본 `backend=local`. MinIO로 전환하려면
+`docker compose --profile minio up -d minio minio-bootstrap` 후
+`AIPIPELINE_STORAGE_BACKEND=s3` + `AIPIPELINE_STORAGE_S3_ENDPOINT` /
+`AIPIPELINE_WORKER_S3_*` 설정. 콘솔 `http://localhost:9001`
+(`aipipeline` / `aipipeline_secret`). 자세한 env 목록은 `.env.example`.
 
 ## 원클릭 데모
 
-샘플 PDF 를 업로드하고, 전체 MULTIMODAL 파이프라인을 돌리고, 결과를
-보기좋게 출력해주는 더 풍부한 데모 스크립트:
+`scripts/demo.py` 가 샘플 PDF를 만들어 MULTIMODAL 파이프라인을 풀로
+돌리고 결과를 출력합니다. `--self-test` 로 백엔드 없이 PDF 생성만
+검증 가능.
 
 ```bash
-pip install reportlab                # 1회: PDF 생성용
-pip install rich                     # 선택: 컬러 출력
-
+pip install reportlab rich           # 1회 — rich 는 선택
 python scripts/demo.py               # 기본: MULTIMODAL
-python scripts/demo.py --capability OCR
-python scripts/demo.py --question "What metrics are shown?"
-```
-
-스크립트는 첫 실행 시 `scripts/assets/` 아래에 2페이지 샘플 PDF 를 자동
-생성합니다 (gitignore 됨). 백엔드 없이 import 와 PDF 생성만 검증하려면
-`--self-test` 옵션을 사용하세요:
-
-```bash
+python scripts/demo.py --capability OCR --question "What metrics are shown?"
 python scripts/demo.py --self-test
 ```
 
-샘플 출력 (`rich` 사용 시):
-```
-[1/5] health check (http://localhost:8080) ...
-[2/5] preparing sample PDF ...
-  .../scripts/assets/demo_sample.pdf (12,345 bytes)
-[3/5] submitting MULTIMODAL job ...
-  jobId = abc-123  status = QUEUED
-[4/5] polling for completion ...
-  ... RUNNING
-  SUCCEEDED
-[5/5] fetching results ...
-+----- Job Summary -----+
-| Job ID: abc-123       |
-| Capability: MULTIMODAL|
-| Status: SUCCEEDED     |
-+-----------------------+
---- FINAL_RESPONSE ---
-(grounded markdown answer)
-Demo complete.
-```
-
-## 이 머신에서 검증됨 (phase 2)
-
-Phase 1.1 결과는 그대로 유효. phase 2 신규 검증:
-
-- **Flyway V2** 마이그레이션: `Successfully applied 1 migration to schema "aipipeline", now at version v2`, `ragmeta` 스키마가 pipeline 테이블 옆에 생성됨.
-- **RAG 포함 Worker 시작**: cuda:0 에서 FAISS 인덱스 + sentence-transformers 모델 로드 후 `Active capabilities: ['MOCK', 'RAG']`.
-- **인덱스 빌드**: `scripts/build_rag_index.py --fixture` 가 8문서 anime 픽스처를 → 24 chunks → 384 차원 벡터 → FAISS `IndexFlatIP` + ragmeta 행으로 10.4초 만에 적재.
-- **RAG query 1** ("anime about an old fisherman feeding stray harbor cats") → 최상위 hit `anime-005#overview` score **0.845**, 정답 ("The Harbor Cats"), grounded citation 5 건.
-- **RAG query 2** ("anime about weather researchers stranded in a mountain observatory during a long storm") → 최상위 hit `anime-004#plot` score **0.515**, 정답 ("Signal Fires").
-- **MOCK 회귀**: RAG 와 함께 여전히 성공, FINAL_RESPONSE 변경 없음.
-- **Artifact 모양**: 각 RAG job 은 INPUT_TEXT 1건 + RETRIEVAL_RESULT 1건 + FINAL_RESPONSE 1건 정확히 생성 (중복 없음).
-- **단위 테스트**: `10 passed in 0.26s` (chunker 엣지 케이스 + mock capability + 해싱 폴백 임베더로 풀 RAG capability).
-
 ## 다음 phase
 
-- **Phase 2.1 (OCR + 파일 입력)** — OCR capability 추가, `INPUT_FILE`
-  경로를 확장하여 OCR → `OCR_TEXT` → chunk → 인덱스로 흐르게 함. phase 2의
-  chunker, embedding provider, generation provider, retriever 는 모두
-  재작성 없이 확장 가능 — OCR 은 `OCR_TEXT` artifact 를 만들어내는 새
-  capability 이고, 그 결과를 RAG capability 가 다시 소비할 수 있습니다.
-- **Phase 3+** — multimodal capability, 진짜 LLM generation provider,
-  MinIO/S3 스토리지 어댑터, retry 오케스트레이션, Kubernetes 매니페스트,
-  capability 별 Redis lane, 진짜 frontend.
+- **2.1 (OCR + 파일 입력)** — OCR capability + `INPUT_FILE` →
+  `OCR_TEXT` → RAG 재소비 흐름.
+- **3+** — multimodal capability, real LLM generation, MinIO/S3 어댑터,
+  retry 오케스트레이션, K8s 매니페스트, capability별 Redis lane,
+  실 frontend.
 
 ## 문서
 
