@@ -1,0 +1,303 @@
+{
+  "schema": "legacy-baseline-final.manifest.v1",
+  "commitHash": "766f05a830052be4c4266d195d95a3f368bf5a32",
+  "workingTreeDirty": true,
+  "evaluatedAt": "2026-04-28T22:33:42",
+  "manifestGeneratedAt": "2026-04-28T15:01:01+00:00",
+  "sourceSweepDir": "eval/reports/phase2a-latency",
+  "querySetPath": "eval\\eval_queries\\anime_silver_200.jsonl",
+  "queryCount": 200,
+  "corpusInfo": {
+    "path": "eval\\corpora\\anime_namu_v3_token_chunked\\corpus.combined.token-aware-v1.jsonl",
+    "documentCount": 1764,
+    "chunkCount": 47634,
+    "indexVersion": "offline-1777380195",
+    "dimension": 1024
+  },
+  "embeddingModel": "BAAI/bge-m3",
+  "retrieverConfig": {
+    "embeddingModel": "BAAI/bge-m3",
+    "embeddingMaxSeqLength": 1024,
+    "embeddingBatchSize": 32,
+    "indexBackend": "faiss",
+    "indexDir": "../rag-data",
+    "denseTopN": 10,
+    "candidateK": 10,
+    "finalTopK": 10,
+    "useMmr": false,
+    "mmrLambda": null
+  },
+  "rerankerConfig": {
+    "name": "cross_encoder",
+    "model": "BAAI/bge-reranker-v2-m3",
+    "batchSize": 16,
+    "maxLength": 512,
+    "textMaxChars": 800,
+    "device": null
+  },
+  "selectedMode": {
+    "tier": "balanced",
+    "label": "top10",
+    "denseTopN": 10,
+    "finalTopK": 10
+  },
+  "metricsSummary": {
+    "selectedTier": "balanced",
+    "tiers": {
+      "fast": {
+        "label": "top5",
+        "hitAt1": 0.615,
+        "hitAt3": 0.665,
+        "hitAt5": 0.68,
+        "mrrAt10": 0.641,
+        "ndcgAt10": 0.6508
+      },
+      "balanced": {
+        "label": "top10",
+        "hitAt1": 0.62,
+        "hitAt3": 0.675,
+        "hitAt5": 0.705,
+        "mrrAt10": 0.6538,
+        "ndcgAt10": 0.6688
+      },
+      "quality": {
+        "label": "top15",
+        "hitAt1": 0.625,
+        "hitAt3": 0.685,
+        "hitAt5": 0.705,
+        "mrrAt10": 0.6638,
+        "ndcgAt10": 0.6833
+      }
+    },
+    "sweepEntries": [
+      {
+        "label": "top5",
+        "denseTopN": 5,
+        "finalTopK": 5,
+        "hitAt1": 0.615,
+        "hitAt3": 0.665,
+        "hitAt5": 0.68,
+        "mrrAt10": 0.641,
+        "ndcgAt10": 0.6508,
+        "rerankP95Ms": 164.412,
+        "totalQueryP95Ms": 179.243,
+        "denseRetrievalP95Ms": 15.969,
+        "candidateRecall": {
+          "10": 0.715,
+          "20": 0.77,
+          "50": 0.8
+        }
+      },
+      {
+        "label": "top10",
+        "denseTopN": 10,
+        "finalTopK": 10,
+        "hitAt1": 0.62,
+        "hitAt3": 0.675,
+        "hitAt5": 0.705,
+        "mrrAt10": 0.6538,
+        "ndcgAt10": 0.6688,
+        "rerankP95Ms": 334.854,
+        "totalQueryP95Ms": 350.517,
+        "denseRetrievalP95Ms": 16.682,
+        "candidateRecall": {
+          "10": 0.715,
+          "20": 0.77,
+          "50": 0.8
+        }
+      },
+      {
+        "label": "top15",
+        "denseTopN": 15,
+        "finalTopK": 10,
+        "hitAt1": 0.625,
+        "hitAt3": 0.685,
+        "hitAt5": 0.705,
+        "mrrAt10": 0.6638,
+        "ndcgAt10": 0.6833,
+        "rerankP95Ms": 535.418,
+        "totalQueryP95Ms": 551.767,
+        "denseRetrievalP95Ms": 20.957,
+        "candidateRecall": {
+          "10": 0.715,
+          "20": 0.77,
+          "50": 0.8
+        }
+      },
+      {
+        "label": "top20",
+        "denseTopN": 20,
+        "finalTopK": 10,
+        "hitAt1": 0.605,
+        "hitAt3": 0.68,
+        "hitAt5": 0.7,
+        "mrrAt10": 0.6526,
+        "ndcgAt10": 0.6748,
+        "rerankP95Ms": 710.898,
+        "totalQueryP95Ms": 731.182,
+        "denseRetrievalP95Ms": 19.507,
+        "candidateRecall": {
+          "10": 0.715,
+          "20": 0.77,
+          "50": 0.8
+        }
+      },
+      {
+        "label": "top30",
+        "denseTopN": 30,
+        "finalTopK": 10,
+        "hitAt1": 0.61,
+        "hitAt3": 0.7,
+        "hitAt5": 0.72,
+        "mrrAt10": 0.6649,
+        "ndcgAt10": 0.6891,
+        "rerankP95Ms": 1082.824,
+        "totalQueryP95Ms": 1099.363,
+        "denseRetrievalP95Ms": 18.914,
+        "candidateRecall": {
+          "10": 0.715,
+          "20": 0.77,
+          "50": 0.8
+        }
+      },
+      {
+        "label": "top50",
+        "denseTopN": 50,
+        "finalTopK": 10,
+        "hitAt1": 0.615,
+        "hitAt3": 0.7,
+        "hitAt5": 0.715,
+        "mrrAt10": 0.6657,
+        "ndcgAt10": 0.6885,
+        "rerankP95Ms": 1781.21,
+        "totalQueryP95Ms": 1796.765,
+        "denseRetrievalP95Ms": 17.463,
+        "candidateRecall": {
+          "10": 0.715,
+          "20": 0.77,
+          "50": 0.8
+        }
+      }
+    ]
+  },
+  "latencySummary": {
+    "selectedTier": "balanced",
+    "rerankP95Ms": 334.854,
+    "rerankP99Ms": 335.39,
+    "totalQueryP95Ms": 350.517,
+    "totalQueryP99Ms": 354.54,
+    "stagesAtSelected": {
+      "dense_retrieval_ms": {
+        "avgMs": 15.136,
+        "p50Ms": 14.992,
+        "p90Ms": 15.831,
+        "p95Ms": 16.682,
+        "p99Ms": 18.64,
+        "maxMs": 22.231,
+        "count": 200
+      },
+      "total_rerank_ms": {
+        "avgMs": 328.84,
+        "p50Ms": 330.603,
+        "p90Ms": 331.608,
+        "p95Ms": 331.999,
+        "p99Ms": 332.524,
+        "maxMs": 332.787,
+        "count": 200
+      },
+      "total_query_ms": {
+        "avgMs": 346.729,
+        "p50Ms": 348.339,
+        "p90Ms": 350.131,
+        "p95Ms": 350.517,
+        "p99Ms": 354.54,
+        "maxMs": 355.033,
+        "count": 200
+      },
+      "tokenize_ms": {
+        "avgMs": 2.454,
+        "p50Ms": 2.437,
+        "p90Ms": 2.684,
+        "p95Ms": 2.756,
+        "p99Ms": 2.951,
+        "maxMs": 3.122,
+        "count": 200
+      },
+      "forward_ms": {
+        "avgMs": 326.354,
+        "p50Ms": 328.05,
+        "p90Ms": 329.053,
+        "p95Ms": 329.513,
+        "p99Ms": 330.075,
+        "maxMs": 330.207,
+        "count": 200
+      }
+    },
+    "frontier": [
+      {
+        "label": "top5",
+        "denseTopN": 5,
+        "metric": 0.615,
+        "latencyMs": 164.412,
+        "onFrontier": true,
+        "dominatedBy": null
+      },
+      {
+        "label": "top10",
+        "denseTopN": 10,
+        "metric": 0.62,
+        "latencyMs": 334.854,
+        "onFrontier": true,
+        "dominatedBy": null
+      },
+      {
+        "label": "top15",
+        "denseTopN": 15,
+        "metric": 0.625,
+        "latencyMs": 535.418,
+        "onFrontier": true,
+        "dominatedBy": null
+      },
+      {
+        "label": "top20",
+        "denseTopN": 20,
+        "metric": 0.605,
+        "latencyMs": 710.898,
+        "onFrontier": false,
+        "dominatedBy": "top5 (dense_top_n=5)"
+      },
+      {
+        "label": "top30",
+        "denseTopN": 30,
+        "metric": 0.61,
+        "latencyMs": 1082.824,
+        "onFrontier": false,
+        "dominatedBy": "top5 (dense_top_n=5)"
+      },
+      {
+        "label": "top50",
+        "denseTopN": 50,
+        "metric": 0.615,
+        "latencyMs": 1781.21,
+        "onFrontier": false,
+        "dominatedBy": "top5 (dense_top_n=5)"
+      }
+    ]
+  },
+  "agentLoop": {
+    "backend": "legacy",
+    "critic": "rule",
+    "rewriter": "noop",
+    "parser": "regex",
+    "maxIter": 3,
+    "maxTotalMs": 15000,
+    "maxLlmTokens": 4000,
+    "minStopConfidence": 0.75
+  },
+  "notes": [
+    "This baseline is the locked LangGraph A/B reference. Do not promote any other config above it without re-running the sweep and refreshing this manifest.",
+    "agent_loop_backend stays at 'legacy' default; the LangGraph backend is exercised only via the offline A/B harness (scripts/eval_agent_loop_ab.py).",
+    "selected_config.json carries the full reproduction command. Any operator can re-run the eval from that file alone.",
+    "Production runtime defaults (rag_top_k=5, rag_candidate_k=30, rag_reranker='off', rag_use_mmr=False) are NOT changed. The tuned baseline is offline-only until promoted by config."
+  ]
+}

@@ -65,6 +65,19 @@ ai-worker/eval/reports/phase2a-reranker/*
 !ai-worker/eval/reports/phase2a-reranker/reranker-comparison.md
 !ai-worker/eval/reports/phase2a-reranker/reranker-failure-analysis.json
 !ai-worker/eval/reports/phase2a-reranker/reranker-failure-analysis.md
+# Locked legacy retrieval baseline — the A/B reference for LangGraph
+# adoption. Files are deterministic post-process output of
+# scripts/build_legacy_baseline_final.py (no top_k_dump or per-row
+# JSON, only the consolidated metrics + manifest + README).
+!ai-worker/eval/reports/legacy-baseline-final/
+ai-worker/eval/reports/legacy-baseline-final/*
+!ai-worker/eval/reports/legacy-baseline-final/README.md
+!ai-worker/eval/reports/legacy-baseline-final/metrics.json
+!ai-worker/eval/reports/legacy-baseline-final/metrics.md
+!ai-worker/eval/reports/legacy-baseline-final/latency_breakdown.json
+!ai-worker/eval/reports/legacy-baseline-final/latency_breakdown.md
+!ai-worker/eval/reports/legacy-baseline-final/selected_config.json
+!ai-worker/eval/reports/legacy-baseline-final/baseline_manifest.json
 ai-worker/eval/datasets/samples/
 
 # ---- Optuna tuning artifacts ----

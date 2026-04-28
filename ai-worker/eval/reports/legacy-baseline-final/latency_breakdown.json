@@ -1,0 +1,86 @@
+{
+  "schema": "phase2a-latency-breakdown.v1",
+  "report_path": "eval\\reports\\phase2a-latency\\rerank-top10\\retrieval_eval_report.json",
+  "label": "top10",
+  "corpus_path": "eval\\corpora\\anime_namu_v3_token_chunked\\corpus.combined.token-aware-v1.jsonl",
+  "reranker_name": "cross-encoder:BAAI/bge-reranker-v2-m3",
+  "reranker_model": "BAAI/bge-reranker-v2-m3",
+  "dense_top_n": 10,
+  "final_top_k": 10,
+  "reranker_batch_size": 16,
+  "row_count": 200,
+  "rows_with_rerank_breakdown": 200,
+  "rows_with_dense_retrieval_ms": 200,
+  "stages": {
+    "dense_retrieval_ms": {
+      "stage": "dense_retrieval_ms",
+      "count": 200,
+      "avg_ms": 15.136,
+      "p50_ms": 14.992,
+      "p90_ms": 15.831,
+      "p95_ms": 16.682,
+      "p99_ms": 18.64,
+      "max_ms": 22.231
+    },
+    "pair_build_ms": {
+      "stage": "pair_build_ms",
+      "count": 200,
+      "avg_ms": 0.005,
+      "p50_ms": 0.005,
+      "p90_ms": 0.007,
+      "p95_ms": 0.007,
+      "p99_ms": 0.008,
+      "max_ms": 0.008
+    },
+    "tokenize_ms": {
+      "stage": "tokenize_ms",
+      "count": 200,
+      "avg_ms": 2.454,
+      "p50_ms": 2.437,
+      "p90_ms": 2.684,
+      "p95_ms": 2.756,
+      "p99_ms": 2.951,
+      "max_ms": 3.122
+    },
+    "forward_ms": {
+      "stage": "forward_ms",
+      "count": 200,
+      "avg_ms": 326.354,
+      "p50_ms": 328.05,
+      "p90_ms": 329.053,
+      "p95_ms": 329.513,
+      "p99_ms": 330.075,
+      "max_ms": 330.207
+    },
+    "postprocess_ms": {
+      "stage": "postprocess_ms",
+      "count": 200,
+      "avg_ms": 0.027,
+      "p50_ms": 0.026,
+      "p90_ms": 0.029,
+      "p95_ms": 0.031,
+      "p99_ms": 0.037,
+      "max_ms": 0.038
+    },
+    "total_rerank_ms": {
+      "stage": "total_rerank_ms",
+      "count": 200,
+      "avg_ms": 328.84,
+      "p50_ms": 330.603,
+      "p90_ms": 331.608,
+      "p95_ms": 331.999,
+      "p99_ms": 332.524,
+      "max_ms": 332.787
+    },
+    "total_query_ms": {
+      "stage": "total_query_ms",
+      "count": 200,
+      "avg_ms": 346.729,
+      "p50_ms": 348.339,
+      "p90_ms": 350.131,
+      "p95_ms": 350.517,
+      "p99_ms": 354.54,
+      "max_ms": 355.033
+    }
+  }
+}
