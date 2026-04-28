@@ -16,8 +16,9 @@ frontend/app/.parcel-cache/
 frontend/app/bundle.html
 
 # ---- Claude Code local state ----
-# Per-user permission approvals; .claude/commands/*.md are tracked.
-.claude/settings.local.json
+# The whole .claude/ directory is per-user (settings, launch config,
+# scheduled-task lockfiles, session logs, slash commands).
+.claude/
 
 # ---- Java / Maven ----
 core-api/target/
@@ -133,8 +134,3 @@ ai-worker/eval/experiments/run_output/
 # Phase 0 baseline tradeoffs / decisions doc — local-only by policy.
 ai-worker/eval/reports/phase0-baseline-tradeoffs.md
 
-# ---- Local Claude state (per-user) ----
-# Scheduled task lockfiles and other Claude-side runtime state.
-.claude/scheduled_tasks.lock
-.claude/sessions/
-.claude/logs/
