@@ -28,7 +28,7 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from app.capabilities.rag.embeddings import EmbeddingProvider
 from app.capabilities.rag.faiss_index import FaissIndex, IndexBuildInfo
@@ -70,6 +70,21 @@ class RetrievalReport:
     # rerank" from "reranked in ~0 ms". Phase 2A retrieval-rerank eval
     # reads this to compute rerank_latency_avg_ms / p95.
     rerank_ms: Optional[float] = None
+    # Phase 2A-L: wall-clock of the dense-retrieval part of retrieve()
+    # (parser + filter resolution + FAISS search + metadata lookup +
+    # any RRF merge), measured separately from the rerank step. ``None``
+    # is unused — even the noop reranker path records the number; the
+    # eval harness rolls it into a separate aggregate so the topN sweep
+    # can attribute total query latency to FAISS-side vs rerank-side.
+    dense_retrieval_ms: Optional[float] = None
+    # Per-stage breakdown the CrossEncoderReranker recorded for this
+    # call (pair_build / tokenize / forward / postprocess /
+    # total_rerank). ``None`` for the NoOp path or when the reranker
+    # ran into the OOM-retry fallback (see CrossEncoderReranker.last_
+    # breakdown_ms for the contract). Phase 2A-L's per-row eval row
+    # serialises this dict as-is so the aggregator can compute
+    # percentile stats per stage without re-running retrieval.
+    rerank_breakdown_ms: Optional[Dict[str, float]] = None
 
 
 class Retriever:
@@ -183,6 +198,12 @@ class Retriever:
     ) -> RetrievalReport:
         if self._info is None:
             raise RuntimeError("Retriever is not ready — call ensure_ready() first")
+        # Dense-retrieval wall-clock (Phase 2A-L). Stops just before the
+        # reranker call so the eval harness can attribute total query
+        # latency between FAISS-side and reranker-side. Includes parser
+        # + filter resolution + embed + FAISS + RRF merge — i.e. all the
+        # work the bi-encoder path does even when reranking is off.
+        dense_t0 = time.perf_counter()
         parsed = self._parser.parse(query)
         # Normalized form is what the embedder actually sees. The RegexQueryParser
         # collapses whitespace and strips unicode quotes here; NoOp passes through.
@@ -258,6 +279,12 @@ class Retriever:
                 pool_size=self._candidate_k,
             )
 
+        # Mark the end of the dense-retrieval phase. The remaining wall-
+        # clock (rerank + MMR) is attributed to the reranker side. Even
+        # the noop path passes this point so dense_retrieval_ms always
+        # has a value when the request reached candidate selection.
+        dense_retrieval_ms = round((time.perf_counter() - dense_t0) * 1000.0, 3)
+
         if not candidates:
             return RetrievalReport(
                 query=query,
@@ -275,6 +302,7 @@ class Retriever:
                 parsed_query=parsed,
                 filters=effective_filters,
                 filter_produced_no_docs=filter_produced_no_docs,
+                dense_retrieval_ms=dense_retrieval_ms,
             )
 
         # When MMR is on, ask the reranker for its FULL candidate pool so
@@ -294,6 +322,18 @@ class Retriever:
         rerank_ms = round((time.perf_counter() - rerank_t0) * 1000.0, 3)
         report_rerank_ms: Optional[float] = (
             None if self._reranker.name == "noop" else rerank_ms
+        )
+        # Pull the per-stage breakdown the reranker recorded for this
+        # call — only present when the reranker provider is the cross-
+        # encoder with stage-timing on. ``getattr`` keeps the contract
+        # forward-compatible for future RerankerProvider implementations
+        # that don't expose the hook (e.g. NoOpReranker, a hypothetical
+        # API-backed reranker, or a stub in tests).
+        breakdown_attr = getattr(self._reranker, "last_breakdown_ms", None)
+        rerank_breakdown_ms: Optional[Dict[str, float]] = (
+            dict(breakdown_attr)
+            if isinstance(breakdown_attr, dict) and breakdown_attr
+            else None
         )
 
         if self._use_mmr:
@@ -326,6 +366,8 @@ class Retriever:
             filters=effective_filters,
             filter_produced_no_docs=filter_produced_no_docs,
             rerank_ms=report_rerank_ms,
+            dense_retrieval_ms=dense_retrieval_ms,
+            rerank_breakdown_ms=rerank_breakdown_ms,
         )
 
     def _retrieve_candidates(

@@ -28,14 +28,27 @@ Two implementations ship here:
      Registry falls back to this on init failure of the real reranker,
      which keeps the MOCK / OCR / RAG failure-isolation pattern intact:
      if the cross-encoder model can't load, RAG still registers.
+
+Phase 2A-L latency-breakdown hook
+---------------------------------
+``CrossEncoderReranker`` accepts an opt-in ``collect_stage_timings`` flag
+that swaps the upstream ``CrossEncoder.predict`` for a per-stage
+instrumented variant — pair_build / tokenize / forward / postprocess —
+recorded into ``last_breakdown_ms``. The default is ``False`` and the
+production code path (Retriever / registry / RAG capability) does not
+enable it, so behaviour is bit-for-bit identical when the flag is off.
+The eval harness flips it on for the Phase 2A-L topN sweep so the
+latency report can attribute time inside ``predict`` rather than treat
+it as a single black box.
 """
 
 from __future__ import annotations
 
 import logging
+import time
 from abc import ABC, abstractmethod
 from functools import lru_cache
-from typing import List
+from typing import Any, Dict, List, Optional, Tuple
 
 from app.capabilities.rag.embeddings import (
     _is_cuda_oom_exception,
@@ -116,6 +129,7 @@ class CrossEncoderReranker(RerankerProvider):
         device: str | None = None,
         oom_fallback_batch_size: int | None = None,
         cuda_alloc_conf: str | None = "expandable_segments:True",
+        collect_stage_timings: bool = False,
     ) -> None:
         self._model_name = model_name
         self._max_length = int(max_length)
@@ -138,6 +152,11 @@ class CrossEncoderReranker(RerankerProvider):
         # because the env var is already set. Pass ``None`` to opt out.
         self._cuda_alloc_conf = cuda_alloc_conf
         self._encoder = None  # lazy, via _load_cross_encoder cache
+        # Phase 2A-L: opt-in latency-breakdown hook. Default OFF keeps the
+        # production RAG path bit-for-bit identical; the eval harness
+        # flips it on so the topN sweep can attribute time per stage.
+        self._collect_stage_timings = bool(collect_stage_timings)
+        self._last_breakdown_ms: Optional[Dict[str, float]] = None
 
     @property
     def name(self) -> str:
@@ -154,12 +173,35 @@ class CrossEncoderReranker(RerankerProvider):
         """
         return self._batch_size
 
+    @property
+    def last_breakdown_ms(self) -> Optional[Dict[str, float]]:
+        """Per-stage latencies recorded by the most recent ``rerank()``.
+
+        Populated only when ``collect_stage_timings=True`` and the
+        cross-encoder succeeded on the primary batch_size (no OOM
+        retry). Keys: ``pair_build_ms``, ``tokenize_ms``, ``forward_ms``,
+        ``postprocess_ms``, ``total_rerank_ms``. ``total_rerank_ms`` is
+        the sum of the four stages — wall-clock of the same window may
+        differ marginally due to instrumentation gaps. ``None`` when the
+        timing hook is off, when reranking degraded to chunks[:k], or
+        when the OOM-retry path took over (mixing primary + retry timings
+        would be misleading).
+        """
+        if self._last_breakdown_ms is None:
+            return None
+        return dict(self._last_breakdown_ms)
+
     def rerank(
         self,
         query: str,
         chunks: List[RetrievedChunk],
         k: int,
     ) -> List[RetrievedChunk]:
+        # Reset per-call so a previous breakdown can never leak forward
+        # into a degenerate / OOM-retry call where the hook should
+        # surface ``None`` to the eval harness.
+        self._last_breakdown_ms = None
+
         if not chunks:
             return []
         k = max(0, int(k))
@@ -175,13 +217,22 @@ class CrossEncoderReranker(RerankerProvider):
             )
             return list(chunks[:k])
 
+        t_pair_start = time.perf_counter()
         pairs = [
             (query, (c.text or "")[: self._text_max_chars])
             for c in chunks
         ]
+        t_pair_end = time.perf_counter()
+
         _log_cuda_memory(f"before rerank predict ({len(pairs)} pairs)")
+        predict_breakdown: Optional[Dict[str, float]] = None
         try:
-            scores = self._predict(encoder, pairs, self._batch_size)
+            if self._collect_stage_timings:
+                scores, predict_breakdown = self._predict_with_breakdown(
+                    encoder, pairs, self._batch_size,
+                )
+            else:
+                scores = self._predict(encoder, pairs, self._batch_size)
         except BaseException as ex:  # noqa: BLE001 — narrow next two lines
             if not _is_cuda_oom_exception(ex):
                 log.warning(
@@ -205,7 +256,11 @@ class CrossEncoderReranker(RerankerProvider):
                 self._batch_size, type(ex).__name__, new_bs,
             )
             try:
+                # Retry path: skip stage breakdown — recording the OOM
+                # half-batch retry's tokenize/forward would mix two
+                # measurement regimes and confuse the eval report.
                 scores = self._predict(encoder, pairs, new_bs)
+                predict_breakdown = None
             except Exception as retry_ex:  # noqa: BLE001 — narrow logging
                 log.warning(
                     "CrossEncoderReranker.predict still failing at "
@@ -216,12 +271,31 @@ class CrossEncoderReranker(RerankerProvider):
                 return list(chunks[:k])
 
         _log_cuda_memory(f"after rerank predict ({len(pairs)} pairs)")
+
+        t_post_start = time.perf_counter()
         scored = [
             _replace_rerank_score(c, float(s))
             for c, s in zip(chunks, scores)
         ]
         scored.sort(key=lambda c: c.rerank_score or 0.0, reverse=True)
-        return scored[:k]
+        result = scored[:k]
+        t_post_end = time.perf_counter()
+
+        if self._collect_stage_timings and predict_breakdown is not None:
+            pair_build_ms = round((t_pair_end - t_pair_start) * 1000.0, 3)
+            postprocess_ms = round((t_post_end - t_post_start) * 1000.0, 3)
+            tokenize_ms = float(predict_breakdown.get("tokenize_ms", 0.0))
+            forward_ms = float(predict_breakdown.get("forward_ms", 0.0))
+            total = pair_build_ms + tokenize_ms + forward_ms + postprocess_ms
+            self._last_breakdown_ms = {
+                "pair_build_ms": pair_build_ms,
+                "tokenize_ms": round(tokenize_ms, 3),
+                "forward_ms": round(forward_ms, 3),
+                "postprocess_ms": postprocess_ms,
+                "total_rerank_ms": round(total, 3),
+            }
+
+        return result
 
     # -- internals -------------------------------------------------------
 
@@ -255,6 +329,119 @@ class CrossEncoderReranker(RerankerProvider):
             convert_to_numpy=True,
             show_progress_bar=False,
         )
+
+    def _predict_with_breakdown(
+        self,
+        encoder,
+        pairs: List[Tuple[str, str]],
+        batch_size: int,
+    ) -> Tuple[Any, Dict[str, float]]:
+        """Instrumented predict that records tokenize / forward per stage.
+
+        Mirrors ``sentence_transformers.CrossEncoder.predict`` for the
+        sigmoid / num_labels=1 path used by the bge-reranker-v2-m3
+        family — the only path Phase 2A-L exercises. The output is the
+        same numpy array of scores ``predict`` would emit, so callers
+        can drop this in alongside the production ``_predict`` without
+        observing any behavioural difference beyond the extra timing
+        dict.
+
+        Per-stage measurement strategy:
+          - ``tokenize_ms`` covers ``encoder.tokenizer(...)`` only,
+            which is a pure host-side step.
+          - ``forward_ms`` covers the host→device transfer
+            (``features.to(device)``), the model forward, and the
+            activation. CUDA work is asynchronous, so we
+            ``torch.cuda.synchronize()`` before reading ``perf_counter``
+            on either side; without sync the forward time would leak
+            into the next batch's tokenize and the breakdown numbers
+            would be meaningless. Sync is gated on
+            ``torch.cuda.is_available()`` so a CPU-only run still gets
+            a usable (if approximate) forward time.
+
+        Per-batch sums are accumulated into ``tokenize_ms`` and
+        ``forward_ms`` totals; the caller adds ``pair_build_ms`` and
+        ``postprocess_ms`` measured outside this method.
+
+        Falls back to a string-match path if ``torch`` is not importable
+        in this process — the unit tests rely on that for a torch-free
+        breakdown smoke check.
+        """
+        import numpy as np
+
+        try:
+            import torch  # type: ignore
+        except Exception:  # pragma: no cover — torch missing means no GPU
+            torch = None  # type: ignore[assignment]
+
+        cuda_sync = False
+        if torch is not None:
+            try:
+                cuda_sync = bool(torch.cuda.is_available())
+            except Exception:  # pragma: no cover — defensive
+                cuda_sync = False
+
+        tokenize_ms_total = 0.0
+        forward_ms_total = 0.0
+        pred_scores: List[Any] = []
+
+        encoder.eval()
+        # Wrap the whole loop in inference_mode when torch is around so
+        # we match the upstream predict's autograd-disabled posture; CPU
+        # fallback (torch == None) just runs without the context.
+        if torch is not None:
+            inference_ctx = torch.inference_mode()
+        else:
+            from contextlib import nullcontext
+
+            inference_ctx = nullcontext()
+
+        with inference_ctx:
+            for start_index in range(0, len(pairs), batch_size):
+                batch = list(pairs[start_index : start_index + batch_size])
+
+                t0 = time.perf_counter()
+                features = encoder.tokenizer(
+                    batch,
+                    padding=True,
+                    truncation=True,
+                    return_tensors="pt",
+                )
+                t1 = time.perf_counter()
+                tokenize_ms_total += (t1 - t0) * 1000.0
+
+                if cuda_sync:
+                    try:
+                        torch.cuda.synchronize()
+                    except Exception:  # pragma: no cover — defensive
+                        cuda_sync = False
+                t2 = time.perf_counter()
+                features = features.to(encoder.model.device)
+                model_predictions = encoder.model(**features, return_dict=True)
+                logits = encoder.activation_fn(model_predictions.logits)
+                if cuda_sync:
+                    try:
+                        torch.cuda.synchronize()
+                    except Exception:  # pragma: no cover — defensive
+                        pass
+                t3 = time.perf_counter()
+                forward_ms_total += (t3 - t2) * 1000.0
+
+                pred_scores.extend(logits)
+
+        if encoder.config.num_labels == 1:
+            pred_scores = [score[0] for score in pred_scores]
+
+        # Convert to numpy on the way out — same shape and dtype the
+        # upstream predict() would have produced for convert_to_numpy=True.
+        scores_np = np.asarray(
+            [s.cpu().detach().float().numpy() for s in pred_scores]
+        )
+
+        return scores_np, {
+            "tokenize_ms": round(tokenize_ms_total, 3),
+            "forward_ms": round(forward_ms_total, 3),
+        }
 
 
 def _auto_device() -> str:
