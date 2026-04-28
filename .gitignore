@@ -38,6 +38,32 @@ ai-worker/**/*.pyc
 ai-worker/.pytest_cache/
 ai-worker/.mypy_cache/
 ai-worker/*.egg-info/
+# Pytest also runs from the repo root in some flows (e.g. when the
+# user picks the workspace as basetemp). The artifacts are pure cache
+# / fixture scratch — never committed.
+.pytest_cache/
+.mypy_cache/
+.tmp/
+**/__pycache__/
+**/*.pyc
+
+# ---- Scratch tests / scripts / harnesses ----
+# Forward-looking patterns: anything matching is treated as personal
+# scratch and stays out of git. Promote a file to a real name (drop
+# the prefix / suffix) when you want it tracked.
+**/test_scratch_*.py
+**/scratch_*.py
+**/_scratch_*.py
+**/_tmp_*.py
+**/tmp_*.py
+**/*_scratch.py
+**/*_sandbox.py
+ai-worker/scripts/_scratch/
+ai-worker/scripts/_drafts/
+ai-worker/eval/harness/_scratch/
+ai-worker/eval/harness/_drafts/
+ai-worker/tests/_scratch/
+ai-worker/tests/_drafts/
 
 # ---- Eval harness generated artifacts ----
 # Reports change every run and should not be committed. Sample OCR
