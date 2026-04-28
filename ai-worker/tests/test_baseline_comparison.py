@@ -25,6 +25,9 @@ import math
 import pytest
 
 from eval.harness.baseline_comparison import (
+    KIND_BASELINE,
+    KIND_DIAGNOSTIC,
+    KIND_TUNED,
     METRIC_KEYS,
     BaselineComparison,
     BaselineSlice,
@@ -237,3 +240,176 @@ class TestSerialization:
         assert "## Per answer_type" in md
         assert "## Per difficulty" in md
         assert "## Per language" in md
+
+    def test_caveats_render_above_slice_block(self):
+        det = [_row(rid="a", hit5=1.0)]
+        opus = [_row(rid="b", hit5=0.0)]
+        comparison = run_comparison(
+            deterministic_rows=det,
+            deterministic_dataset_path=None,
+            opus_rows=opus,
+            opus_dataset_path=None,
+            caveats=[
+                "Not apples-to-apples.",
+                "max_seq_length differs.",
+            ],
+        )
+        md = render_comparison_markdown(comparison)
+        cav_idx = md.index("## Caveats")
+        slice_idx = md.index("### `deterministic_all`")
+        # Caveats appear before the first slice description.
+        assert cav_idx < slice_idx
+        assert "Not apples-to-apples." in md
+        assert "max_seq_length differs." in md
+
+    def test_retriever_config_renders_per_slice(self):
+        det = [_row(rid="a", hit5=1.0)]
+        opus = [_row(rid="b", hit5=1.0)]
+        comparison = run_comparison(
+            deterministic_rows=det,
+            deterministic_dataset_path=None,
+            opus_rows=opus,
+            opus_dataset_path=None,
+            deterministic_retriever_config={"max_seq_length": 8192},
+            opus_retriever_config={"max_seq_length": 1024},
+        )
+        md = render_comparison_markdown(comparison)
+        assert "max_seq_length=8192" in md
+        assert "max_seq_length=1024" in md
+        # Both per-slice configs appear in the JSON payload too.
+        payload = comparison_to_dict(comparison)
+        det_slice = next(s for s in payload["slices"] if s["label"] == "deterministic_all")
+        opus_slice = next(s for s in payload["slices"] if s["label"] == "opus_all")
+        assert det_slice["retriever_config"]["max_seq_length"] == 8192
+        assert opus_slice["retriever_config"]["max_seq_length"] == 1024
+
+    def test_caveats_omitted_when_not_provided(self):
+        det = [_row(rid="a", hit5=1.0)]
+        opus = [_row(rid="b", hit5=1.0)]
+        comparison = run_comparison(
+            deterministic_rows=det,
+            deterministic_dataset_path=None,
+            opus_rows=opus,
+            opus_dataset_path=None,
+        )
+        md = render_comparison_markdown(comparison)
+        # No empty Caveats block.
+        assert "## Caveats" not in md
+
+
+# --- Kind / baseline-vs-tuned separation --------------------------------
+
+
+class TestKindSeparation:
+    def test_default_kinds_are_baseline_and_diagnostic(self):
+        det = [_row(rid="a", hit5=1.0)]
+        opus = [_row(rid="b", hit5=1.0)]
+        comparison = run_comparison(
+            deterministic_rows=det,
+            deterministic_dataset_path=None,
+            opus_rows=opus,
+            opus_dataset_path=None,
+        )
+        kinds = {s.label: s.kind for s in comparison.slices}
+        assert kinds["deterministic_all"] == KIND_BASELINE
+        assert kinds["opus_all"] == KIND_BASELINE
+        assert kinds["deterministic_without_character_relation"] == KIND_DIAGNOSTIC
+
+    def test_compute_baseline_slice_rejects_unknown_kind(self):
+        with pytest.raises(ValueError):
+            compute_baseline_slice(
+                label="x", description="x",
+                dataset_path=None, rows=[],
+                kind="not-a-real-kind",
+            )
+
+    def test_run_comparison_rejects_diagnostic_kind_for_side(self):
+        # Sides must be baseline or tuned; diagnostic is reserved for
+        # the derived without_<answer_type> slice.
+        with pytest.raises(ValueError):
+            run_comparison(
+                deterministic_rows=[_row(rid="a")],
+                deterministic_dataset_path=None,
+                opus_rows=[_row(rid="b")],
+                opus_dataset_path=None,
+                deterministic_kind=KIND_DIAGNOSTIC,
+            )
+
+    def test_tuned_kind_promotes_diagnostic_to_tuned(self):
+        # When deterministic is tuned, its derived diagnostic must NOT
+        # bleed into the baseline section.
+        det = [
+            _row(rid="a", answer_type="title_lookup", hit5=1.0),
+            _row(rid="b", answer_type="character_relation", hit5=0.0),
+        ]
+        opus = [_row(rid="o", hit5=1.0)]
+        comparison = run_comparison(
+            deterministic_rows=det,
+            deterministic_dataset_path=None,
+            opus_rows=opus,
+            opus_dataset_path=None,
+            deterministic_kind=KIND_TUNED,
+        )
+        kinds = {s.label: s.kind for s in comparison.slices}
+        # deterministic_all becomes tuned, derived slice is renamed and
+        # also tuned, opus stays baseline.
+        assert kinds["deterministic_all"] == KIND_TUNED
+        assert kinds["tuned_without_character_relation"] == KIND_TUNED
+        assert kinds["opus_all"] == KIND_BASELINE
+
+    def test_tuned_and_baseline_render_in_separate_headline_tables(self):
+        det = [_row(rid="a", hit5=1.0)]
+        opus = [_row(rid="b", hit5=0.5)]
+        comparison = run_comparison(
+            deterministic_rows=det,
+            deterministic_dataset_path=None,
+            opus_rows=opus,
+            opus_dataset_path=None,
+            deterministic_kind=KIND_TUNED,
+        )
+        md = render_comparison_markdown(comparison)
+        # Two headline-metrics tables: one for baselines (opus_all
+        # only) and one for tuned variants (deterministic_all +
+        # diagnostic).
+        baseline_idx = md.index("## Headline metrics — Baselines")
+        tuned_idx = md.index(
+            "## Headline metrics — Tuned variants"
+        )
+        # Order: baselines first, then tuned. (KIND_ORDER order.)
+        assert baseline_idx < tuned_idx
+        # The baselines headline table must NOT mention deterministic_all
+        # — only opus_all is a baseline here.
+        baselines_section = md[baseline_idx:tuned_idx]
+        assert "opus_all" in baselines_section
+        assert "deterministic_all" not in baselines_section
+        # The tuned-variants headline table must NOT mention opus_all.
+        tuned_section = md[tuned_idx:]
+        assert "deterministic_all" in tuned_section
+        # opus_all may appear later in per-axis sections under
+        # baselines, so we assert specifically on the headline table
+        # not collapsing.
+        # Find the next "## " heading after the tuned headline table,
+        # which bounds the tuned headline section.
+        tail = md[tuned_idx + len("## Headline metrics — Tuned variants"):]
+        next_header_offset = tail.find("\n## ")
+        tuned_headline_block = (
+            tail if next_header_offset == -1 else tail[:next_header_offset]
+        )
+        assert "opus_all" not in tuned_headline_block
+
+    def test_kind_persists_through_json_roundtrip(self):
+        det = [_row(rid="a", hit5=1.0)]
+        opus = [_row(rid="b", hit5=1.0)]
+        comparison = run_comparison(
+            deterministic_rows=det,
+            deterministic_dataset_path=None,
+            opus_rows=opus,
+            opus_dataset_path=None,
+            opus_kind=KIND_TUNED,
+        )
+        payload = comparison_to_dict(comparison)
+        loaded = json.loads(json.dumps(payload, ensure_ascii=False))
+        kinds = {s["label"]: s["kind"] for s in loaded["slices"]}
+        assert kinds["deterministic_all"] == KIND_BASELINE
+        assert kinds["deterministic_without_character_relation"] == KIND_DIAGNOSTIC
+        assert kinds["opus_all"] == KIND_TUNED

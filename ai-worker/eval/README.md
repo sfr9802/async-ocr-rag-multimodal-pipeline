@@ -38,6 +38,9 @@ eval/
     ├── rag_eval.py                 ← text RAG harness (legacy `rag` mode)
     ├── ocr_eval.py                 ← OCR harness
     ├── retrieval_eval.py           ← retrieval-quality harness (`retrieval` mode)
+    ├── miss_analysis.py            ← doc/keyword cross-tab over a retrieval run
+    ├── baseline_comparison.py      ← 3-slice compare (det vs det-without-X vs opus)
+    ├── analyze_corpus_lengths.py   ← tokenizer-based char/token length analyzer
     └── generate_eval_queries.py    ← deterministic + LLM synthetic-query generator
 ```
 
@@ -264,6 +267,52 @@ vs. gold semantics, the deterministic generator's stratification, and
 the gold-set extension recipe. See
 [`corpora/anime_namu_v3/README.md`](corpora/anime_namu_v3/README.md)
 for the corpus schema and re-stage instructions.
+
+### Phase 0 baseline tooling (post-retrieval)
+
+Three companion subcommands run against an existing retrieval run.
+None of them re-embeds, so they're cheap.
+
+```bash
+# Add doc/keyword cross-tab to a retrieval run that didn't emit one
+python -m eval.run_eval retrieval-miss-analysis \
+    --report-dir eval/reports/retrieval-silver200-baseline \
+    --top-k 10
+
+# Side-by-side compare two retrieval runs (deterministic vs opus).
+# Auto-emits a Caveats block + per-slice retriever_config in the .md.
+python -m eval.run_eval retrieval-compare \
+    --deterministic-report eval/reports/retrieval-silver200-baseline/retrieval_eval_report.json \
+    --opus-report          eval/reports/retrieval-silver200-opus-baseline/retrieval_eval_report.json \
+    --deterministic-max-seq-length 8192 \
+    --opus-max-seq-length 1024 \
+    --out-json eval/reports/retrieval-baseline-comparison.json \
+    --out-md   eval/reports/retrieval-baseline-comparison.md
+
+# Same compare, but with a hyperparameter-tuned variant on the
+# deterministic side. The tuned slice (and its diagnostic) is rendered
+# in its own headline-metrics table so it never shares a row with
+# baseline numbers.
+python -m eval.run_eval retrieval-compare \
+    --deterministic-report eval/reports/retrieval-silver200-tuned/retrieval_eval_report.json \
+    --opus-report          eval/reports/retrieval-silver200-opus-baseline/retrieval_eval_report.json \
+    --deterministic-kind tuned \
+    --opus-kind baseline \
+    --out-json eval/reports/retrieval-tuned-vs-baseline.json \
+    --out-md   eval/reports/retrieval-tuned-vs-baseline.md
+
+# Tokenizer-based char/token length distribution for the corpus.
+# Use this to size max_seq_length caps with measured numbers instead
+# of char-derived guesses.
+python -m eval.run_eval analyze-corpus-lengths \
+    --corpus eval/corpora/anime_namu_v3/corpus.jsonl \
+    --tokenizer BAAI/bge-m3 \
+    --out-json eval/reports/corpus-length-analysis.json \
+    --out-md   eval/reports/corpus-length-analysis.md
+```
+
+The full Phase 0 trade-off log lives in
+[`reports/phase0-baseline-tradeoffs.md`](reports/phase0-baseline-tradeoffs.md).
 
 ## Running the eval CLI
 

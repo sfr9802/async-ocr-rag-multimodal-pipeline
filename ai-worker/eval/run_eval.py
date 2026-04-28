@@ -84,6 +84,33 @@ from eval.harness.baseline_comparison import (
     render_comparison_markdown,
     run_comparison,
 )
+from eval.harness.analyze_corpus_lengths import (
+    DEFAULT_THRESHOLDS as DEFAULT_TOKEN_THRESHOLDS,
+    DEFAULT_TOP_LONGEST as DEFAULT_TOP_LONGEST_CHUNKS,
+    DEFAULT_TOKENIZER_NAME,
+    analyze_corpus_lengths,
+    length_analysis_to_dict,
+    render_length_analysis_markdown,
+)
+from eval.harness.corpus_audit import (
+    DEFAULT_AUDIT_TOP_N,
+    audit_long_chunks,
+    audit_to_dict,
+    compare_raw_vs_cleaned,
+    length_comparison_to_dict,
+    render_audit_markdown,
+    render_length_comparison_markdown,
+)
+from eval.harness.corpus_preprocessor import (
+    PREPROCESS_VERSION,
+    CorpusPreprocessSummary,
+    PreprocessConfig,
+    corpus_preprocess_summary_to_dict,
+    iter_preprocessed_documents,
+    render_corpus_preprocess_summary_markdown,
+    render_sample_diff_markdown,
+)
+from app.capabilities.rag.ingest import _iter_documents
 
 
 log = logging.getLogger("eval")
@@ -112,6 +139,18 @@ def main(argv: Optional[List[str]] = None) -> int:
         return _run_retrieval_compare_cli(args)
     if args.mode == "retrieval-miss-analysis":
         return _run_miss_analysis_cli(args)
+    if args.mode == "analyze-corpus-lengths":
+        return _run_analyze_corpus_lengths_cli(args)
+    if args.mode == "audit-corpus-noise":
+        return _run_audit_corpus_noise_cli(args)
+    if args.mode == "clean-corpus-dry-run":
+        return _run_clean_corpus_dry_run_cli(args)
+    if args.mode == "preprocess-corpus-dry-run":
+        return _run_preprocess_corpus_dry_run_cli(args)
+    if args.mode == "emit-preprocessed-corpus":
+        return _run_emit_preprocessed_corpus_cli(args)
+    if args.mode == "compare-corpus-lengths":
+        return _run_compare_corpus_lengths_cli(args)
     parser.error(f"unknown mode: {args.mode}")
     return 2  # unreachable
 
@@ -250,6 +289,42 @@ def _build_parser() -> argparse.ArgumentParser:
              "is broken on).",
     )
     rc.add_argument(
+        "--deterministic-max-seq-length", type=int, default=8192,
+        help="max_seq_length the deterministic baseline was embedded "
+             "with. Recorded in the slice's retriever_config so the "
+             "report can flag apples-to-oranges differences. Default "
+             "8192 = bge-m3 model default (no truncation).",
+    )
+    rc.add_argument(
+        "--opus-max-seq-length", type=int, default=1024,
+        help="max_seq_length the opus baseline was embedded with "
+             "(default: 1024).",
+    )
+    rc.add_argument(
+        "--caveat", type=str, action="append", default=None,
+        help="Free-text caveat to print at the top of the report. May "
+             "be passed multiple times. If omitted, sensible defaults "
+             "are added automatically (apples-to-oranges flag, "
+             "max_seq_length difference if any, healthy-diagnostic "
+             "reminder, plus a tuned-variant flag whenever a slice is "
+             "marked --*-kind=tuned).",
+    )
+    rc.add_argument(
+        "--deterministic-kind", type=str, default="baseline",
+        choices=("baseline", "tuned"),
+        help="Which section of the report the deterministic slice goes "
+             "into. Use 'tuned' for hyperparameter-modified runs so "
+             "their numbers are rendered in their own headline-metrics "
+             "table and never share a row with baseline numbers. "
+             "Default: baseline.",
+    )
+    rc.add_argument(
+        "--opus-kind", type=str, default="baseline",
+        choices=("baseline", "tuned"),
+        help="Same as --deterministic-kind for the opus slice. "
+             "Default: baseline.",
+    )
+    rc.add_argument(
         "--out-json", type=Path, required=True,
         help="Output path for retrieval-baseline-comparison.json.",
     )
@@ -278,6 +353,223 @@ def _build_parser() -> argparse.ArgumentParser:
     ma.add_argument(
         "--sample-limit", type=int, default=25,
         help="Cap on samples kept for each doc_miss_* bucket (default: 25).",
+    )
+
+    # --- analyze-corpus-lengths ---
+    al = subs.add_parser(
+        "analyze-corpus-lengths",
+        help="Tokenizer-based char/token length distribution for a "
+             "corpus.jsonl. Used to size max_seq_length caps honestly.",
+    )
+    al.add_argument(
+        "--corpus", required=True, type=Path,
+        help="Path to corpus.jsonl (e.g. "
+             "eval/corpora/anime_namu_v3/corpus.jsonl).",
+    )
+    al.add_argument(
+        "--tokenizer", type=str, default=DEFAULT_TOKENIZER_NAME,
+        help=f"HuggingFace tokenizer name (default: {DEFAULT_TOKENIZER_NAME}).",
+    )
+    al.add_argument(
+        "--threshold", type=int, action="append", default=None,
+        help="Token thresholds to count chunks_over_<t> for. May be "
+             "passed multiple times. Defaults to "
+             f"{list(DEFAULT_TOKEN_THRESHOLDS)}.",
+    )
+    al.add_argument(
+        "--top-longest", type=int, default=DEFAULT_TOP_LONGEST_CHUNKS,
+        help=f"Number of longest chunks to include in the report "
+             f"(default: {DEFAULT_TOP_LONGEST_CHUNKS}).",
+    )
+    al.add_argument(
+        "--batch-size", type=int, default=256,
+        help="Tokenizer batch size (default: 256).",
+    )
+    al.add_argument(
+        "--out-json", type=Path,
+        default=Path("eval/reports/corpus-length-analysis.json"),
+        help="Output path for the JSON report (default: "
+             "eval/reports/corpus-length-analysis.json).",
+    )
+    al.add_argument(
+        "--out-md", type=Path,
+        default=Path("eval/reports/corpus-length-analysis.md"),
+        help="Output path for the markdown report (default: "
+             "eval/reports/corpus-length-analysis.md).",
+    )
+
+    # --- audit-corpus-noise ---
+    #
+    # Phase 1A entrypoint. Reads a corpus through the production
+    # chunker, tokenizes everything, and writes both a long-chunk audit
+    # and a raw-vs-cleaned length comparison to
+    # eval/reports/phase1-corpus-audit/. Does not modify the corpus.
+    an = subs.add_parser(
+        "audit-corpus-noise",
+        help="Phase 1A long-chunk audit + raw-vs-cleaned length "
+             "comparison. Does not modify the corpus.",
+    )
+    an.add_argument(
+        "--corpus", required=True, type=Path,
+        help="Path to corpus.jsonl (e.g. "
+             "eval/corpora/anime_namu_v3/corpus.jsonl).",
+    )
+    an.add_argument(
+        "--tokenizer", type=str, default=DEFAULT_TOKENIZER_NAME,
+        help=f"HuggingFace tokenizer name (default: {DEFAULT_TOKENIZER_NAME}).",
+    )
+    an.add_argument(
+        "--top-n", type=int, default=DEFAULT_AUDIT_TOP_N,
+        help=f"Number of longest chunks to include in the audit "
+             f"(default: {DEFAULT_AUDIT_TOP_N}).",
+    )
+    an.add_argument(
+        "--threshold", type=int, action="append", default=None,
+        help="Token thresholds for the chunks-over-cap table. May be "
+             f"passed multiple times. Defaults to {list(DEFAULT_TOKEN_THRESHOLDS)}.",
+    )
+    an.add_argument(
+        "--batch-size", type=int, default=256,
+        help="Tokenizer batch size (default: 256).",
+    )
+    an.add_argument(
+        "--out-dir", type=Path,
+        default=Path("eval/reports/phase1-corpus-audit"),
+        help="Directory to write audit + length-comparison reports "
+             "(default: eval/reports/phase1-corpus-audit).",
+    )
+
+    # --- clean-corpus-dry-run ---
+    #
+    # Phase 1A entrypoint #2. Same length-comparison routine as
+    # audit-corpus-noise but writes a focused cleaner-effect summary
+    # only. The "dry-run" name is load-bearing: this command never
+    # writes a cleaned corpus to disk, only the summary stats.
+    cd = subs.add_parser(
+        "clean-corpus-dry-run",
+        help="Phase 1A cleaner-effect summary. Runs the cleaner "
+             "in-memory and reports raw-vs-cleaned token/char "
+             "distributions; the corpus.jsonl is not modified.",
+    )
+    cd.add_argument(
+        "--corpus", required=True, type=Path,
+        help="Path to corpus.jsonl.",
+    )
+    cd.add_argument(
+        "--tokenizer", type=str, default=DEFAULT_TOKENIZER_NAME,
+        help=f"HuggingFace tokenizer name (default: {DEFAULT_TOKENIZER_NAME}).",
+    )
+    cd.add_argument(
+        "--threshold", type=int, action="append", default=None,
+        help="Token thresholds for the chunks-over-cap table. May be "
+             f"passed multiple times. Defaults to {list(DEFAULT_TOKEN_THRESHOLDS)}.",
+    )
+    cd.add_argument(
+        "--batch-size", type=int, default=256,
+        help="Tokenizer batch size (default: 256).",
+    )
+    cd.add_argument(
+        "--out-dir", type=Path,
+        default=Path("eval/reports/phase1-corpus-audit"),
+        help="Directory to write the cleaner-effect summary "
+             "(default: eval/reports/phase1-corpus-audit).",
+    )
+
+    # --- preprocess-corpus-dry-run ---
+    #
+    # Phase 1B entrypoint #1. Streams a corpus.jsonl through the
+    # ingest-side preprocessor (page-prefix and/or inline-edit-marker
+    # strip) without writing a preprocessed corpus to disk. Emits a
+    # summary + sample diffs into eval/reports/phase1b-preprocess/.
+    pp = subs.add_parser(
+        "preprocess-corpus-dry-run",
+        help="Phase 1B preprocessor dry-run: streams the corpus through "
+             "the ingest-side preprocessor, writes summary + sample "
+             "diffs only. No artifact corpus is produced.",
+    )
+    pp.add_argument(
+        "--corpus", required=True, type=Path,
+        help="Path to the source corpus.jsonl. Not modified.",
+    )
+    pp.add_argument(
+        "--strip-page-prefix", action="store_true",
+        help="Enable namu-wiki page-prefix metadata strip.",
+    )
+    pp.add_argument(
+        "--strip-inline-edit", action="store_true",
+        help="Enable inline [편집] / [원본 편집] / [소스 편집] strip.",
+    )
+    pp.add_argument(
+        "--sample-diff-n", type=int, default=20,
+        help="Number of sample before/after diffs to collect "
+             "(default: 20).",
+    )
+    pp.add_argument(
+        "--out-dir", type=Path,
+        default=Path("eval/reports/phase1b-preprocess"),
+        help="Directory for the dry-run summary + sample diffs "
+             "(default: eval/reports/phase1b-preprocess).",
+    )
+
+    # --- emit-preprocessed-corpus ---
+    #
+    # Phase 1B entrypoint #2. Same preprocessor pass, but writes a
+    # preprocessed corpus.<variant>.jsonl plus a manifest.json into
+    # eval/corpora/<dir>/. Source corpus is never modified.
+    ep = subs.add_parser(
+        "emit-preprocessed-corpus",
+        help="Phase 1B: emit a preprocessed corpus.jsonl artifact "
+             "(plus manifest.json). Source corpus is never modified.",
+    )
+    ep.add_argument(
+        "--corpus", required=True, type=Path,
+        help="Path to the source corpus.jsonl. Not modified.",
+    )
+    ep.add_argument(
+        "--strip-page-prefix", action="store_true",
+        help="Enable namu-wiki page-prefix metadata strip.",
+    )
+    ep.add_argument(
+        "--strip-inline-edit", action="store_true",
+        help="Enable inline [편집] / [원본 편집] / [소스 편집] strip.",
+    )
+    ep.add_argument(
+        "--out-dir", type=Path,
+        default=Path("eval/corpora/anime_namu_v3_preprocessed"),
+        help="Directory to write the variant corpus + manifest "
+             "(default: eval/corpora/anime_namu_v3_preprocessed).",
+    )
+    ep.add_argument(
+        "--variant-name", type=str, default=None,
+        help="Override the variant filename suffix. Defaults to the "
+             "config-derived label (e.g. 'prefix-v1', "
+             "'prefix-v1.inline-edit-v1').",
+    )
+
+    # --- compare-corpus-lengths ---
+    #
+    # Phase 1B: roll up multiple analyze-corpus-lengths reports into a
+    # single side-by-side comparison table. Used to compare raw vs
+    # prefix-v1 vs inline-edit-v1 vs combined corpus length
+    # distributions in one pass.
+    cl = subs.add_parser(
+        "compare-corpus-lengths",
+        help="Compare N analyze-corpus-lengths reports side-by-side. "
+             "Each --analysis takes 'label:path' or just 'path' "
+             "(label defaults to the file stem).",
+    )
+    cl.add_argument(
+        "--analysis", action="append", required=True,
+        help="One length-analysis report. Format 'label:path' or "
+             "just 'path'. May be passed multiple times.",
+    )
+    cl.add_argument(
+        "--out-json", type=Path, required=True,
+        help="Output path for the JSON comparison.",
+    )
+    cl.add_argument(
+        "--out-md", type=Path, required=True,
+        help="Output path for the markdown comparison.",
     )
 
     return parser
@@ -1445,12 +1737,48 @@ def _run_retrieval_compare_cli(args: argparse.Namespace) -> int:
     det_dataset = (det_payload.get("summary") or {}).get("dataset_path")
     opus_dataset = (opus_payload.get("summary") or {}).get("dataset_path")
 
+    det_meta = det_payload.get("metadata") or {}
+    opus_meta = opus_payload.get("metadata") or {}
+
+    det_cfg = {
+        "embedding_model": det_meta.get("embedding_model", "BAAI/bge-m3"),
+        "max_seq_length": int(args.deterministic_max_seq_length),
+        "reranker": det_meta.get("reranker", "off"),
+        "candidate_k": det_meta.get("candidate_k"),
+        "top_k": det_meta.get("top_k"),
+    }
+    opus_cfg = {
+        "embedding_model": opus_meta.get("embedding_model", "BAAI/bge-m3"),
+        "max_seq_length": int(args.opus_max_seq_length),
+        "reranker": opus_meta.get("reranker", "off"),
+        "candidate_k": opus_meta.get("candidate_k"),
+        "top_k": opus_meta.get("top_k"),
+    }
+
+    if args.caveat is not None:
+        # Strip empty strings the user might have passed accidentally
+        # (e.g. via shell glob); empty bullets render as blank lines.
+        caveats = [c for c in args.caveat if c.strip()]
+    else:
+        caveats = _default_compare_caveats(
+            det_cfg=det_cfg,
+            opus_cfg=opus_cfg,
+            excluded_answer_type=args.exclude_answer_type,
+            deterministic_kind=args.deterministic_kind,
+            opus_kind=args.opus_kind,
+        )
+
     comparison = run_comparison(
         deterministic_rows=det_rows,
         deterministic_dataset_path=det_dataset,
         opus_rows=opus_rows,
         opus_dataset_path=opus_dataset,
         excluded_answer_type=args.exclude_answer_type,
+        deterministic_retriever_config=det_cfg,
+        opus_retriever_config=opus_cfg,
+        caveats=caveats,
+        deterministic_kind=args.deterministic_kind,
+        opus_kind=args.opus_kind,
     )
 
     args.out_json.parent.mkdir(parents=True, exist_ok=True)
@@ -1461,6 +1789,11 @@ def _run_retrieval_compare_cli(args: argparse.Namespace) -> int:
             "deterministic_report": str(args.deterministic_report),
             "opus_report": str(args.opus_report),
             "excluded_answer_type": args.exclude_answer_type,
+            "deterministic_retriever_config": det_cfg,
+            "deterministic_kind": args.deterministic_kind,
+            "opus_retriever_config": opus_cfg,
+            "opus_kind": args.opus_kind,
+            "caveats": caveats,
             "run_at": datetime.now().isoformat(timespec="seconds"),
         },
         "comparison": comparison_to_dict(comparison),
@@ -1474,6 +1807,74 @@ def _run_retrieval_compare_cli(args: argparse.Namespace) -> int:
     log.info("Wrote %s", args.out_json)
     log.info("Wrote %s", args.out_md)
     return 0
+
+
+def _default_compare_caveats(
+    *,
+    det_cfg: Mapping[str, Any],
+    opus_cfg: Mapping[str, Any],
+    excluded_answer_type: str,
+    deterministic_kind: str = "baseline",
+    opus_kind: str = "baseline",
+) -> List[str]:
+    """Default caveats block when --caveat is not passed.
+
+    Always emits the apples-to-apples warning + the diagnostic-slice
+    reminder. Adds a max_seq_length-difference flag if the two slices
+    were embedded under different caps (the common Phase 0 case:
+    deterministic at 8192, opus at 1024). When either side is marked
+    ``tuned``, prepends a strong separation flag so reviewers cannot
+    quote tuned numbers as if they were baselines.
+    """
+    caveats: List[str] = []
+    tuned_sides = [
+        name
+        for name, kind in (
+            ("deterministic", deterministic_kind),
+            ("opus", opus_kind),
+        )
+        if kind == "tuned"
+    ]
+    if tuned_sides:
+        caveats.append(
+            "**Tuned variant present — not a baseline report.** The "
+            f"following slice(s) were run with hyperparameter-modified "
+            f"retriever configs: {', '.join(tuned_sides)}. Tuned "
+            "numbers are rendered in their own headline-metrics table "
+            "and must NOT be quoted as, table-joined against, or "
+            "subtracted from baseline numbers. See the per-slice "
+            "`retriever:` lines for the exact config delta."
+        )
+    caveats.append(
+        "**Not a strict apples-to-apples comparison.** The two slices "
+        "use different query sources (deterministic generator vs Opus) "
+        "and may use different retriever configs (see per-slice "
+        "`retriever:` lines below). Compare slice-by-slice; do not "
+        "subtract aggregate metrics."
+    )
+    diag_prefix = (
+        "deterministic" if deterministic_kind == "baseline" else "tuned"
+    )
+    caveats.append(
+        f"`{diag_prefix}_without_{excluded_answer_type}` is a "
+        "diagnostic ceiling slice, not an official headline number. "
+        "Quote the headline-metrics tables in the matching section; "
+        "use the diagnostic slice only to estimate the retriever's "
+        "ceiling on well-formed queries."
+    )
+    det_msl = det_cfg.get("max_seq_length")
+    opus_msl = opus_cfg.get("max_seq_length")
+    if det_msl != opus_msl and det_msl is not None and opus_msl is not None:
+        caveats.append(
+            f"`max_seq_length` differs across slices "
+            f"(deterministic={det_msl}, opus={opus_msl}). Long chunks "
+            "are truncated more aggressively in the lower-cap slice, "
+            "which slightly favors the higher-cap slice on queries "
+            "whose gold content lives past the cap. See "
+            "`eval/reports/corpus-length-analysis.md` for the measured "
+            "fraction of chunks above each cap."
+        )
+    return caveats
 
 
 # ---------------------------------------------------------------------------
@@ -1536,6 +1937,574 @@ def _run_miss_analysis_cli(args: argparse.Namespace) -> int:
         f"buckets="
         + ", ".join(
             f"{b.name}={b.count}" for b in miss_analysis.buckets
+        )
+    )
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# Corpus length-analyzer CLI path.
+#
+# Pure offline analysis — reads a corpus.jsonl, runs the production
+# chunker over it, tokenizes each chunk with bge-m3 (or whatever the
+# user passed via --tokenizer), and writes the char/token length
+# distribution + max_seq_length cap impact + top-N longest chunks. Used
+# to size max_seq_length truncation caveats with measured numbers
+# instead of char-derived guesses.
+# ---------------------------------------------------------------------------
+
+
+def _run_analyze_corpus_lengths_cli(args: argparse.Namespace) -> int:
+    import json as _json
+
+    thresholds = (
+        tuple(args.threshold)
+        if args.threshold
+        else DEFAULT_TOKEN_THRESHOLDS
+    )
+
+    try:
+        analysis = analyze_corpus_lengths(
+            args.corpus,
+            tokenizer_name=args.tokenizer,
+            thresholds=thresholds,
+            top_longest=int(args.top_longest),
+            batch_size=int(args.batch_size),
+        )
+    except FileNotFoundError as ex:
+        log.error("%s", ex)
+        return 2
+    except RuntimeError as ex:
+        log.error("Analyzer failed: %s", ex)
+        return 2
+
+    args.out_json.parent.mkdir(parents=True, exist_ok=True)
+    args.out_md.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "metadata": {
+            "harness": "analyze-corpus-lengths",
+            "corpus": str(args.corpus),
+            "tokenizer": args.tokenizer,
+            "thresholds": list(thresholds),
+            "top_longest": int(args.top_longest),
+            "run_at": datetime.now().isoformat(timespec="seconds"),
+        },
+        "analysis": length_analysis_to_dict(analysis),
+    }
+    args.out_json.write_text(
+        _json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    args.out_md.write_text(
+        render_length_analysis_markdown(analysis), encoding="utf-8"
+    )
+    log.info("Wrote %s", args.out_json)
+    log.info("Wrote %s", args.out_md)
+    print(
+        f"corpus-length-analysis: chunks={analysis.chunk_count} "
+        f"docs={analysis.document_count} "
+        f"tokenizer={analysis.tokenizer} "
+        f"token_p95={analysis.token_length.p95:.0f} "
+        f"token_max={analysis.token_length.max} "
+        + ", ".join(
+            f">{t}={analysis.chunks_over_token_threshold[t]}"
+            for t in sorted(analysis.chunks_over_token_threshold)
+        )
+    )
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# Phase 1A — corpus-noise audit + cleaner dry-run CLI paths.
+#
+# Both commands are pure offline analysis. The audit emits the long-chunk
+# top-N + per-chunk noise signals + raw-vs-cleaned length comparison so
+# we can reason about the long tail before deciding whether the cleaner
+# is worth shipping. The dry-run emits the cleaner-effect summary alone
+# and is intended for quick iteration on cleaner pattern changes. Phase 0
+# baselines under eval/reports/ are never overwritten — these commands
+# write into eval/reports/phase1-corpus-audit/.
+# ---------------------------------------------------------------------------
+
+
+def _run_audit_corpus_noise_cli(args: argparse.Namespace) -> int:
+    import json as _json
+
+    thresholds = (
+        tuple(args.threshold)
+        if args.threshold
+        else DEFAULT_TOKEN_THRESHOLDS
+    )
+
+    try:
+        audit = audit_long_chunks(
+            args.corpus,
+            tokenizer_name=args.tokenizer,
+            top_n=int(args.top_n),
+            batch_size=int(args.batch_size),
+        )
+        comparison = compare_raw_vs_cleaned(
+            args.corpus,
+            tokenizer_name=args.tokenizer,
+            thresholds=thresholds,
+            batch_size=int(args.batch_size),
+        )
+    except FileNotFoundError as ex:
+        log.error("%s", ex)
+        return 2
+    except RuntimeError as ex:
+        log.error("Audit failed: %s", ex)
+        return 2
+
+    out_dir: Path = args.out_dir
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    audit_payload = {
+        "metadata": {
+            "harness": "audit-corpus-noise",
+            "corpus": str(args.corpus),
+            "tokenizer": args.tokenizer,
+            "top_n": int(args.top_n),
+            "run_at": datetime.now().isoformat(timespec="seconds"),
+        },
+        "audit": audit_to_dict(audit),
+    }
+    comparison_payload = {
+        "metadata": {
+            "harness": "audit-corpus-noise:length-comparison",
+            "corpus": str(args.corpus),
+            "tokenizer": args.tokenizer,
+            "thresholds": list(thresholds),
+            "run_at": datetime.now().isoformat(timespec="seconds"),
+        },
+        "comparison": length_comparison_to_dict(comparison),
+    }
+
+    (out_dir / "long-chunk-audit.json").write_text(
+        _json.dumps(audit_payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    (out_dir / "long-chunk-audit.md").write_text(
+        render_audit_markdown(audit), encoding="utf-8"
+    )
+    (out_dir / "length-comparison.json").write_text(
+        _json.dumps(comparison_payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    (out_dir / "length-comparison.md").write_text(
+        render_length_comparison_markdown(comparison), encoding="utf-8"
+    )
+
+    log.info("Wrote %s", out_dir / "long-chunk-audit.json")
+    log.info("Wrote %s", out_dir / "long-chunk-audit.md")
+    log.info("Wrote %s", out_dir / "length-comparison.json")
+    log.info("Wrote %s", out_dir / "length-comparison.md")
+
+    print(
+        f"audit-corpus-noise: chunks={audit.chunk_count} "
+        f"docs={audit.document_count} "
+        f"top_n={len(audit.long_chunks)} "
+        f"raw_p95={comparison.raw.token.p95:.0f} "
+        f"cleaned_p95={comparison.cleaned.token.p95:.0f} "
+        f"dropped={comparison.dropped_chunk_count} "
+        f"signals=" + (
+            ",".join(
+                f"{name}={count}"
+                for name, count in sorted(audit.noise_signal_summary.items())
+            )
+            or "none"
+        )
+    )
+    return 0
+
+
+def _run_clean_corpus_dry_run_cli(args: argparse.Namespace) -> int:
+    import json as _json
+
+    thresholds = (
+        tuple(args.threshold)
+        if args.threshold
+        else DEFAULT_TOKEN_THRESHOLDS
+    )
+
+    try:
+        comparison = compare_raw_vs_cleaned(
+            args.corpus,
+            tokenizer_name=args.tokenizer,
+            thresholds=thresholds,
+            batch_size=int(args.batch_size),
+        )
+    except FileNotFoundError as ex:
+        log.error("%s", ex)
+        return 2
+    except RuntimeError as ex:
+        log.error("Dry-run failed: %s", ex)
+        return 2
+
+    out_dir: Path = args.out_dir
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    payload = {
+        "metadata": {
+            "harness": "clean-corpus-dry-run",
+            "corpus": str(args.corpus),
+            "tokenizer": args.tokenizer,
+            "thresholds": list(thresholds),
+            "run_at": datetime.now().isoformat(timespec="seconds"),
+        },
+        "comparison": length_comparison_to_dict(comparison),
+    }
+
+    (out_dir / "clean-dry-run-summary.json").write_text(
+        _json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    (out_dir / "clean-dry-run-summary.md").write_text(
+        render_length_comparison_markdown(comparison), encoding="utf-8"
+    )
+
+    log.info("Wrote %s", out_dir / "clean-dry-run-summary.json")
+    log.info("Wrote %s", out_dir / "clean-dry-run-summary.md")
+
+    print(
+        f"clean-corpus-dry-run: raw_chunks={comparison.raw_chunk_count} "
+        f"cleaned_chunks={comparison.cleaned_chunk_count} "
+        f"dropped={comparison.dropped_chunk_count} "
+        f"removed_lines={comparison.cleaner_total_removed_lines} "
+        f"collapsed_repeats={comparison.cleaner_total_collapsed_repeats} "
+        f"raw_p95={comparison.raw.token.p95:.0f} "
+        f"cleaned_p95={comparison.cleaned.token.p95:.0f}"
+    )
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# Phase 1B — ingest-side preprocessor CLI paths.
+#
+# preprocess-corpus-dry-run:  streams the corpus through the prefix /
+#   inline-edit transforms and writes a summary + sample diffs to
+#   eval/reports/phase1b-preprocess/. No corpus artifact is produced.
+#
+# emit-preprocessed-corpus:   same pass, but writes a
+#   corpus.<variant>.jsonl + manifest.json into the configured
+#   corpora directory. The source corpus.jsonl is never modified.
+#
+# Both refuse to run with both transforms disabled, since "raw" is
+# already on disk; pass at least one of --strip-page-prefix /
+# --strip-inline-edit.
+# ---------------------------------------------------------------------------
+
+
+def _build_preprocess_config(args: argparse.Namespace) -> PreprocessConfig:
+    return PreprocessConfig(
+        strip_page_prefix=bool(args.strip_page_prefix),
+        strip_inline_edit=bool(args.strip_inline_edit),
+    )
+
+
+def _refuse_if_no_transform(config: PreprocessConfig) -> Optional[int]:
+    if not (config.strip_page_prefix or config.strip_inline_edit):
+        log.error(
+            "Refusing to run with no transform enabled — pass at least "
+            "one of --strip-page-prefix / --strip-inline-edit. The "
+            "'raw' variant is already the source corpus."
+        )
+        return 2
+    return None
+
+
+def _run_preprocess_corpus_dry_run_cli(args: argparse.Namespace) -> int:
+    import json as _json
+
+    config = _build_preprocess_config(args)
+    rc = _refuse_if_no_transform(config)
+    if rc is not None:
+        return rc
+
+    if not args.corpus.exists():
+        log.error("Corpus not found: %s", args.corpus)
+        return 2
+
+    summary = CorpusPreprocessSummary(
+        source_corpus=str(args.corpus), config=config,
+    )
+
+    # Drain the iterator so the summary is fully populated. We don't
+    # write the preprocessed docs anywhere — this is the dry-run.
+    consumed = 0
+    for _ in iter_preprocessed_documents(
+        _iter_documents(args.corpus),
+        config=config,
+        sample_diff_target=int(args.sample_diff_n),
+        summary=summary,
+    ):
+        consumed += 1
+
+    out_dir: Path = args.out_dir
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    summary_payload = {
+        "metadata": {
+            "harness": "preprocess-corpus-dry-run",
+            "preprocess_version": PREPROCESS_VERSION,
+            "corpus": str(args.corpus),
+            "run_at": datetime.now().isoformat(timespec="seconds"),
+        },
+        "summary": corpus_preprocess_summary_to_dict(summary),
+    }
+    (out_dir / "preprocess-summary.json").write_text(
+        _json.dumps(summary_payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    (out_dir / "preprocess-summary.md").write_text(
+        render_corpus_preprocess_summary_markdown(summary),
+        encoding="utf-8",
+    )
+    (out_dir / "preprocess-sample-diffs.md").write_text(
+        render_sample_diff_markdown(summary.sample_diffs),
+        encoding="utf-8",
+    )
+
+    log.info("Wrote %s", out_dir / "preprocess-summary.json")
+    log.info("Wrote %s", out_dir / "preprocess-summary.md")
+    log.info("Wrote %s", out_dir / "preprocess-sample-diffs.md")
+
+    print(
+        f"preprocess-corpus-dry-run: variant={config.variant_label} "
+        f"docs={summary.document_count} "
+        f"chunks_processed={summary.chunks_processed} "
+        f"chunks_changed={summary.chunks_changed} "
+        f"chunks_dropped={summary.chunks_dropped} "
+        f"prefix_strips={summary.prefix_strip_count} "
+        f"inline_edits_removed={summary.total_inline_edit_removals} "
+        f"prefix_chars_removed={summary.total_removed_prefix_chars} "
+        f"sample_diffs={len(summary.sample_diffs)}"
+    )
+    return 0
+
+
+def _run_emit_preprocessed_corpus_cli(args: argparse.Namespace) -> int:
+    import json as _json
+
+    config = _build_preprocess_config(args)
+    rc = _refuse_if_no_transform(config)
+    if rc is not None:
+        return rc
+
+    if not args.corpus.exists():
+        log.error("Corpus not found: %s", args.corpus)
+        return 2
+
+    out_dir: Path = args.out_dir
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    variant = args.variant_name or config.variant_label
+    out_corpus = out_dir / f"corpus.{variant}.jsonl"
+    if out_corpus.resolve() == args.corpus.resolve():
+        log.error(
+            "Refusing to overwrite the source corpus %s — choose a "
+            "different --out-dir or --variant-name.",
+            args.corpus,
+        )
+        return 2
+
+    summary = CorpusPreprocessSummary(
+        source_corpus=str(args.corpus), config=config,
+    )
+
+    written = 0
+    with out_corpus.open("w", encoding="utf-8") as fp:
+        for new_doc in iter_preprocessed_documents(
+            _iter_documents(args.corpus),
+            config=config,
+            sample_diff_target=20,
+            summary=summary,
+        ):
+            fp.write(_json.dumps(new_doc, ensure_ascii=False))
+            fp.write("\n")
+            written += 1
+
+    manifest = {
+        "preprocess_version": PREPROCESS_VERSION,
+        "source_corpus": str(args.corpus),
+        "variant": variant,
+        "options": {
+            "strip_page_prefix": config.strip_page_prefix,
+            "strip_inline_edit": config.strip_inline_edit,
+        },
+        "doc_count": summary.document_count,
+        "sections_processed": summary.sections_processed,
+        "chunks_processed": summary.chunks_processed,
+        "chunks_changed": summary.chunks_changed,
+        "chunks_dropped": summary.chunks_dropped,
+        "text_blobs_changed": summary.text_blobs_changed,
+        "list_entries_changed": summary.list_entries_changed,
+        "total_removed_prefix_chars": summary.total_removed_prefix_chars,
+        "total_inline_edit_removals": summary.total_inline_edit_removals,
+        "prefix_strip_count": summary.prefix_strip_count,
+        "output_corpus": str(out_corpus),
+        "run_at": datetime.now().isoformat(timespec="seconds"),
+    }
+    manifest_path = out_dir / "manifest.json"
+    # If a previous variant left a manifest behind, merge by variant
+    # label so both runs survive in the directory. The manifest is a
+    # dict-of-variants when more than one is present.
+    if manifest_path.exists():
+        try:
+            existing = _json.loads(manifest_path.read_text(encoding="utf-8"))
+        except _json.JSONDecodeError:
+            existing = {}
+        if isinstance(existing, dict) and "variants" in existing:
+            existing["variants"][variant] = manifest
+            payload = existing
+        elif isinstance(existing, dict) and "variant" in existing:
+            payload = {
+                "variants": {
+                    existing["variant"]: existing,
+                    variant: manifest,
+                }
+            }
+        else:
+            payload = {"variants": {variant: manifest}}
+    else:
+        payload = manifest
+
+    manifest_path.write_text(
+        _json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+    log.info("Wrote %s (%d docs)", out_corpus, written)
+    log.info("Wrote %s", manifest_path)
+
+    print(
+        f"emit-preprocessed-corpus: variant={variant} "
+        f"docs={summary.document_count} "
+        f"chunks_changed={summary.chunks_changed} "
+        f"chunks_dropped={summary.chunks_dropped} "
+        f"prefix_strips={summary.prefix_strip_count} "
+        f"inline_edits_removed={summary.total_inline_edit_removals} "
+        f"out={out_corpus}"
+    )
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# Phase 1B — multi-variant length comparison.
+#
+# Reads N analyze-corpus-lengths reports (one per preprocess variant)
+# and emits a single wide table that lines up the headline distribution
+# stats + chunks-over-cap counts. Cheap because the per-variant
+# analyses are already on disk; this command never re-tokenizes.
+# ---------------------------------------------------------------------------
+
+
+def _run_compare_corpus_lengths_cli(args: argparse.Namespace) -> int:
+    import json as _json
+
+    bundles: List[Dict[str, Any]] = []
+    for spec in args.analysis:
+        if ":" in spec and not Path(spec).exists():
+            label, _, raw_path = spec.partition(":")
+        else:
+            raw_path = spec
+            label = Path(spec).stem
+        path = Path(raw_path)
+        if not path.exists():
+            log.error("Analysis file not found: %s", path)
+            return 2
+        try:
+            payload = _json.loads(path.read_text(encoding="utf-8"))
+        except _json.JSONDecodeError as ex:
+            log.error("Bad JSON in %s: %s", path, ex)
+            return 2
+        analysis = payload.get("analysis", payload)
+        bundles.append({
+            "label": label,
+            "path": str(path),
+            "analysis": analysis,
+        })
+
+    if not bundles:
+        log.error("No --analysis files provided.")
+        return 2
+
+    rows: List[Dict[str, Any]] = []
+    for b in bundles:
+        a = b["analysis"]
+        char = a.get("char_length", {})
+        tok = a.get("token_length", {})
+        over = a.get("chunks_over_token_threshold", {}) or {}
+        rows.append({
+            "label": b["label"],
+            "path": b["path"],
+            "chunk_count": int(a.get("chunk_count", 0)),
+            "document_count": int(a.get("document_count", 0)),
+            "char_p50": float(char.get("p50", 0)),
+            "char_p90": float(char.get("p90", 0)),
+            "char_p95": float(char.get("p95", 0)),
+            "char_p99": float(char.get("p99", 0)),
+            "char_max": int(char.get("max", 0)),
+            "token_p50": float(tok.get("p50", 0)),
+            "token_p90": float(tok.get("p90", 0)),
+            "token_p95": float(tok.get("p95", 0)),
+            "token_p99": float(tok.get("p99", 0)),
+            "token_max": int(tok.get("max", 0)),
+            "over_512": int(over.get("512", 0)),
+            "over_1024": int(over.get("1024", 0)),
+            "over_2048": int(over.get("2048", 0)),
+            "over_4096": int(over.get("4096", 0)),
+            "over_8192": int(over.get("8192", 0)),
+        })
+
+    out_json: Path = args.out_json
+    out_md: Path = args.out_md
+    out_json.parent.mkdir(parents=True, exist_ok=True)
+    out_md.parent.mkdir(parents=True, exist_ok=True)
+
+    payload = {
+        "metadata": {
+            "harness": "compare-corpus-lengths",
+            "run_at": datetime.now().isoformat(timespec="seconds"),
+        },
+        "rows": rows,
+    }
+    out_json.write_text(
+        _json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+    md_lines: List[str] = []
+    md_lines.append("# Corpus length comparison across preprocess variants")
+    md_lines.append("")
+    md_lines.append("| variant | chunks | docs | char p50 | char p90 | char p95 | char p99 | char max | tok p50 | tok p90 | tok p95 | tok p99 | tok max | >512 | >1024 | >2048 | >4096 | >8192 |")
+    md_lines.append("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
+    for r in rows:
+        md_lines.append(
+            f"| {r['label']} | {r['chunk_count']} | {r['document_count']} | "
+            f"{r['char_p50']:.0f} | {r['char_p90']:.0f} | "
+            f"{r['char_p95']:.0f} | {r['char_p99']:.0f} | {r['char_max']} | "
+            f"{r['token_p50']:.0f} | {r['token_p90']:.0f} | "
+            f"{r['token_p95']:.0f} | {r['token_p99']:.0f} | {r['token_max']} | "
+            f"{r['over_512']} | {r['over_1024']} | {r['over_2048']} | "
+            f"{r['over_4096']} | {r['over_8192']} |"
+        )
+    md_lines.append("")
+    md_lines.append("**Source files:**")
+    md_lines.append("")
+    for r in rows:
+        md_lines.append(f"- `{r['label']}` ← `{r['path']}`")
+    md_lines.append("")
+    out_md.write_text("\n".join(md_lines) + "\n", encoding="utf-8")
+
+    log.info("Wrote %s", out_json)
+    log.info("Wrote %s", out_md)
+    print(
+        f"compare-corpus-lengths: variants={len(rows)} "
+        + " | ".join(
+            f"{r['label']}: chunks={r['chunk_count']}, "
+            f"tok_p95={r['token_p95']:.0f}, >1024={r['over_1024']}"
+            for r in rows
         )
     )
     return 0
