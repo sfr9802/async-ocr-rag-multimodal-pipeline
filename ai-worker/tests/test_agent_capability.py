@@ -212,7 +212,15 @@ def test_auto_capability_ignores_loop_enabled_kwarg():
 
 
 def test_agent_loop_off_matches_auto_for_rag_action():
-    """AGENT(loop=off) must emit the same artifacts as AUTO for RAG."""
+    """AGENT(loop=off) must emit the same artifacts as AUTO for RAG.
+
+    The AGENT_DECISION payload now carries an additive ``trace`` field
+    whose ``capability`` slot reports the actual capability name
+    ("AGENT" vs "AUTO") — that single value is genuinely different
+    between the two capabilities. Every other byte stays identical, so
+    we compare AGENT_DECISION with the trace field stripped and the
+    sub-capability outputs byte-for-byte.
+    """
     rag_sentinel_a = _SentinelCapability("RAG", "rag answer bytes")
     rag_sentinel_b = _SentinelCapability("RAG", "rag answer bytes")
 
@@ -231,15 +239,29 @@ def test_agent_loop_off_matches_auto_for_rag_action():
     auto_out = auto_cap.run(_input("what is bge-m3"))
     agent_out = agent_cap.run(_input("what is bge-m3"))
 
-    # Artifact type / filename / content-type / content must match
-    # bit-for-bit so Phase 5 clients can switch capability names
-    # without a behavioural surprise.
     assert len(auto_out.outputs) == len(agent_out.outputs)
     for a, b in zip(auto_out.outputs, agent_out.outputs):
         assert a.type == b.type
         assert a.filename == b.filename
         assert a.content_type == b.content_type
-        assert a.content == b.content
+        if a.type == "AGENT_DECISION":
+            body_a = json.loads(a.content.decode("utf-8"))
+            body_b = json.loads(b.content.decode("utf-8"))
+            # Existing keys must remain byte-identical.
+            for legacy_key in (
+                "action", "reason", "confidence", "routerName", "parsedQuery"
+            ):
+                assert body_a[legacy_key] == body_b[legacy_key]
+            # The trace.capability field reflects the actual capability
+            # name; everything else in the trace shape is identical.
+            assert body_a["trace"]["capability"] == "AUTO"
+            assert body_b["trace"]["capability"] == "AGENT"
+            assert (
+                [s["stage"] for s in body_a["trace"]["stages"]]
+                == [s["stage"] for s in body_b["trace"]["stages"]]
+            )
+        else:
+            assert a.content == b.content
 
 
 def test_agent_loop_off_matches_auto_for_clarify_action():
@@ -340,6 +362,64 @@ def test_agent_loop_on_missing_rag_sub_raises_typed_error():
     with pytest.raises(CapabilityError) as ex_info:
         agent_cap.run(_input("what is bge-m3"))
     assert ex_info.value.code == "AUTO_RAG_UNAVAILABLE"
+    # The loop-path missing-sub fail-out must also fold the trace
+    # summary into the errorMessage so the FAILED callback shows the
+    # classify / route progression — same contract as the single-pass
+    # path.
+    msg = ex_info.value.message
+    assert "trace:" in msg
+    assert "classify:ok" in msg
+    assert "route:ok" in msg
+
+
+def test_agent_loop_on_decision_payload_carries_trace_with_classify_route():
+    """AGENT_DECISION on the loop path also carries the additive trace
+    field. The loop's own AGENT_TRACE artifact is unchanged — the two
+    artifacts coexist."""
+    parser = RegexQueryParser()
+    retriever = _FakeRetriever(
+        {"what is bge-m3": [_mk_chunk("c1")]}
+    )
+    generator = _FakeGenerator()
+    agent_cap = AgentCapability(
+        router=_FixedRouter(
+            _decision(
+                action="rag",
+                parsed_query=parser.parse("what is bge-m3"),
+            )
+        ),
+        parser=parser,
+        rag=_SentinelCapability("RAG", "unused"),
+        loop_enabled=True,
+        critic=NoOpCritic(),
+        rewriter=NoOpQueryRewriter(),
+        synthesizer=AgentSynthesizer(generator),
+        retriever=retriever,
+        generator=generator,
+        budget=LoopBudget(max_iter=2),
+    )
+    result = agent_cap.run(_input("what is bge-m3"))
+
+    types = [a.type for a in result.outputs]
+    # Loop-path artifact set is unchanged.
+    assert types == [
+        "AGENT_DECISION",
+        "AGENT_TRACE",
+        "RETRIEVAL_RESULT_AGG",
+        "FINAL_RESPONSE",
+    ]
+
+    # AGENT_DECISION carries trace with classify + route stages.
+    body = json.loads(result.outputs[0].content.decode("utf-8"))
+    assert body["action"] == "rag"
+    assert "trace" in body
+    stage_names = [s["stage"] for s in body["trace"]["stages"]]
+    assert "classify" in stage_names
+    assert "route" in stage_names
+    # Loop path does not record dispatch on AgentCapability's builder —
+    # the loop has its own AGENT_TRACE for that. So `dispatch` should
+    # NOT appear in AGENT_DECISION's trace stages.
+    assert "dispatch" not in stage_names
 
 
 # ---------------------------------------------------------------------------

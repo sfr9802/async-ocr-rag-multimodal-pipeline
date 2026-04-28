@@ -200,12 +200,14 @@ def build_default_registry(settings: WorkerSettings) -> CapabilityRegistry:
             log.info(
                 "AUTO + AGENT capabilities registered (router=%s "
                 "confidence_threshold=%.2f rag=%s ocr=%s multimodal=%s "
-                "agent_loop=%s agent_critic=%s agent_max_iter=%d).",
+                "agent_loop=%s agent_critic=%s agent_max_iter=%d "
+                "agent_loop_backend=%s).",
                 settings.agent_router,
                 settings.agent_confidence_threshold,
                 rag_registered, ocr_registered, multimodal_registered,
                 settings.agent_loop, settings.agent_critic,
                 settings.agent_max_iter,
+                settings.agent_loop_backend,
             )
         except Exception as ex:
             log.warning(
@@ -841,6 +843,45 @@ def _build_agent_capabilities(
         min_confidence_to_stop=settings.agent_min_stop_confidence,
     )
 
+    # Backend toggle: only meaningful when the loop is enabled. The
+    # default ('legacy') leaves loop_runner=None, so AgentCapability
+    # falls through to the Phase 6 in-process AgentLoopController on
+    # demand — bit-for-bit unchanged. 'graph' opts into the experimental
+    # LangGraph backend; an import / build failure logs a warning and
+    # falls back to legacy so a missing langgraph install never takes
+    # AGENT down.
+    loop_runner: Optional[Any] = None
+    if loop_enabled:
+        backend = (settings.agent_loop_backend or "legacy").strip().lower()
+        if backend == "graph":
+            try:
+                from app.capabilities.agent.graph_loop import AgentLoopGraph
+
+                loop_runner = AgentLoopGraph(
+                    critic=critic,
+                    rewriter=rewriter,
+                    parser=parser,
+                    budget=budget,
+                )
+                log.info(
+                    "AGENT loop backend active: graph (AgentLoopGraph). "
+                    "Set AIPIPELINE_WORKER_AGENT_LOOP_BACKEND=legacy to revert."
+                )
+            except Exception as ex:
+                log.warning(
+                    "AGENT loop_backend=graph requested but failed to "
+                    "initialise (%s: %s). Falling back to legacy "
+                    "AgentLoopController. Verify langgraph is installed "
+                    "(`pip install -r requirements.txt`).",
+                    type(ex).__name__,
+                    ex,
+                )
+                loop_runner = None
+        else:
+            log.info(
+                "AGENT loop backend active: legacy (AgentLoopController)"
+            )
+
     agent_cap = AgentCapability(
         router=router,
         parser=parser,
@@ -856,6 +897,7 @@ def _build_agent_capabilities(
         retriever=retriever,
         generator=generator,
         budget=budget,
+        loop_runner=loop_runner,
     )
 
     return auto_cap, agent_cap

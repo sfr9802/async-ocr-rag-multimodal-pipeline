@@ -327,17 +327,38 @@ class MultimodalCapability(Capability):
                 f"| trace: {builder.summary()}",
             ) from ex
         retrieve_ms = elapsed_ms(started)
-        builder.record_ok(
-            STAGE_RETRIEVE,
-            provider=type(self._retriever).__name__,
-            duration_ms=retrieve_ms,
-            details={
-                "hitCount": len(retrieval_report.results),
-                "indexVersion": retrieval_report.index_version,
-                "embeddingModel": retrieval_report.embedding_model,
-                "topK": retrieval_report.top_k,
-            },
-        )
+        retrieve_details = {
+            "hitCount": len(retrieval_report.results),
+            "indexVersion": retrieval_report.index_version,
+            "embeddingModel": retrieval_report.embedding_model,
+            "topK": retrieval_report.top_k,
+        }
+        if not retrieval_report.results:
+            # Retrieval is structurally fine — the call succeeded — but
+            # the index returned zero hits, so the final answer ends up
+            # grounded only on the synthetic rank-0 chunk built from the
+            # fused OCR + vision + question context. Behaviour is
+            # unchanged; the trace just flags it so operators can tell
+            # this case apart from a normal hit-bearing run.
+            builder.record_warn(
+                STAGE_RETRIEVE,
+                provider=type(self._retriever).__name__,
+                code="RETRIEVAL_EMPTY",
+                message=(
+                    "retrieval returned zero hits — answer will be "
+                    "grounded only on fused context"
+                ),
+                duration_ms=retrieve_ms,
+                fallback_used=True,
+                details=retrieve_details,
+            )
+        else:
+            builder.record_ok(
+                STAGE_RETRIEVE,
+                provider=type(self._retriever).__name__,
+                duration_ms=retrieve_ms,
+                details=retrieve_details,
+            )
         log.info(
             "MULTIMODAL retrieval jobId=%s hits=%d index_version=%s",
             input.job_id,

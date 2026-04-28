@@ -90,6 +90,12 @@ STAGE_VISION = "vision"
 STAGE_FUSION = "fusion"
 STAGE_RETRIEVE = "retrieve"
 STAGE_GENERATE = "generate"
+# AGENT/AUTO single-pass stages. ``route`` records the router decision
+# (rule or LLM) and ``dispatch`` records the call into the chosen
+# sub-capability. Both are populated only by AgentCapability.run — the
+# loop path keeps emitting its own AGENT_TRACE artifact unchanged.
+STAGE_ROUTE = "route"
+STAGE_DISPATCH = "dispatch"
 # Reserved for the TaskRunner / outer orchestrator — not currently
 # populated by the in-capability trace.
 STAGE_FETCH = "fetch"
@@ -186,6 +192,30 @@ STABLE_ERROR_CODES: Dict[str, str] = {
     ),
     "FUSION_DEFAULT_QUERY": (
         "No user question, OCR, or vision caption — fused on default query."
+    ),
+
+    # AGENT / AUTO single-pass dispatch errors. Raised by AgentCapability
+    # when the routed-to sub-capability is not registered or no usable
+    # input was supplied. Folded into the FAILED callback's errorMessage
+    # alongside the AGENT trace summary.
+    "AUTO_NO_INPUT": (
+        "AUTO job received neither usable text nor a routable file."
+    ),
+    "AUTO_RAG_UNAVAILABLE": (
+        "AUTO routed to RAG but the RAG capability is not registered."
+    ),
+    "AUTO_OCR_UNAVAILABLE": (
+        "AUTO routed to OCR but the OCR capability is not registered."
+    ),
+    "AUTO_MULTIMODAL_UNAVAILABLE": (
+        "AUTO routed to MULTIMODAL but the MULTIMODAL capability is not registered."
+    ),
+
+    # MULTIMODAL retrieval warning. Emitted when the retriever returns
+    # zero hits — the pipeline still answers using the fused OCR + vision
+    # context as the synthetic rank-0 chunk, but the trace flags it.
+    "RETRIEVAL_EMPTY": (
+        "Retrieval returned zero hits — answer grounded only on fused context."
     ),
 }
 

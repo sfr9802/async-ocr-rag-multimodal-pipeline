@@ -1037,6 +1037,67 @@ def test_trace_ocr_empty_vision_success_marks_ocr_as_warn_with_fallback():
     assert _find_stage(trace_body, "generate")["status"] == "ok"
 
 
+def test_trace_retrieve_empty_marks_retrieve_as_warn_with_fallback():
+    """When retrieval returns zero hits the pipeline still answers
+    using the synthetic rank-0 fused chunk. The trace flags this with
+    a ``RETRIEVAL_EMPTY`` warn record so operators can distinguish a
+    "no hits" run from a normal hit-bearing run; downstream behaviour
+    is otherwise unchanged."""
+    ocr = FakeOcrProvider(
+        image_result=OcrPageResult(
+            page_number=1,
+            text="The quick brown fox jumps over the lazy dog.",
+            avg_confidence=95.0,
+        )
+    )
+    vision = FakeVisionProvider(
+        result=_sample_vision_result("A neutral document scan.")
+    )
+    cap = _make_capability(
+        ocr=ocr,
+        vision=vision,
+        retriever_results=[],  # retrieve returns zero hits
+        config=_default_config(emit_trace=True),
+    )
+
+    result = cap.run(
+        _make_job_input(
+            file_bytes=_png_bytes(),
+            content_type="image/png",
+            filename="empty.png",
+        )
+    )
+
+    # Existing artifact set is unchanged: OCR_TEXT / VISION_RESULT /
+    # RETRIEVAL_RESULT / FINAL_RESPONSE (+ MULTIMODAL_TRACE since
+    # emit_trace=True). Retrieval-empty must not introduce a new type.
+    types = {a.type for a in result.outputs}
+    assert types == {
+        "OCR_TEXT",
+        "VISION_RESULT",
+        "RETRIEVAL_RESULT",
+        "FINAL_RESPONSE",
+        "MULTIMODAL_TRACE",
+    }
+
+    trace_body = json.loads(_find_output(result, "MULTIMODAL_TRACE").content)
+    retrieve_stage = _find_stage(trace_body, "retrieve")
+    assert retrieve_stage["status"] == "warn"
+    assert retrieve_stage["code"] == "RETRIEVAL_EMPTY"
+    assert retrieve_stage["fallbackUsed"] is True
+    assert retrieve_stage["details"]["hitCount"] == 0
+
+    # Generate still ran on the synthetic rank-0 chunk.
+    assert _find_stage(trace_body, "generate")["status"] == "ok"
+
+    # FINAL_RESPONSE was still produced.
+    final = _find_output(result, "FINAL_RESPONSE")
+    assert final.content  # non-empty
+
+    # Summary line carries the warn marker.
+    assert "retrieve:warn(RETRIEVAL_EMPTY" in trace_body["summary"]
+
+
 def test_both_fail_terminal_error_message_identifies_both_stages():
     """Terminal failure: both providers raise. The CapabilityError
     message must embed the stage-flow summary so operators see which

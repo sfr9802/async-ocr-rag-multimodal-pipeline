@@ -69,6 +69,17 @@ from app.capabilities.base import (
 from app.capabilities.rag.generation import GenerationProvider, RetrievedChunk
 from app.capabilities.rag.query_parser import ParsedQuery, QueryParserProvider
 from app.capabilities.rag.retriever import RetrievalReport, Retriever
+from app.capabilities.trace import (
+    INPUT_KIND_IMAGE,
+    INPUT_KIND_PDF,
+    INPUT_KIND_TEXT,
+    INPUT_KIND_UNKNOWN,
+    STAGE_CLASSIFY,
+    STAGE_DISPATCH,
+    STAGE_ROUTE,
+    TraceBuilder,
+    elapsed_ms,
+)
 
 log = logging.getLogger(__name__)
 
@@ -87,6 +98,17 @@ _ERR_AUTO_NO_INPUT = "AUTO_NO_INPUT"
 _ERR_AUTO_RAG_UNAVAILABLE = "AUTO_RAG_UNAVAILABLE"
 _ERR_AUTO_OCR_UNAVAILABLE = "AUTO_OCR_UNAVAILABLE"
 _ERR_AUTO_MULTIMODAL_UNAVAILABLE = "AUTO_MULTIMODAL_UNAVAILABLE"
+
+# AUTO-typed codes get the trace summary folded into their errorMessage
+# so the FAILED callback carries `... | trace: classify:ok(...) route:ok(...)`
+# in its body. Sub-capability errors (OCR_*, RAG_*, MULTIMODAL_*) keep
+# their own trace embedding intact and are re-raised unchanged.
+_AUTO_TYPED_CODES = frozenset({
+    _ERR_AUTO_NO_INPUT,
+    _ERR_AUTO_RAG_UNAVAILABLE,
+    _ERR_AUTO_OCR_UNAVAILABLE,
+    _ERR_AUTO_MULTIMODAL_UNAVAILABLE,
+})
 
 # Max length of the text preview shown in route_classify log lines.
 _LOG_PREVIEW_CHARS = 120
@@ -130,6 +152,7 @@ class AgentCapability(Capability):
         retriever: Optional[Retriever] = None,
         generator: Optional[GenerationProvider] = None,
         budget: Optional[LoopBudget] = None,
+        loop_runner: Optional[Any] = None,
     ) -> None:
         self._router = router
         self._parser = parser
@@ -145,6 +168,14 @@ class AgentCapability(Capability):
         self._retriever = retriever
         self._generator = generator
         self._budget = budget or LoopBudget()
+        # ``loop_runner`` is the backend toggle hook — when None, the
+        # capability instantiates the legacy ``AgentLoopController`` on
+        # demand (preserves the Phase 6 default). Any object that
+        # exposes ``run(*, question, initial_parsed_query, execute_fn)
+        # -> LoopOutcome`` works; the registry picks AgentLoopController
+        # for ``agent_loop_backend='legacy'`` and AgentLoopGraph for
+        # ``='graph'``.
+        self._loop_runner = loop_runner
 
     # ------------------------------------------------------------------
 
@@ -152,15 +183,44 @@ class AgentCapability(Capability):
         started = time.monotonic()
         text, file_bytes, file_mime, filename = _classify_input(input.inputs)
 
+        # Build the trace as soon as we know the input shape so the
+        # AUTO_NO_INPUT path can still surface a `classify:fail` summary
+        # in its FAILED-callback errorMessage.
+        input_kind = _input_kind_for(text, file_bytes, file_mime)
+        builder = TraceBuilder(capability=self.name, input_kind=input_kind)
+        classify_ms = _elapsed_ms(started)
+        classify_details = {
+            "textLen": len(text or ""),
+            "hasFile": bool(file_bytes),
+            "fileMime": file_mime,
+            "fileSize": len(file_bytes or b""),
+            "filename": filename,
+        }
+
         if not text and not file_bytes:
+            builder.record_fail(
+                STAGE_CLASSIFY,
+                code=_ERR_AUTO_NO_INPUT,
+                message="no usable text and no file",
+                duration_ms=classify_ms,
+                retryable=False,
+                details=classify_details,
+            )
+            builder.finalize_failed()
             raise CapabilityError(
                 _ERR_AUTO_NO_INPUT,
                 "AUTO job has no usable text and no file — submit either a "
                 "non-blank text field, a supported file (PNG/JPEG/PDF), or "
-                "both.",
+                "both."
+                f" | trace: {builder.summary()}",
             )
 
-        classify_ms = _elapsed_ms(started)
+        builder.record_ok(
+            STAGE_CLASSIFY,
+            duration_ms=classify_ms,
+            details=classify_details,
+        )
+
         log.info(
             "%s route_classify jobId=%s textLen=%d textPreview=%r "
             "hasFile=%s fileMime=%s fileSize=%d filename=%s classifyMs=%.3f",
@@ -183,6 +243,16 @@ class AgentCapability(Capability):
             file_size=len(file_bytes or b""),
         )
         decide_ms = _elapsed_ms(started)
+        builder.record_ok(
+            STAGE_ROUTE,
+            provider=decision.router_name,
+            duration_ms=decide_ms,
+            details={
+                "action": decision.action,
+                "confidence": round(float(decision.confidence), 4),
+                "reason": decision.reason,
+            },
+        )
         log.info(
             "%s route_decide jobId=%s action=%s router=%s confidence=%.3f "
             "reason=%r decideMs=%.3f",
@@ -195,13 +265,6 @@ class AgentCapability(Capability):
             decide_ms,
         )
 
-        agent_decision_artifact = CapabilityOutputArtifact(
-            type="AGENT_DECISION",
-            filename="agent-decision.json",
-            content_type="application/json",
-            content=_serialize_decision(decision).encode("utf-8"),
-        )
-
         # -- Loop path: rag/multimodal with loop enabled -----------------
         if (
             self._loop_enabled
@@ -212,31 +275,48 @@ class AgentCapability(Capability):
         ):
             # Make sure the sub-capability for the chosen action exists.
             # Loop path reuses the multimodal cap for iter 0 so the OCR
-            # + vision stages run once; missing sub still fails cleanly.
+            # + vision stages run once; missing sub still fails cleanly
+            # with a folded trace summary on the AUTO-typed code path.
             if decision.action == "rag":
-                self._require(
-                    self._rag,
-                    _ERR_AUTO_RAG_UNAVAILABLE,
-                    "AGENT routed to RAG but that capability is not "
-                    "registered on this worker. Enable it via "
-                    "AIPIPELINE_WORKER_RAG_ENABLED=true and ensure the "
-                    "FAISS index is built, then restart the worker.",
+                self._enforce_sub_or_fail(
+                    builder=builder,
+                    sub=self._rag,
+                    code=_ERR_AUTO_RAG_UNAVAILABLE,
+                    message=(
+                        "AGENT routed to RAG but that capability is not "
+                        "registered on this worker. Enable it via "
+                        "AIPIPELINE_WORKER_RAG_ENABLED=true and ensure the "
+                        "FAISS index is built, then restart the worker."
+                    ),
+                    action=decision.action,
                 )
             elif decision.action == "multimodal":
-                self._require(
-                    self._multimodal,
-                    _ERR_AUTO_MULTIMODAL_UNAVAILABLE,
-                    "AGENT routed to MULTIMODAL but that capability is not "
-                    "registered on this worker. Enable it via "
-                    "AIPIPELINE_WORKER_MULTIMODAL_ENABLED=true and ensure "
-                    "its OCR + RAG dependencies are healthy, then restart "
-                    "the worker.",
+                self._enforce_sub_or_fail(
+                    builder=builder,
+                    sub=self._multimodal,
+                    code=_ERR_AUTO_MULTIMODAL_UNAVAILABLE,
+                    message=(
+                        "AGENT routed to MULTIMODAL but that capability is not "
+                        "registered on this worker. Enable it via "
+                        "AIPIPELINE_WORKER_MULTIMODAL_ENABLED=true and ensure "
+                        "its OCR + RAG dependencies are healthy, then restart "
+                        "the worker."
+                    ),
+                    action=decision.action,
                 )
 
             loop_outputs = self._run_loop_and_synthesize(
                 decision=decision,
                 input=input,
                 text=text or "",
+            )
+            agent_decision_artifact = CapabilityOutputArtifact(
+                type="AGENT_DECISION",
+                filename="agent-decision.json",
+                content_type="application/json",
+                content=_serialize_decision(
+                    decision, trace=builder.trace.to_dict()
+                ).encode("utf-8"),
             )
             outputs = [agent_decision_artifact, *loop_outputs]
             log.info(
@@ -247,8 +327,62 @@ class AgentCapability(Capability):
             return CapabilityOutput(outputs=outputs)
 
         # -- Phase 5 single-pass path ------------------------------------
-        sub_outputs = self._dispatch_single_pass(
-            decision=decision, input=input, text=text
+        dispatch_started = time.monotonic()
+        try:
+            sub_outputs = self._dispatch_single_pass(
+                decision=decision, input=input, text=text
+            )
+        except CapabilityError as ex:
+            dispatch_ms = _elapsed_ms(dispatch_started)
+            builder.record_fail(
+                STAGE_DISPATCH,
+                provider=decision.action,
+                code=ex.code,
+                message=ex.message,
+                duration_ms=dispatch_ms,
+                retryable=False,
+            )
+            builder.finalize_failed()
+            if ex.code in _AUTO_TYPED_CODES:
+                # AUTO-typed dispatch failures get the trace summary
+                # appended so operators see classify/route/dispatch
+                # progression directly in the FAILED callback's
+                # errorMessage. Sub-capability errors are re-raised
+                # unchanged so their own trace embedding is preserved.
+                raise CapabilityError(
+                    ex.code,
+                    f"{ex.message} | trace: {builder.summary()}",
+                ) from ex
+            raise
+        except Exception as ex:
+            dispatch_ms = _elapsed_ms(dispatch_started)
+            builder.record_fail(
+                STAGE_DISPATCH,
+                provider=decision.action,
+                code="DISPATCH_EXCEPTION",
+                message=f"{type(ex).__name__}: {ex}",
+                duration_ms=dispatch_ms,
+                retryable=True,
+            )
+            builder.finalize_failed()
+            raise
+
+        dispatch_ms = _elapsed_ms(dispatch_started)
+        builder.record_ok(
+            STAGE_DISPATCH,
+            provider=decision.action,
+            duration_ms=dispatch_ms,
+            details={"subOutputCount": len(sub_outputs)},
+        )
+        builder.finalize_ok()
+
+        agent_decision_artifact = CapabilityOutputArtifact(
+            type="AGENT_DECISION",
+            filename="agent-decision.json",
+            content_type="application/json",
+            content=_serialize_decision(
+                decision, trace=builder.trace.to_dict()
+            ).encode("utf-8"),
         )
 
         outputs = [agent_decision_artifact, *sub_outputs]
@@ -403,15 +537,21 @@ class AgentCapability(Capability):
                 ) from ex
             return answer, list(report.results), 0
 
-        controller = AgentLoopController(
-            critic=self._critic,
-            rewriter=self._rewriter,
-            parser=self._parser,
-            budget=self._budget,
-        )
+        # Backend selection: when the registry has injected a
+        # loop_runner (graph backend), use it directly; otherwise fall
+        # back to the legacy AgentLoopController so the Phase 6 default
+        # path stays bit-for-bit unchanged.
+        runner = self._loop_runner
+        if runner is None:
+            runner = AgentLoopController(
+                critic=self._critic,
+                rewriter=self._rewriter,
+                parser=self._parser,
+                budget=self._budget,
+            )
 
         try:
-            outcome = controller.run(
+            outcome = runner.run(
                 question=text,
                 initial_parsed_query=initial_parsed_query,
                 execute_fn=execute_fn,
@@ -515,6 +655,37 @@ class AgentCapability(Capability):
         rather than an ``AttributeError`` on ``None.run()``."""
         if sub is None:
             raise CapabilityError(code, message)
+
+    @staticmethod
+    def _enforce_sub_or_fail(
+        *,
+        builder: TraceBuilder,
+        sub: Optional[Capability],
+        code: str,
+        message: str,
+        action: str,
+    ) -> None:
+        """Loop-path equivalent of ``_require`` that records a dispatch
+        failure on the trace before raising.
+
+        Mirrors the single-pass try/except in ``run()`` so the FAILED
+        callback's errorMessage carries the same `... | trace: ...`
+        suffix on both paths. Only used by the loop branch — the
+        single-pass branch keeps using ``_require`` inside
+        ``_dispatch_single_pass``."""
+        if sub is None:
+            builder.record_fail(
+                STAGE_DISPATCH,
+                provider=action,
+                code=code,
+                message=message,
+                retryable=False,
+            )
+            builder.finalize_failed()
+            raise CapabilityError(
+                code,
+                f"{message} | trace: {builder.summary()}",
+            )
 
     # ------------------------------------------------------------------
 
@@ -638,11 +809,49 @@ def _normalize_mime(raw: Optional[str]) -> Optional[str]:
     return head or None
 
 
-def _serialize_decision(decision: AgentDecision) -> str:
+def _serialize_decision(
+    decision: AgentDecision,
+    *,
+    trace: Optional[dict] = None,
+) -> str:
     """Render the AgentDecision as pretty-printed JSON for the artifact
     payload. Stable key order is a nice-to-have for tests that parse
-    the body back out."""
-    return json.dumps(decision.to_dict(), ensure_ascii=False, indent=2)
+    the body back out.
+
+    The optional ``trace`` argument is the dict returned by
+    ``PipelineTrace.to_dict()`` — when supplied it is attached under
+    the ``trace`` key so AGENT_DECISION carries the classify / route /
+    dispatch flow alongside the routing decision itself. Existing
+    callers that omit the argument see byte-identical output.
+    """
+    body = decision.to_dict()
+    if trace is not None:
+        body["trace"] = trace
+    return json.dumps(body, ensure_ascii=False, indent=2)
+
+
+def _input_kind_for(
+    text: Optional[str],
+    file_bytes: Optional[bytes],
+    file_mime: Optional[str],
+) -> str:
+    """Best-effort classification of the AGENT/AUTO trace ``inputKind``.
+
+    Mirrors the OCR / MULTIMODAL classifier vocabulary so the trace
+    schema across capabilities stays uniform. Unknown / unsupported
+    mime types collapse to ``INPUT_KIND_UNKNOWN`` rather than raising —
+    the router decides whether the input is routable, not the trace
+    builder."""
+    if file_bytes:
+        head = (file_mime or "").split(";")[0].strip().lower()
+        if head in ("application/pdf", "application/x-pdf"):
+            return INPUT_KIND_PDF
+        if head.startswith("image/"):
+            return INPUT_KIND_IMAGE
+        return INPUT_KIND_UNKNOWN
+    if text:
+        return INPUT_KIND_TEXT
+    return INPUT_KIND_UNKNOWN
 
 
 def _elapsed_ms(started_monotonic: float) -> float:

@@ -575,3 +575,127 @@ def test_auto_name_is_auto():
         parser=NoOpQueryParser(),
     )
     assert cap.name == "AUTO"
+
+
+# ---------------------------------------------------------------------------
+# AGENT_DECISION trace observability — additive, must not change existing
+# keys or the outputArtifacts type set.
+# ---------------------------------------------------------------------------
+
+
+def test_auto_decision_payload_carries_trace_with_classify_route_dispatch():
+    rag = _SentinelCapability("RAG", "rag answer")
+    cap, _ = _build_auto(
+        decision=_decision(action="rag", confidence=0.7, router_name="rule"),
+        rag=rag,
+    )
+    result = cap.run(_input(text="what is bge-m3"))
+
+    body = json.loads(result.outputs[0].content.decode("utf-8"))
+
+    # Existing keys must remain untouched.
+    for legacy_key in ("action", "reason", "confidence", "routerName", "parsedQuery"):
+        assert legacy_key in body
+
+    # The new additive trace key carries the classify / route / dispatch flow.
+    assert "trace" in body
+    trace = body["trace"]
+    assert trace["capability"] == "AUTO"
+    assert trace["finalStatus"] == "ok"
+    stage_names = [s["stage"] for s in trace["stages"]]
+    assert stage_names == ["classify", "route", "dispatch"]
+
+    # Stage details record the routing decision the user can read back.
+    route_stage = trace["stages"][1]
+    assert route_stage["provider"] == "rule"
+    assert route_stage["details"]["action"] == "rag"
+    dispatch_stage = trace["stages"][2]
+    assert dispatch_stage["provider"] == "rag"
+    assert dispatch_stage["details"]["subOutputCount"] == 1
+
+    # Output artifact types must stay [AGENT_DECISION, sub outputs] — no
+    # new artifact type was introduced.
+    assert [a.type for a in result.outputs] == ["AGENT_DECISION", "FINAL_RESPONSE"]
+
+
+def test_auto_decision_trace_summary_is_human_readable():
+    cap, _ = _build_auto(
+        decision=_decision(action="clarify", confidence=0.5),
+    )
+    result = cap.run(_input(text="hi there bot"))
+    body = json.loads(result.outputs[0].content.decode("utf-8"))
+    summary = body["trace"]["summary"]
+    assert "classify:ok" in summary
+    assert "route:ok" in summary
+    assert "dispatch:ok" in summary
+
+
+def test_auto_rag_unavailable_error_message_carries_trace_summary():
+    cap, _ = _build_auto(
+        decision=_decision(action="rag", confidence=0.7),
+        # rag=None intentionally — _dispatch_single_pass will _require it
+    )
+    with pytest.raises(CapabilityError) as ex_info:
+        cap.run(_input(text="what is a retriever"))
+    assert ex_info.value.code == "AUTO_RAG_UNAVAILABLE"
+    msg = ex_info.value.message
+    # The fold-in must include the literal "trace:" tag and the
+    # classify/route stage summaries so operators can read the
+    # progression from the FAILED callback errorMessage alone.
+    assert "trace:" in msg
+    assert "classify:ok" in msg
+    assert "route:ok" in msg
+
+
+def test_auto_no_input_error_message_carries_trace_summary():
+    cap, _ = _build_auto(
+        decision=_decision(action="clarify", confidence=0.0),
+    )
+    with pytest.raises(CapabilityError) as ex_info:
+        cap.run(_input())  # no text, no file
+    assert ex_info.value.code == "AUTO_NO_INPUT"
+    msg = ex_info.value.message
+    # AUTO_NO_INPUT raises before the router is invoked, so only the
+    # classify stage is in the summary — and it should be marked fail.
+    assert "trace:" in msg
+    assert "classify:fail" in msg
+
+
+def test_auto_dispatch_failure_in_sub_capability_records_dispatch_fail_and_reraises():
+    """A sub-capability raising preserves its own errorMessage (no AUTO
+    fold-in) but the trace records a dispatch:fail. The TaskRunner's
+    existing FAILED callback flow takes the original CapabilityError
+    unchanged."""
+
+    class _BoomCapability(Capability):
+        name = "RAG"
+
+        def run(self, input):
+            raise CapabilityError("EMPTY_QUERY", "RAG saw no query")
+
+    cap, _ = _build_auto(
+        decision=_decision(action="rag", confidence=0.7),
+        rag=_BoomCapability(),
+    )
+    with pytest.raises(CapabilityError) as ex_info:
+        cap.run(_input(text="what is bge-m3"))
+    # Sub-capability error code is preserved, not rewrapped.
+    assert ex_info.value.code == "EMPTY_QUERY"
+    # And the AUTO fold-in tag is NOT appended to a non-AUTO_TYPED code.
+    assert "| trace:" not in ex_info.value.message
+
+
+def test_auto_outputartifact_type_set_unchanged_by_trace_observability():
+    """The trace boost must remain additive — single-pass dispatch still
+    emits exactly [AGENT_DECISION, <sub artifact types>] in order."""
+    rag = _SentinelCapability("RAG", "rag answer")
+    cap, _ = _build_auto(
+        decision=_decision(action="rag", confidence=0.7),
+        rag=rag,
+    )
+    result = cap.run(_input(text="some long enough question"))
+    types = [a.type for a in result.outputs]
+    assert types == ["AGENT_DECISION", "FINAL_RESPONSE"]
+    # No new artifact type was introduced.
+    assert "AGENT_TRACE" not in types
+    assert "AGENT_DECISION_TRACE" not in types

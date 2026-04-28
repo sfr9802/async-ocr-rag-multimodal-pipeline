@@ -7,7 +7,7 @@ configuring surfaces via explicit names, not ad-hoc `os.environ` lookups.
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -593,6 +593,18 @@ class WorkerSettings(BaseSettings):
             "to actually stop the loop. A low-confidence sufficient "
             "judgment still triggers another iteration up to the iter "
             "budget. Range [0.0, 1.0]."
+        ),
+    )
+    agent_loop_backend: Literal["legacy", "graph"] = Field(
+        default="legacy",
+        description=(
+            "Selects the loop runner used when agent_loop='on'. 'legacy' "
+            "(default) drives the in-process AgentLoopController shipped "
+            "since Phase 6 — bit-for-bit unchanged. 'graph' opts into the "
+            "experimental LangGraph-based AgentLoopGraph backend; "
+            "AGENT_TRACE / RETRIEVAL_RESULT_AGG / FINAL_RESPONSE artifact "
+            "shapes are preserved across both backends. Ignored when "
+            "agent_loop='off'."
         ),
     )
 

@@ -30,3 +30,12 @@ Pillow>=10,<12
 # Optional: only needed when AIPIPELINE_WORKER_MULTIMODAL_VISION_PROVIDER=claude
 # or AIPIPELINE_WORKER_RAG_GENERATOR=claude.
 anthropic>=0.40.0
+
+# Experimental LangGraph-based agent loop backend (opt-in via
+# AIPIPELINE_WORKER_AGENT_LOOP_BACKEND=graph). The default backend
+# stays the in-process AgentLoopController shipped since Phase 6.
+# Pinned to 0.2.x because the 0.3 line bumps its langchain-core peer
+# beyond what pydantic 2.9.2 ships with on this worker, and we do not
+# pull langchain / langchain-community here — only the langchain-core
+# subset langgraph itself depends on.
+langgraph>=0.2.40,<0.3

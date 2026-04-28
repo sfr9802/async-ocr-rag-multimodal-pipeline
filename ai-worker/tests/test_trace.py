@@ -269,6 +269,38 @@ class TestStableErrorCodes:
         ):
             assert expected in STABLE_ERROR_CODES
 
+    def test_includes_agent_auto_dispatch_codes(self):
+        """AGENT/AUTO single-pass dispatch errors must be in the
+        registry so the stable-error doc table and observability
+        surfaces stay in sync with the codes the capability raises."""
+        for expected in (
+            "AUTO_NO_INPUT",
+            "AUTO_RAG_UNAVAILABLE",
+            "AUTO_OCR_UNAVAILABLE",
+            "AUTO_MULTIMODAL_UNAVAILABLE",
+        ):
+            assert expected in STABLE_ERROR_CODES
+
+    def test_includes_retrieval_empty_warn_code(self):
+        """RETRIEVAL_EMPTY surfaces on MULTIMODAL when retrieval returns
+        zero hits — answer is grounded only on fused context."""
+        assert "RETRIEVAL_EMPTY" in STABLE_ERROR_CODES
+
+
+# ---------------------------------------------------------------------------
+# Stage name vocabulary
+# ---------------------------------------------------------------------------
+
+
+class TestStageConstants:
+    def test_route_and_dispatch_constants_have_canonical_values(self):
+        """AGENT/AUTO single-pass uses these two stages; their string
+        values are part of the on-the-wire trace contract."""
+        from app.capabilities.trace import STAGE_DISPATCH, STAGE_ROUTE
+
+        assert STAGE_ROUTE == "route"
+        assert STAGE_DISPATCH == "dispatch"
+
 
 # ---------------------------------------------------------------------------
 # elapsed_ms helper
