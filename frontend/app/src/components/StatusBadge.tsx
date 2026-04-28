@@ -5,15 +5,15 @@ const VARIANTS: Record<
   string,
   { label: string; tone: "muted" | "warning" | "success" | "destructive"; Icon: typeof CheckCircle2; spin?: boolean }
 > = {
-  PENDING: { label: "Pending", tone: "muted", Icon: CircleDashed },
-  QUEUED: { label: "Queued", tone: "muted", Icon: CircleDashed },
-  RUNNING: { label: "Running", tone: "warning", Icon: Loader2, spin: true },
-  IN_PROGRESS: { label: "Running", tone: "warning", Icon: Loader2, spin: true },
-  SUCCEEDED: { label: "Succeeded", tone: "success", Icon: CheckCircle2 },
-  COMPLETED: { label: "Succeeded", tone: "success", Icon: CheckCircle2 },
-  FAILED: { label: "Failed", tone: "destructive", Icon: CircleAlert },
-  CANCELED: { label: "Canceled", tone: "muted", Icon: CircleSlash },
-  CANCELLED: { label: "Canceled", tone: "muted", Icon: CircleSlash },
+  PENDING: { label: "대기", tone: "muted", Icon: CircleDashed },
+  QUEUED: { label: "큐 대기", tone: "muted", Icon: CircleDashed },
+  RUNNING: { label: "실행 중", tone: "warning", Icon: Loader2, spin: true },
+  IN_PROGRESS: { label: "실행 중", tone: "warning", Icon: Loader2, spin: true },
+  SUCCEEDED: { label: "성공", tone: "success", Icon: CheckCircle2 },
+  COMPLETED: { label: "성공", tone: "success", Icon: CheckCircle2 },
+  FAILED: { label: "실패", tone: "destructive", Icon: CircleAlert },
+  CANCELED: { label: "취소됨", tone: "muted", Icon: CircleSlash },
+  CANCELLED: { label: "취소됨", tone: "muted", Icon: CircleSlash },
 };
 
 const TONE_CLASS: Record<string, string> = {

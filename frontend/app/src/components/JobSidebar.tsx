@@ -38,10 +38,10 @@ export function JobSidebar({
       <div className="flex items-center justify-between border-b border-border/60 px-4 py-3">
         <div>
           <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-            Recent
+            최근
           </div>
           <div className="mt-0.5 font-mono text-[10.5px] text-muted-foreground/80">
-            {history.length} stored locally
+            로컬에 {history.length}건 저장됨
           </div>
         </div>
         {history.length > 0 && (
@@ -52,7 +52,7 @@ export function JobSidebar({
             onClick={onClear}
           >
             <Trash2 className="h-3 w-3" />
-            Clear
+            비우기
           </Button>
         )}
       </div>
@@ -63,9 +63,9 @@ export function JobSidebar({
             <Inbox className="h-4 w-4" />
           </div>
           <div className="space-y-1">
-            <div className="text-[13px] font-medium">No jobs yet</div>
+            <div className="text-[13px] font-medium">아직 작업이 없습니다</div>
             <div className="text-[11.5px] leading-relaxed text-muted-foreground">
-              Submit a job and it'll appear here.
+              작업을 제출하면 여기에 표시됩니다.
             </div>
           </div>
         </div>
@@ -133,7 +133,7 @@ export function JobSidebar({
                               }
                             }}
                             className="absolute right-2 top-2 cursor-pointer rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-destructive group-hover:opacity-100 focus-visible:opacity-100"
-                            aria-label="Remove from history"
+                            aria-label="히스토리에서 제거"
                           >
                             <Trash2 className="h-3 w-3" />
                           </span>

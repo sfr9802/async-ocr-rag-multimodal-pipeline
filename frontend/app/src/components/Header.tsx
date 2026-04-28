@@ -62,7 +62,7 @@ export function Header() {
         <div className="flex items-center gap-2.5">
           <Logo />
           <div className="leading-tight">
-            <div className="text-[13.5px] font-semibold tracking-snug">AI Pipeline Console</div>
+            <div className="text-[13.5px] font-semibold tracking-snug">AI 파이프라인 콘솔</div>
             <div className="font-mono text-[10.5px] uppercase tracking-[0.14em] text-muted-foreground">
               async · ocr · rag · multimodal
             </div>
@@ -92,24 +92,24 @@ export function Header() {
               )}
             />
             <span className="font-mono uppercase tracking-[0.12em]">
-              {online === null ? "checking" : online ? "core-api online" : "offline"}
+              {online === null ? "확인 중" : online ? "core-api 온라인" : "오프라인"}
             </span>
           </div>
 
           <Popover>
             <PopoverTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Settings">
+              <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="설정">
                 <Settings2 className="h-4 w-4" />
               </Button>
             </PopoverTrigger>
             <PopoverContent align="end" className="w-80">
               <div className="space-y-3">
                 <div className="space-y-1">
-                  <h3 className="text-sm font-semibold tracking-snug">API endpoint</h3>
+                  <h3 className="text-sm font-semibold tracking-snug">API 엔드포인트</h3>
                   <p className="text-xs leading-relaxed text-muted-foreground">
-                    Leave blank to use <span className="font-mono">/api</span> on the same origin
-                    (works behind the compose reverse proxy and with <span className="font-mono">pnpm dev</span>).
-                    Set an absolute URL to point at a separate-origin backend.
+                    비워두면 같은 origin의 <span className="font-mono">/api</span>를 사용합니다
+                    (compose 리버스 프록시 및 <span className="font-mono">pnpm dev</span>에서 작동).
+                    별도 origin 백엔드를 가리키려면 절대 URL을 입력하세요.
                   </p>
                 </div>
                 <div className="space-y-1.5">
@@ -120,12 +120,12 @@ export function Header() {
                     id="api-base"
                     value={draftBase}
                     onChange={(e) => setDraftBase(e.target.value)}
-                    placeholder="(same origin)"
+                    placeholder="(같은 origin)"
                     className="font-mono text-xs"
                   />
                 </div>
                 <Button size="sm" className="w-full" onClick={applyBase}>
-                  Save
+                  저장
                 </Button>
               </div>
             </PopoverContent>
@@ -135,7 +135,7 @@ export function Header() {
             variant="ghost"
             size="icon"
             className="h-8 w-8"
-            aria-label="Toggle theme"
+            aria-label="테마 전환"
             onClick={() => setDark((d) => !d)}
           >
             {dark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}

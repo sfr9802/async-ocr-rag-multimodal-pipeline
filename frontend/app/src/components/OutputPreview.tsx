@@ -45,7 +45,7 @@ export function OutputPreview({ artifact }: OutputPreviewProps) {
     return (
       <div className="flex items-center gap-2 rounded-md border border-dashed bg-muted/30 px-4 py-6 text-xs text-muted-foreground">
         <FileWarning className="h-4 w-4" />
-        Binary output ({artifact.contentType}) — use Download below.
+        바이너리 출력 ({artifact.contentType}) — 아래 다운로드를 사용하세요.
       </div>
     );
   }
@@ -63,7 +63,7 @@ export function OutputPreview({ artifact }: OutputPreviewProps) {
   if (error) {
     return (
       <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-        Failed to load output: {error}
+        출력 로드 실패: {error}
       </div>
     );
   }
@@ -87,7 +87,7 @@ export function OutputPreview({ artifact }: OutputPreviewProps) {
             setCopied(true);
             window.setTimeout(() => setCopied(false), 1500);
           }}
-          aria-label="Copy output"
+          aria-label="출력 복사"
         >
           {copied ? <Check className="h-3.5 w-3.5 text-success" /> : <Copy className="h-3.5 w-3.5" />}
         </Button>

@@ -16,11 +16,11 @@ export function formatRelative(iso: string | undefined | null): string {
   const t = new Date(iso).getTime();
   if (Number.isNaN(t)) return iso ?? "—";
   const diff = Math.floor((Date.now() - t) / 1000);
-  if (diff < 5) return "just now";
-  if (diff < 60) return `${diff}s ago`;
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-  return `${Math.floor(diff / 86400)}d ago`;
+  if (diff < 5) return "방금";
+  if (diff < 60) return `${diff}초 전`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}분 전`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}시간 전`;
+  return `${Math.floor(diff / 86400)}일 전`;
 }
 
 export function formatDuration(fromIso: string | undefined | null, toIso: string | undefined | null): string {
@@ -42,22 +42,22 @@ export function shortId(id: string, head = 8): string {
   return `${id.slice(0, head)}…${id.slice(-4)}`;
 }
 
-export type DateBucket = "Today" | "Yesterday" | "Earlier";
+export type DateBucket = "오늘" | "어제" | "이전";
 
 export function bucketByDate<T extends { submittedAt: string }>(entries: T[]): Array<[DateBucket, T[]]> {
-  const buckets: Record<DateBucket, T[]> = { Today: [], Yesterday: [], Earlier: [] };
+  const buckets: Record<DateBucket, T[]> = { 오늘: [], 어제: [], 이전: [] };
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
   const yesterday = today - 86_400_000;
   for (const e of entries) {
     const t = new Date(e.submittedAt).getTime();
     if (Number.isNaN(t)) {
-      buckets.Earlier.push(e);
+      buckets.이전.push(e);
       continue;
     }
-    if (t >= today) buckets.Today.push(e);
-    else if (t >= yesterday) buckets.Yesterday.push(e);
-    else buckets.Earlier.push(e);
+    if (t >= today) buckets.오늘.push(e);
+    else if (t >= yesterday) buckets.어제.push(e);
+    else buckets.이전.push(e);
   }
   const out: Array<[DateBucket, T[]]> = [];
   (Object.keys(buckets) as DateBucket[]).forEach((k) => {

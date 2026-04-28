@@ -35,8 +35,8 @@ const META: Record<Capability, CapabilityMeta> = {
   MOCK: {
     key: "MOCK",
     label: "Mock",
-    shortDesc: "Echo",
-    longDesc: "Echoes the prompt back as a JSON artifact. Useful for smoke-testing the pipeline end-to-end.",
+    shortDesc: "에코",
+    longDesc: "프롬프트를 JSON 아티팩트로 그대로 반환합니다. 파이프라인 전체 흐름을 점검할 때 유용합니다.",
     Icon: Brain,
     needsFile: false,
     needsText: true,
@@ -46,8 +46,8 @@ const META: Record<Capability, CapabilityMeta> = {
   RAG: {
     key: "RAG",
     label: "RAG",
-    shortDesc: "Retrieval",
-    longDesc: "Question answering over the indexed corpus · bge-m3 + FAISS · Claude generation optional.",
+    shortDesc: "검색",
+    longDesc: "인덱싱된 코퍼스에 대한 질의응답 · bge-m3 + FAISS · Claude 생성은 선택 사항.",
     Icon: FileText,
     needsFile: false,
     needsText: true,
@@ -57,8 +57,8 @@ const META: Record<Capability, CapabilityMeta> = {
   OCR: {
     key: "OCR",
     label: "OCR",
-    shortDesc: "Extract",
-    longDesc: "Text extraction from PNG / JPEG / PDF. Optional prompt is ignored by the worker.",
+    shortDesc: "추출",
+    longDesc: "PNG / JPEG / PDF에서 텍스트 추출. 선택적 프롬프트는 워커가 무시합니다.",
     Icon: ImageIcon,
     needsFile: true,
     needsText: false,
@@ -68,9 +68,9 @@ const META: Record<Capability, CapabilityMeta> = {
   },
   MULTIMODAL: {
     key: "MULTIMODAL",
-    label: "Multimodal",
-    shortDesc: "Vision + Text",
-    longDesc: "Image + question fusion via Claude Vision. PNG / JPEG / PDF + a question.",
+    label: "멀티모달",
+    shortDesc: "비전 + 텍스트",
+    longDesc: "Claude Vision으로 이미지 + 질문을 결합합니다. PNG / JPEG / PDF + 질문 필요.",
     Icon: Layers,
     needsFile: true,
     needsText: true,
@@ -85,7 +85,7 @@ interface SubmitFormProps {
 
 export function SubmitForm({ onSubmitted }: SubmitFormProps) {
   const [capability, setCapability] = useState<Capability>("MOCK");
-  const [text, setText] = useState<string>("hello from the new console");
+  const [text, setText] = useState<string>("새 콘솔에서 보내는 인사");
   const [file, setFile] = useState<File | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -106,7 +106,7 @@ export function SubmitForm({ onSubmitted }: SubmitFormProps) {
     try {
       let result: JobCreated;
       if (meta.needsFile) {
-        if (!file) throw new Error("File required");
+        if (!file) throw new Error("파일이 필요합니다");
         result = await submitFileJob(capability, file, text);
       } else {
         result = await submitTextJob(capability, text);
@@ -149,14 +149,14 @@ export function SubmitForm({ onSubmitted }: SubmitFormProps) {
         <div className="flex items-center gap-2">
           <Sparkles className="h-3.5 w-3.5 text-accent" />
           <h2 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-            New job
+            새 작업
           </h2>
         </div>
       </CardHeader>
       <CardContent className="space-y-6 p-5 sm:p-6">
         <div>
           <Label className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-            Capability
+            기능
           </Label>
           <div className="mt-2.5 grid grid-cols-2 gap-2 lg:grid-cols-4">
             {CAPABILITIES.map((c) => {
@@ -211,7 +211,7 @@ export function SubmitForm({ onSubmitted }: SubmitFormProps) {
         {meta.needsFile && (
           <div>
             <Label className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-              File · PNG / JPEG / PDF
+              파일 · PNG / JPEG / PDF
             </Label>
             <div className="mt-2">
               {file ? (
@@ -261,7 +261,7 @@ export function SubmitForm({ onSubmitted }: SubmitFormProps) {
                     className="flex w-full flex-col items-center justify-center gap-1.5 px-4 py-7 text-sm text-muted-foreground"
                   >
                     <Upload className="h-4 w-4" />
-                    <span className="font-medium text-foreground/85">Drop a file or click to choose</span>
+                    <span className="font-medium text-foreground/85">파일을 드롭하거나 클릭하여 선택</span>
                     <span className="font-mono text-[10.5px] uppercase tracking-wider">
                       png · jpeg · pdf
                     </span>
@@ -282,10 +282,10 @@ export function SubmitForm({ onSubmitted }: SubmitFormProps) {
         <div>
           <div className="flex items-baseline justify-between">
             <Label htmlFor="prompt" className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-              {meta.needsFile ? "Prompt" : "Text"}
-              {meta.textOptional && <span className="ml-1 normal-case tracking-normal text-muted-foreground/70">(optional)</span>}
+              {meta.needsFile ? "프롬프트" : "텍스트"}
+              {meta.textOptional && <span className="ml-1 normal-case tracking-normal text-muted-foreground/70">(선택)</span>}
             </Label>
-            <span className="font-mono text-[10.5px] tabular-nums text-muted-foreground">{text.length} chars</span>
+            <span className="font-mono text-[10.5px] tabular-nums text-muted-foreground">{text.length}자</span>
           </div>
           <Textarea
             id="prompt"
@@ -294,8 +294,8 @@ export function SubmitForm({ onSubmitted }: SubmitFormProps) {
             onKeyDown={onKeyDown}
             placeholder={
               meta.needsFile
-                ? "Optional question to fuse with the file…"
-                : "Your prompt for the worker…"
+                ? "파일과 함께 사용할 질문 (선택)…"
+                : "워커에게 전달할 프롬프트…"
             }
             className="mt-2 min-h-[112px] resize-y rounded-md border-border bg-card font-mono text-[12.5px] leading-relaxed shadow-none focus-visible:ring-2 focus-visible:ring-ring/30"
           />
@@ -311,7 +311,7 @@ export function SubmitForm({ onSubmitted }: SubmitFormProps) {
           <span className="hidden items-center gap-1.5 font-mono text-[10.5px] uppercase tracking-wider text-muted-foreground sm:inline-flex">
             <kbd className="rounded border border-border bg-card px-1.5 py-0.5 text-[10px] tracking-normal">⌘</kbd>
             <kbd className="rounded border border-border bg-card px-1.5 py-0.5 text-[10px] tracking-normal">↵</kbd>
-            <span>to submit</span>
+            <span>전송</span>
           </span>
           <Button onClick={handleSubmit} disabled={!canSubmit} className="h-9 gap-1.5 px-4">
             {submitting ? (
@@ -319,7 +319,7 @@ export function SubmitForm({ onSubmitted }: SubmitFormProps) {
             ) : (
               <CornerDownLeft className="h-3.5 w-3.5" />
             )}
-            {submitting ? "Submitting…" : "Submit"}
+            {submitting ? "전송 중…" : "전송"}
           </Button>
         </div>
       </CardContent>

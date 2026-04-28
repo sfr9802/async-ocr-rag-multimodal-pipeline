@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { JobTimeline } from "@/components/JobTimeline";
 import { StatusBadge } from "@/components/StatusBadge";
 import { OutputPreview } from "@/components/OutputPreview";
 import { ApiError, artifactUrl, getJob, getJobResult } from "@/lib/api";
@@ -86,52 +87,59 @@ export function JobPanel({ jobId, onStatusChange }: JobPanelProps) {
 
   return (
     <Card className="overflow-hidden border-border/80 shadow-soft">
-      <div className="flex flex-wrap items-start gap-x-6 gap-y-3 border-b border-border/60 bg-muted/25 px-5 py-4">
-        <div className="flex items-center gap-3">
-          <StatusBadge status={statusKey} withDot />
-          {isRunning && (
-            <span className="inline-flex items-center gap-1.5 font-mono text-[10.5px] uppercase tracking-[0.14em] text-muted-foreground">
-              <Activity className="h-3 w-3 animate-pulse-soft" />
-              polling
-            </span>
+      <div className="border-b border-border/60 bg-muted/25">
+        <div className="flex flex-wrap items-start gap-x-6 gap-y-3 px-5 py-4">
+          <div className="flex items-center gap-3">
+            <StatusBadge status={statusKey} withDot />
+            {isRunning && (
+              <span className="inline-flex items-center gap-1.5 font-mono text-[10.5px] uppercase tracking-[0.14em] text-muted-foreground">
+                <Activity className="h-3 w-3 animate-pulse-soft" />
+                폴링
+              </span>
+            )}
+          </div>
+
+          <Stat label="작업">
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText(jobId);
+                setCopied(true);
+                window.setTimeout(() => setCopied(false), 1500);
+              }}
+              className="group inline-flex items-center gap-1.5 font-mono text-[12px] text-foreground hover:text-primary"
+            >
+              <Hash className="h-3 w-3 text-muted-foreground" />
+              {shortId(jobId, 12)}
+              {copied ? (
+                <Check className="h-3 w-3 text-success" />
+              ) : (
+                <Copy className="h-3 w-3 opacity-0 group-hover:opacity-100" />
+              )}
+            </button>
+          </Stat>
+
+          {view && (
+            <>
+              <Stat label="기능">
+                <span className="font-mono text-[12px] uppercase tracking-[0.06em]">{view.capability}</span>
+              </Stat>
+              <Stat label="시도">
+                <span className="font-mono tabular-nums text-[12px]">#{view.attemptNo}</span>
+              </Stat>
+              <Stat label={isTerminal(statusKey) ? "소요" : "업데이트"}>
+                <span className="font-mono tabular-nums text-[12px]">
+                  {isTerminal(statusKey)
+                    ? formatDuration(view.createdAt, view.updatedAt)
+                    : formatRelative(view.updatedAt)}
+                </span>
+              </Stat>
+            </>
           )}
         </div>
-
-        <Stat label="Job">
-          <button
-            onClick={() => {
-              navigator.clipboard.writeText(jobId);
-              setCopied(true);
-              window.setTimeout(() => setCopied(false), 1500);
-            }}
-            className="group inline-flex items-center gap-1.5 font-mono text-[12px] text-foreground hover:text-primary"
-          >
-            <Hash className="h-3 w-3 text-muted-foreground" />
-            {shortId(jobId, 12)}
-            {copied ? (
-              <Check className="h-3 w-3 text-success" />
-            ) : (
-              <Copy className="h-3 w-3 opacity-0 group-hover:opacity-100" />
-            )}
-          </button>
-        </Stat>
-
         {view && (
-          <>
-            <Stat label="Capability">
-              <span className="font-mono text-[12px] uppercase tracking-[0.06em]">{view.capability}</span>
-            </Stat>
-            <Stat label="Attempt">
-              <span className="font-mono tabular-nums text-[12px]">#{view.attemptNo}</span>
-            </Stat>
-            <Stat label={isTerminal(statusKey) ? "Duration" : "Updated"}>
-              <span className="font-mono tabular-nums text-[12px]">
-                {isTerminal(statusKey)
-                  ? formatDuration(view.createdAt, view.updatedAt)
-                  : formatRelative(view.updatedAt)}
-              </span>
-            </Stat>
-          </>
+          <div className="border-t border-border/40 px-5 py-2.5">
+            <JobTimeline view={view} />
+          </div>
         )}
       </div>
 
@@ -154,14 +162,14 @@ export function JobPanel({ jobId, onStatusChange }: JobPanelProps) {
       <CardContent className="p-0">
         <Tabs defaultValue="result" className="w-full">
           <TabsList className="h-auto w-full justify-start gap-0 rounded-none border-b border-border/60 bg-transparent p-0 px-3">
-            <TabTriggerSlim value="result">Result</TabTriggerSlim>
+            <TabTriggerSlim value="result">결과</TabTriggerSlim>
             <TabTriggerSlim value="artifacts">
-              Artifacts
+              아티팩트
               <span className="ml-1.5 rounded-full bg-muted px-1.5 py-0.5 font-mono text-[9.5px] tabular-nums text-muted-foreground">
                 {(result?.outputs?.length ?? 0) + (result?.inputs?.length ?? 0)}
               </span>
             </TabTriggerSlim>
-            <TabTriggerSlim value="raw">Raw</TabTriggerSlim>
+            <TabTriggerSlim value="raw">원본</TabTriggerSlim>
           </TabsList>
 
           <TabsContent value="result" className="m-0 p-5">
@@ -172,21 +180,21 @@ export function JobPanel({ jobId, onStatusChange }: JobPanelProps) {
                 <div className="flex items-center gap-2">
                   <Sparkles className="h-3.5 w-3.5 text-accent" />
                   <h3 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                    Primary output · {primaryOutput.type}
+                    주요 출력 · {primaryOutput.type}
                   </h3>
                 </div>
                 <OutputPreview artifact={primaryOutput} />
               </div>
             ) : (
               <div className="rounded-md border border-dashed border-border bg-muted/20 px-4 py-8 text-center text-[12.5px] text-muted-foreground">
-                No outputs were produced.
+                생성된 출력물이 없습니다.
               </div>
             )}
           </TabsContent>
 
           <TabsContent value="artifacts" className="m-0 space-y-6 p-5">
-            <ArtifactSection title="Outputs" artifacts={result?.outputs ?? []} pending={isRunning} emphasize />
-            <ArtifactSection title="Inputs" artifacts={result?.inputs ?? []} pending={false} />
+            <ArtifactSection title="출력" artifacts={result?.outputs ?? []} pending={isRunning} emphasize />
+            <ArtifactSection title="입력" artifacts={result?.inputs ?? []} pending={false} />
           </TabsContent>
 
           <TabsContent value="raw" className="m-0 p-5">
@@ -234,7 +242,7 @@ function PendingState() {
       <div className="flex items-center gap-2">
         <Activity className="h-3.5 w-3.5 animate-pulse-soft text-warning" />
         <h3 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-          Worker running…
+          워커 실행 중…
         </h3>
       </div>
       <div className="space-y-2">
@@ -243,7 +251,7 @@ function PendingState() {
         <div className="h-3 w-4/6 animate-pulse-soft rounded bg-muted" />
       </div>
       <p className="font-mono text-[10.5px] text-muted-foreground/70">
-        polling every {(POLL_INTERVAL_MS / 1000).toFixed(1)}s · output appears when the job reaches a terminal state.
+        {(POLL_INTERVAL_MS / 1000).toFixed(1)}초마다 폴링 · 작업이 종료 상태에 도달하면 출력이 표시됩니다.
       </p>
     </div>
   );
@@ -277,11 +285,11 @@ function ArtifactSection({
       </div>
       {pending ? (
         <div className="rounded-md border border-dashed border-border bg-muted/20 px-4 py-6 text-center text-[12.5px] text-muted-foreground">
-          Waiting for job to finish…
+          작업 완료 대기 중…
         </div>
       ) : artifacts.length === 0 ? (
         <div className="rounded-md border border-dashed border-border bg-muted/20 px-4 py-5 text-center text-[12.5px] text-muted-foreground">
-          No {title.toLowerCase()}.
+          {title}이(가) 없습니다.
         </div>
       ) : (
         <ul className="space-y-1.5">
@@ -316,13 +324,13 @@ function ArtifactSection({
                 <Button asChild variant="ghost" size="sm" className="h-7 gap-1.5 text-[11px]">
                   <a href={artifactUrl(a.accessUrl)} target="_blank" rel="noreferrer">
                     <ExternalLink className="h-3 w-3" />
-                    Open
+                    열기
                   </a>
                 </Button>
                 <Button asChild variant="ghost" size="sm" className="h-7 gap-1.5 text-[11px]">
                   <a href={artifactUrl(a.accessUrl)} download>
                     <Download className="h-3 w-3" />
-                    Download
+                    다운로드
                   </a>
                 </Button>
               </div>
@@ -342,9 +350,9 @@ function EmptyState() {
           <Inbox className="h-5 w-5" />
         </div>
         <div className="space-y-1">
-          <div className="text-[14px] font-semibold tracking-snug">No job selected</div>
+          <div className="text-[14px] font-semibold tracking-snug">선택된 작업 없음</div>
           <p className="text-[12.5px] leading-relaxed text-muted-foreground">
-            Submit a job above, or pick one from the recent list.
+            위에서 작업을 제출하거나 최근 목록에서 선택하세요.
           </p>
         </div>
       </CardContent>

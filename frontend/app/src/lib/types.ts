@@ -27,7 +27,14 @@ export interface JobView {
   errorCode: string | null;
   errorMessage: string | null;
   createdAt: string;
+  claimedAt: string | null;
   updatedAt: string;
+}
+
+export interface JobEvent {
+  status: string;
+  at: string;
+  source: "server" | "client";
 }
 
 export interface JobResult {
