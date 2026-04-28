@@ -58,22 +58,25 @@ function App() {
   }
 
   return (
-    <div className="canvas-bg flex min-h-screen flex-col bg-background">
-      <Header />
-      <div className="flex-1">
-        <div className="mx-auto grid w-full max-w-[1380px] grid-cols-1 gap-0 lg:grid-cols-[18rem_1fr]">
-          <JobSidebar
-            history={history}
-            statusByJob={statusByJob}
-            activeJobId={activeJobId}
-            onSelect={handleSelect}
-            onRemove={handleRemove}
-            onClear={handleClear}
-          />
-          <main className="flex flex-col gap-5 p-5 lg:gap-6 lg:p-8">
-            <SubmitForm onSubmitted={handleSubmitted} />
-            <JobPanel jobId={activeJobId} onStatusChange={handleStatusChange} />
-          </main>
+    <div className="canvas-bg relative flex min-h-screen flex-col overflow-hidden">
+      <div className="glass-aurora" aria-hidden="true" />
+      <div className="relative z-10 flex min-h-screen flex-col">
+        <Header />
+        <div className="flex-1">
+          <div className="mx-auto grid w-full max-w-[1440px] grid-cols-1 gap-5 px-5 py-5 lg:grid-cols-[20rem_1fr] lg:gap-6 lg:px-7 lg:py-6">
+            <JobSidebar
+              history={history}
+              statusByJob={statusByJob}
+              activeJobId={activeJobId}
+              onSelect={handleSelect}
+              onRemove={handleRemove}
+              onClear={handleClear}
+            />
+            <main className="flex min-w-0 flex-col gap-5 lg:gap-6">
+              <SubmitForm onSubmitted={handleSubmitted} />
+              <JobPanel jobId={activeJobId} onStatusChange={handleStatusChange} />
+            </main>
+          </div>
         </div>
       </div>
     </div>

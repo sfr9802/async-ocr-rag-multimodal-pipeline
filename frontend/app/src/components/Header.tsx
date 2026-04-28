@@ -16,8 +16,8 @@ function Logo() {
       aria-hidden="true"
       className="text-primary"
     >
-      <rect x="0.75" y="0.75" width="30.5" height="30.5" rx="7.25" fill="currentColor" opacity="0.12" />
-      <rect x="0.75" y="0.75" width="30.5" height="30.5" rx="7.25" fill="none" stroke="currentColor" strokeOpacity="0.35" strokeWidth="0.75" />
+      <rect x="0.75" y="0.75" width="30.5" height="30.5" rx="9" fill="currentColor" opacity="0.08" />
+      <rect x="0.75" y="0.75" width="30.5" height="30.5" rx="9" fill="none" stroke="currentColor" strokeOpacity="0.28" strokeWidth="0.75" />
       <path d="M9 22 L13 10 L19 10 L23 22" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
       <path d="M11 18 L21 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
       <circle cx="23" cy="22" r="2.4" fill="hsl(var(--accent))" />
@@ -57,15 +57,13 @@ export function Header() {
   }
 
   return (
-    <header className="sticky top-0 z-20 border-b border-border/80 bg-background/85 backdrop-blur supports-[backdrop-filter]:bg-background/65">
-      <div className="mx-auto flex max-w-[1380px] items-center gap-3 px-5 py-2.5">
+    <header className="sticky top-0 z-20 border-b border-hairline bg-glass-strong backdrop-blur-[16px] backdrop-saturate-150">
+      <div className="mx-auto flex max-w-[1440px] items-center gap-3 px-5 py-3 lg:px-7">
         <div className="flex items-center gap-2.5">
           <Logo />
           <div className="leading-tight">
-            <div className="text-[13.5px] font-semibold tracking-snug">AI 파이프라인 콘솔</div>
-            <div className="font-mono text-[10.5px] uppercase tracking-[0.14em] text-muted-foreground">
-              async · ocr · rag · multimodal
-            </div>
+            <div className="t-product-mark">AI 파이프라인 콘솔</div>
+            <div className="t-eyebrow">async · ocr · rag · multimodal</div>
           </div>
         </div>
 
@@ -74,9 +72,9 @@ export function Header() {
             className={cn(
               "hidden items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium sm:inline-flex",
               online === null
-                ? "border-border text-muted-foreground"
+                ? "border-hairline-2 bg-glass-3 text-muted-foreground"
                 : online
-                  ? "border-success/35 bg-success/10 text-success"
+                  ? "border-success/40 bg-success/10 text-success"
                   : "border-destructive/40 bg-destructive/10 text-destructive",
             )}
             title={base}
@@ -98,11 +96,11 @@ export function Header() {
 
           <Popover>
             <PopoverTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="설정">
+              <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-glass-2" aria-label="설정">
                 <Settings2 className="h-4 w-4" />
               </Button>
             </PopoverTrigger>
-            <PopoverContent align="end" className="w-80">
+            <PopoverContent align="end" className="w-80 border-hairline-2 bg-glass-strong backdrop-blur-[18px] backdrop-saturate-150 shadow-glass-pop">
               <div className="space-y-3">
                 <div className="space-y-1">
                   <h3 className="text-sm font-semibold tracking-snug">API 엔드포인트</h3>
@@ -121,10 +119,10 @@ export function Header() {
                     value={draftBase}
                     onChange={(e) => setDraftBase(e.target.value)}
                     placeholder="(같은 origin)"
-                    className="font-mono text-xs"
+                    className="border-hairline-2 bg-glass-3 font-mono text-xs focus-visible:bg-glass-strong"
                   />
                 </div>
-                <Button size="sm" className="w-full" onClick={applyBase}>
+                <Button size="sm" className="w-full shadow-glass-button" onClick={applyBase}>
                   저장
                 </Button>
               </div>
@@ -134,7 +132,7 @@ export function Header() {
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8"
+            className="h-8 w-8 hover:bg-glass-2"
             aria-label="테마 전환"
             onClick={() => setDark((d) => !d)}
           >

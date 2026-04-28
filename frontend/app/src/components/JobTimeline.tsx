@@ -43,7 +43,7 @@ export function JobTimeline({ view, className }: JobTimelineProps) {
   return (
     <div
       className={cn(
-        "flex flex-wrap items-center gap-x-2 gap-y-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground",
+        "t-mono-tag flex flex-wrap items-center gap-x-2 gap-y-1.5",
         className,
       )}
       role="list"
@@ -62,7 +62,7 @@ export function JobTimeline({ view, className }: JobTimelineProps) {
       })}
       {showAttempt && (
         <span
-          className="ml-1 rounded-full border border-border/70 bg-background/60 px-1.5 py-0.5 text-[9.5px] tracking-[0.18em]"
+          className="ml-1 rounded-full border border-hairline-2 bg-glass-3 px-2 py-0.5 text-[9.5px] tracking-[0.18em]"
           aria-label={`시도 횟수 ${view.attemptNo}`}
         >
           시도 #{view.attemptNo}
@@ -100,9 +100,9 @@ function Connector({ fromIso, toIso, dashed }: { fromIso: string; toIso: string;
   const duration = formatDuration(fromIso, toIso);
   return (
     <span aria-hidden="true" className="inline-flex items-center gap-1.5">
-      <span className={cn("h-px w-3", dashed ? "border-t border-dashed border-border" : "bg-border")} />
+      <span className={cn("h-px w-3", dashed ? "border-t border-dashed border-hairline-2" : "bg-hairline-2")} />
       <span className="tabular-nums tracking-normal text-muted-foreground/80">{duration}</span>
-      <span className={cn("h-px w-3", dashed ? "border-t border-dashed border-border" : "bg-border")} />
+      <span className={cn("h-px w-3", dashed ? "border-t border-dashed border-hairline-2" : "bg-hairline-2")} />
     </span>
   );
 }

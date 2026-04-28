@@ -4,78 +4,182 @@
 
 @layer base {
   :root {
-    /* Warm parchment with deep ink — restrained dev-tool palette */
-    --background: 36 25% 97%;
-    --foreground: 220 25% 10%;
+    /* Light glass — cream-lavender base, ink-violet ink, violet accent */
+    --background: 252 33% 97%;
+    --foreground: 245 35% 12%;
 
     --card: 0 0% 100%;
-    --card-foreground: 220 25% 10%;
+    --card-foreground: 245 35% 12%;
     --popover: 0 0% 100%;
-    --popover-foreground: 220 25% 10%;
+    --popover-foreground: 245 35% 12%;
 
-    --primary: 220 60% 22%;
-    --primary-foreground: 36 25% 97%;
+    --primary: 250 38% 13%;
+    --primary-foreground: 0 0% 100%;
 
-    --secondary: 36 18% 93%;
-    --secondary-foreground: 220 25% 14%;
-    --muted: 36 18% 94%;
-    --muted-foreground: 220 12% 42%;
-    --accent: 24 92% 52%;
+    --secondary: 252 25% 94%;
+    --secondary-foreground: 245 35% 14%;
+    --muted: 252 25% 94%;
+    --muted-foreground: 245 18% 42%;
+    --accent: 254 100% 61%;
     --accent-foreground: 0 0% 100%;
 
-    --destructive: 0 70% 46%;
+    --destructive: 354 64% 51%;
     --destructive-foreground: 0 0% 100%;
-    --success: 152 56% 32%;
+    --success: 152 76% 30%;
     --success-foreground: 0 0% 100%;
-    --warning: 32 92% 46%;
-    --warning-foreground: 220 25% 10%;
+    --warning: 36 100% 39%;
+    --warning-foreground: 0 0% 100%;
 
-    --border: 32 16% 86%;
-    --input: 32 16% 86%;
-    --ring: 220 60% 22%;
-    --radius: 0.5rem;
+    --border: 245 35% 88%;
+    --input: 245 35% 88%;
+    --ring: 254 100% 61%;
+    --radius: 0.625rem;
 
-    /* Per-capability accent colors */
-    --cap-mock: 215 20% 50%;
-    --cap-rag: 200 75% 38%;
-    --cap-ocr: 270 50% 48%;
-    --cap-multimodal: 24 92% 52%;
+    /* Per-capability accents */
+    --cap-mock: 245 18% 42%;
+    --cap-rag: 192 100% 38%;
+    --cap-ocr: 254 100% 61%;
+    --cap-multimodal: 336 62% 51%;
+
+    /* Glass surface tokens (RGB triplets, used via rgb(var(--…))) */
+    --glass-panel: 255 255 255 / 0.55;
+    --glass-panel-2: 255 255 255 / 0.4;
+    --glass-panel-3: 255 255 255 / 0.7;
+    --glass-panel-strong: 255 255 255 / 0.85;
+
+    --hairline: 22 20 42 / 0.08;
+    --hairline-2: 22 20 42 / 0.13;
+    --hairline-strong: 22 20 42 / 0.22;
+
+    /* === Type stack — OS-native, Korean-aware fallback === */
+    --font-sans:
+      system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+      "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans CJK KR",
+      "Helvetica Neue", Arial, sans-serif;
+    --font-mono:
+      ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+      "Liberation Mono", monospace;
+
+    /* === Type scale — minimal, dense dev-tool === */
+    --fs-xxs: 9.5px;
+    --fs-xs: 10.5px;
+    --fs-sm: 11.5px;
+    --fs-md: 12.5px;
+    --fs-base: 14px;
+    --fs-lg: 13.5px;
+    --fs-xl: 16px;
+    --fs-2xl: 20px;
+    --fs-3xl: 24px;
+
+    /* === Tracking === */
+    --tracking-tight: -0.005em;
+    --tracking-snug: -0.01em;
+    --tracking-eyebrow: 0.14em;
+    --tracking-tag: 0.16em;
+    --tracking-wide: 0.18em;
+
+    /* === Leading === */
+    --leading-tight: 1.25;
+    --leading-snug: 1.4;
+    --leading-normal: 1.5;
+    --leading-relaxed: 1.65;
+
+    /* === Glass shadows (violet-tinted) === */
+    --shadow-glass-panel:
+      0 1px 0 rgba(255, 255, 255, 0.7) inset,
+      0 24px 60px -28px rgba(58, 30, 120, 0.18),
+      0 2px 6px -2px rgba(58, 30, 120, 0.08);
+    --shadow-glass-pop:
+      0 12px 32px -10px rgba(58, 30, 120, 0.22),
+      0 2px 6px -2px rgba(58, 30, 120, 0.10);
+    --shadow-glass-button:
+      0 6px 16px -8px rgba(26, 21, 48, 0.28),
+      0 0 0 1px rgba(255, 255, 255, 0.10) inset;
+    --shadow-soft:
+      0 1px 0 rgba(255, 255, 255, 0.7) inset,
+      0 4px 14px -6px rgba(58, 30, 120, 0.10),
+      0 2px 4px -2px rgba(58, 30, 120, 0.06);
+    --shadow-sm: 0 1px 2px rgba(58, 30, 120, 0.08);
+    --shadow-pop: var(--shadow-glass-pop);
+
+    /* === Radius scale === */
+    --radius-sm: 6px;
+    --radius-md: 10px;
+    --radius-lg: 14px;
+    --radius-xl: 22px;
+    --radius-pill: 999px;
+
+    /* === Spacing === */
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-5: 20px;
+    --space-6: 24px;
+    --space-8: 32px;
+    --space-10: 40px;
   }
 
   .dark {
-    --background: 220 18% 7%;
-    --foreground: 36 18% 92%;
+    --background: 222 33% 5%;
+    --foreground: 252 100% 97%;
 
-    --card: 220 18% 10%;
-    --card-foreground: 36 18% 92%;
-    --popover: 220 18% 10%;
-    --popover-foreground: 36 18% 92%;
+    --card: 230 23% 10%;
+    --card-foreground: 252 100% 97%;
+    --popover: 230 23% 10%;
+    --popover-foreground: 252 100% 97%;
 
-    --primary: 36 80% 64%;
-    --primary-foreground: 220 25% 10%;
+    --primary: 252 100% 97%;
+    --primary-foreground: 250 38% 13%;
 
-    --secondary: 220 16% 16%;
-    --secondary-foreground: 36 18% 92%;
-    --muted: 220 16% 14%;
-    --muted-foreground: 36 8% 60%;
-    --accent: 24 92% 58%;
-    --accent-foreground: 220 25% 10%;
+    --secondary: 230 18% 14%;
+    --secondary-foreground: 252 100% 97%;
+    --muted: 230 18% 14%;
+    --muted-foreground: 252 100% 70%;
+    --accent: 263 100% 78%;
+    --accent-foreground: 222 33% 5%;
 
-    --destructive: 0 68% 56%;
-    --destructive-foreground: 36 18% 92%;
-    --success: 152 56% 50%;
-    --success-foreground: 220 25% 10%;
-    --warning: 32 92% 60%;
-    --warning-foreground: 220 25% 10%;
+    --destructive: 354 100% 76%;
+    --destructive-foreground: 222 33% 5%;
+    --success: 152 80% 71%;
+    --success-foreground: 222 33% 5%;
+    --warning: 36 100% 73%;
+    --warning-foreground: 222 33% 5%;
 
-    --border: 220 14% 20%;
-    --input: 220 14% 20%;
-    --ring: 36 80% 64%;
+    --border: 252 100% 97%;
+    --input: 252 100% 97%;
+    --ring: 263 100% 78%;
 
-    --cap-mock: 215 14% 60%;
-    --cap-rag: 200 75% 60%;
-    --cap-ocr: 270 50% 64%;
-    --cap-multimodal: 24 92% 60%;
+    --cap-mock: 252 100% 70%;
+    --cap-rag: 192 100% 68%;
+    --cap-ocr: 263 100% 78%;
+    --cap-multimodal: 336 100% 78%;
+
+    /* glass surfaces flip dark */
+    --glass-panel: 18 21 32 / 0.66;
+    --glass-panel-2: 255 255 255 / 0.025;
+    --glass-panel-3: 255 255 255 / 0.045;
+    --glass-panel-strong: 7 9 15 / 0.72;
+
+    --hairline: 255 255 255 / 0.09;
+    --hairline-2: 255 255 255 / 0.14;
+    --hairline-strong: 255 255 255 / 0.24;
+
+    --shadow-glass-panel:
+      0 1px 0 rgba(255, 255, 255, 0.05) inset,
+      0 24px 60px -24px rgba(0, 0, 0, 0.6),
+      0 2px 8px -2px rgba(0, 0, 0, 0.4);
+    --shadow-glass-pop:
+      0 12px 32px -10px rgba(0, 0, 0, 0.55),
+      0 2px 6px -2px rgba(0, 0, 0, 0.35);
+    --shadow-glass-button:
+      0 6px 16px -8px rgba(0, 0, 0, 0.45),
+      0 0 0 1px rgba(255, 255, 255, 0.06) inset;
+    --shadow-soft:
+      0 1px 0 rgba(255, 255, 255, 0.04) inset,
+      0 4px 14px -6px rgba(0, 0, 0, 0.5),
+      0 2px 4px -2px rgba(0, 0, 0, 0.3);
+    --shadow-pop: var(--shadow-glass-pop);
   }
 }
 
@@ -97,11 +201,12 @@
     font-size: 14px;
     line-height: 1.5;
     letter-spacing: -0.005em;
+    word-break: keep-all;
   }
 
   ::selection {
-    background: hsl(var(--primary) / 0.18);
-    color: hsl(var(--primary));
+    background: hsl(var(--accent) / 0.22);
+    color: hsl(var(--foreground));
   }
 
   ::-webkit-scrollbar {
@@ -112,26 +217,162 @@
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: hsl(var(--border));
+    background: rgb(var(--hairline-strong));
     border-radius: 999px;
-    border: 2px solid hsl(var(--background));
+    border: 2px solid transparent;
+    background-clip: padding-box;
   }
   ::-webkit-scrollbar-thumb:hover {
     background: hsl(var(--muted-foreground) / 0.4);
+    background-clip: padding-box;
+    border: 2px solid transparent;
+  }
+}
+
+@layer components {
+  /* === Semantic typography — repeated patterns from the codebase === */
+  .t-product-mark {
+    font-size: var(--fs-lg);
+    font-weight: 600;
+    letter-spacing: var(--tracking-snug);
+    line-height: var(--leading-tight);
+    color: hsl(var(--foreground));
+  }
+
+  .t-eyebrow {
+    font-family: var(--font-mono);
+    font-size: var(--fs-xs);
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: var(--tracking-eyebrow);
+    color: hsl(var(--muted-foreground));
+  }
+
+  .t-section-label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: var(--tracking-tag);
+    color: hsl(var(--muted-foreground));
+  }
+
+  .t-body {
+    font-size: var(--fs-md);
+    line-height: var(--leading-snug);
+    letter-spacing: var(--tracking-tight);
+    color: hsl(var(--foreground));
+  }
+
+  .t-body-muted {
+    font-size: 12px;
+    line-height: var(--leading-relaxed);
+    color: hsl(var(--muted-foreground));
+  }
+
+  .t-mono {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-feature-settings: "calt" 0;
+    font-variant-ligatures: none;
+    color: hsl(var(--foreground));
+  }
+
+  .t-mono-tag {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: var(--tracking-tag);
+    color: hsl(var(--muted-foreground) / 0.8);
+  }
+
+  .t-numeric {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* === Glass panel recipes === */
+  .glass-panel {
+    background: rgb(var(--glass-panel));
+    -webkit-backdrop-filter: saturate(150%) blur(18px);
+    backdrop-filter: saturate(150%) blur(18px);
+    border: 1px solid rgb(var(--hairline-2));
+    box-shadow: var(--shadow-glass-panel);
+  }
+  .glass-panel-strong {
+    background: rgb(var(--glass-panel-strong));
+    -webkit-backdrop-filter: saturate(140%) blur(16px);
+    backdrop-filter: saturate(140%) blur(16px);
   }
 }
 
 @layer utilities {
+  /* App shell — cream-lavender base with soft pink top bleed */
   .canvas-bg {
+    position: relative;
     background:
-      radial-gradient(1200px 600px at 0% -10%, hsl(var(--primary) / 0.04), transparent 60%),
-      radial-gradient(900px 500px at 100% 0%, hsl(var(--accent) / 0.045), transparent 55%);
+      radial-gradient(120vw 80vh at 50% -20%, #ffe9f4 0%, transparent 60%),
+      hsl(var(--background));
   }
+  .dark .canvas-bg {
+    background:
+      radial-gradient(120vw 80vh at 50% -20%, rgba(255, 93, 200, 0.08) 0%, transparent 60%),
+      hsl(var(--background));
+  }
+
   .text-balance { text-wrap: balance; }
   .pretty-pre {
     font-feature-settings: "calt" 0;
     font-variant-ligatures: none;
   }
+}
+
+/* === Aurora bleed — fixed pseudo-elements drift behind glass === */
+.glass-aurora {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.glass-aurora::before,
+.glass-aurora::after {
+  content: "";
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(110px);
+  opacity: 0.55;
+  mix-blend-mode: multiply;
+  animation: glass-aurora-drift 24s ease-in-out infinite alternate;
+}
+.glass-aurora::before {
+  width: 60vw; height: 60vw;
+  left: -18vw; top: -22vw;
+  background: radial-gradient(circle at 30% 30%, #c9b8ff 0%, #ffd5e8 55%, transparent 75%);
+}
+.glass-aurora::after {
+  width: 65vw; height: 65vw;
+  right: -22vw; bottom: -28vw;
+  background: radial-gradient(circle at 70% 70%, #ffd1e0 0%, #b9e6ff 55%, transparent 75%);
+  animation-direction: alternate-reverse;
+  animation-duration: 30s;
+}
+.dark .glass-aurora::before,
+.dark .glass-aurora::after {
+  filter: blur(120px);
+  opacity: 0.22;
+  mix-blend-mode: screen;
+}
+.dark .glass-aurora::before {
+  background: radial-gradient(circle at 30% 30%, #6a4dff 0%, transparent 60%);
+}
+.dark .glass-aurora::after {
+  background: radial-gradient(circle at 70% 70%, #ff5dc8 0%, #5ee0ff 60%, transparent 75%);
+}
+
+@keyframes glass-aurora-drift {
+  0%   { transform: translate(0, 0) rotate(0deg); }
+  100% { transform: translate(8vw, 5vh) rotate(40deg); }
 }
 
 @keyframes pulse-soft {

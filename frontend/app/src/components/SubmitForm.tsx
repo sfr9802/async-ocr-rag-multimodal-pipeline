@@ -1,6 +1,5 @@
 import { useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ApiError, submitFileJob, submitTextJob } from "@/lib/api";
@@ -13,7 +12,6 @@ import {
   ImageIcon,
   Layers,
   Loader2,
-  Sparkles,
   Upload,
   X,
 } from "lucide-react";
@@ -27,8 +25,9 @@ interface CapabilityMeta {
   needsFile: boolean;
   needsText: boolean;
   textOptional?: boolean;
+  iconActiveClass: string;
+  tagActiveClass: string;
   ringClass: string;
-  iconClass: string;
 }
 
 const META: Record<Capability, CapabilityMeta> = {
@@ -40,8 +39,9 @@ const META: Record<Capability, CapabilityMeta> = {
     Icon: Brain,
     needsFile: false,
     needsText: true,
-    ringClass: "data-[active=true]:ring-cap-mock/50 data-[active=true]:border-cap-mock/40",
-    iconClass: "text-cap-mock",
+    iconActiveClass: "text-cap-mock",
+    tagActiveClass: "text-cap-mock",
+    ringClass: "ring-cap-mock/40",
   },
   RAG: {
     key: "RAG",
@@ -51,8 +51,9 @@ const META: Record<Capability, CapabilityMeta> = {
     Icon: FileText,
     needsFile: false,
     needsText: true,
-    ringClass: "data-[active=true]:ring-cap-rag/50 data-[active=true]:border-cap-rag/40",
-    iconClass: "text-cap-rag",
+    iconActiveClass: "text-cap-rag",
+    tagActiveClass: "text-cap-rag",
+    ringClass: "ring-cap-rag/45",
   },
   OCR: {
     key: "OCR",
@@ -63,8 +64,9 @@ const META: Record<Capability, CapabilityMeta> = {
     needsFile: true,
     needsText: false,
     textOptional: true,
-    ringClass: "data-[active=true]:ring-cap-ocr/50 data-[active=true]:border-cap-ocr/40",
-    iconClass: "text-cap-ocr",
+    iconActiveClass: "text-cap-ocr",
+    tagActiveClass: "text-cap-ocr",
+    ringClass: "ring-cap-ocr/45",
   },
   MULTIMODAL: {
     key: "MULTIMODAL",
@@ -74,8 +76,9 @@ const META: Record<Capability, CapabilityMeta> = {
     Icon: Layers,
     needsFile: true,
     needsText: true,
-    ringClass: "data-[active=true]:ring-cap-multimodal/50 data-[active=true]:border-cap-multimodal/40",
-    iconClass: "text-cap-multimodal",
+    iconActiveClass: "text-cap-multimodal",
+    tagActiveClass: "text-cap-multimodal",
+    ringClass: "ring-cap-multimodal/45",
   },
 };
 
@@ -144,21 +147,22 @@ export function SubmitForm({ onSubmitted }: SubmitFormProps) {
   }
 
   return (
-    <Card className="overflow-hidden border-border/80 shadow-soft">
-      <CardHeader className="border-b border-border/60 bg-muted/30 px-5 py-3">
-        <div className="flex items-center gap-2">
-          <Sparkles className="h-3.5 w-3.5 text-accent" />
-          <h2 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-            새 작업
-          </h2>
+    <section className="overflow-hidden rounded-[22px] border border-hairline-2 bg-glass shadow-glass backdrop-blur-[18px] backdrop-saturate-150">
+      <header className="flex flex-wrap items-end justify-between gap-4 px-6 pt-5">
+        <div>
+          <h2 className="text-[15px] font-semibold tracking-snug">새 작업</h2>
+          <p className="mt-1 text-[12.5px] text-muted-foreground">
+            기능을 고르고 입력을 채우세요.
+          </p>
         </div>
-      </CardHeader>
-      <CardContent className="space-y-6 p-5 sm:p-6">
+      </header>
+
+      <div className="space-y-5 px-6 py-5">
         <div>
           <Label className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
             기능
           </Label>
-          <div className="mt-2.5 grid grid-cols-2 gap-2 lg:grid-cols-4">
+          <div className="mt-2.5 grid grid-cols-2 gap-2.5 lg:grid-cols-4">
             {CAPABILITIES.map((c) => {
               const m = META[c];
               const active = c === capability;
@@ -168,24 +172,25 @@ export function SubmitForm({ onSubmitted }: SubmitFormProps) {
                   type="button"
                   onClick={() => setCapability(c)}
                   data-active={active}
+                  data-cap={c}
                   className={cn(
-                    "group relative flex flex-col items-start gap-2 rounded-md border p-3 text-left transition-all",
-                    "hover:border-foreground/25 hover:bg-foreground/[0.02]",
-                    "data-[active=true]:bg-card data-[active=true]:shadow-soft data-[active=true]:ring-2",
-                    m.ringClass,
+                    "group flex flex-col items-start gap-2 rounded-[10px] border p-3 text-left transition-all",
+                    active
+                      ? cn("border-hairline-2 bg-glass-strong shadow-glass-pop ring-1", m.ringClass)
+                      : "border-hairline-2 bg-glass-2 hover:-translate-y-px hover:bg-glass-3",
                   )}
                 >
                   <div className="flex w-full items-center justify-between">
                     <m.Icon
                       className={cn(
                         "h-4 w-4 transition-colors",
-                        active ? m.iconClass : "text-muted-foreground",
+                        active ? m.iconActiveClass : "text-muted-foreground",
                       )}
                     />
                     <span
                       className={cn(
                         "font-mono text-[9.5px] uppercase tracking-[0.18em]",
-                        active ? m.iconClass : "text-muted-foreground/70",
+                        active ? m.tagActiveClass : "text-muted-foreground/70",
                       )}
                     >
                       {m.shortDesc}
@@ -193,7 +198,7 @@ export function SubmitForm({ onSubmitted }: SubmitFormProps) {
                   </div>
                   <span
                     className={cn(
-                      "text-sm font-semibold tracking-snug",
+                      "text-[14px] font-semibold tracking-snug",
                       active ? "text-foreground" : "text-foreground/85",
                     )}
                   >
@@ -215,9 +220,9 @@ export function SubmitForm({ onSubmitted }: SubmitFormProps) {
             </Label>
             <div className="mt-2">
               {file ? (
-                <div className="flex items-center justify-between rounded-md border border-border bg-secondary/40 px-3 py-2.5 text-sm">
+                <div className="flex items-center justify-between rounded-[10px] border border-hairline-2 bg-glass-3 px-3 py-2.5 text-sm">
                   <div className="flex min-w-0 items-center gap-2.5">
-                    <div className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-background border">
+                    <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-hairline-2 bg-glass-strong">
                       <FileText className="h-4 w-4 text-muted-foreground" />
                     </div>
                     <div className="min-w-0">
@@ -231,7 +236,7 @@ export function SubmitForm({ onSubmitted }: SubmitFormProps) {
                     type="button"
                     variant="ghost"
                     size="icon"
-                    className="h-7 w-7"
+                    className="h-7 w-7 hover:bg-glass-2"
                     onClick={() => {
                       setFile(null);
                       if (fileInput.current) fileInput.current.value = "";
@@ -249,10 +254,10 @@ export function SubmitForm({ onSubmitted }: SubmitFormProps) {
                   onDragLeave={() => setDragOver(false)}
                   onDrop={onDrop}
                   className={cn(
-                    "rounded-md border-2 border-dashed transition-colors",
+                    "rounded-[10px] border-[1.5px] border-dashed transition-colors",
                     dragOver
-                      ? "border-accent bg-accent/5"
-                      : "border-border bg-muted/15 hover:border-foreground/25 hover:bg-muted/30",
+                      ? "border-ring/60 bg-glass-3"
+                      : "border-hairline-strong bg-glass-2 hover:border-ring/50 hover:bg-glass-3",
                   )}
                 >
                   <button
@@ -261,8 +266,8 @@ export function SubmitForm({ onSubmitted }: SubmitFormProps) {
                     className="flex w-full flex-col items-center justify-center gap-1.5 px-4 py-7 text-sm text-muted-foreground"
                   >
                     <Upload className="h-4 w-4" />
-                    <span className="font-medium text-foreground/85">파일을 드롭하거나 클릭하여 선택</span>
-                    <span className="font-mono text-[10.5px] uppercase tracking-wider">
+                    <span className="text-[13px] font-medium text-foreground/85">파일을 드롭하거나 클릭하여 선택</span>
+                    <span className="font-mono text-[10.5px] uppercase tracking-[0.14em]">
                       png · jpeg · pdf
                     </span>
                   </button>
@@ -297,32 +302,36 @@ export function SubmitForm({ onSubmitted }: SubmitFormProps) {
                 ? "파일과 함께 사용할 질문 (선택)…"
                 : "워커에게 전달할 프롬프트…"
             }
-            className="mt-2 min-h-[112px] resize-y rounded-md border-border bg-card font-mono text-[12.5px] leading-relaxed shadow-none focus-visible:ring-2 focus-visible:ring-ring/30"
+            className="mt-2 min-h-[112px] resize-y rounded-lg border-hairline-2 bg-glass-3 font-mono text-[12.5px] leading-relaxed shadow-none focus-visible:bg-glass-strong focus-visible:ring-2 focus-visible:ring-ring/30"
           />
         </div>
 
         {error && (
-          <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2.5 text-[12.5px] text-destructive">
+          <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2.5 text-[12.5px] text-destructive">
             {error}
           </div>
         )}
+      </div>
 
-        <div className="flex items-center justify-between gap-3">
-          <span className="hidden items-center gap-1.5 font-mono text-[10.5px] uppercase tracking-wider text-muted-foreground sm:inline-flex">
-            <kbd className="rounded border border-border bg-card px-1.5 py-0.5 text-[10px] tracking-normal">⌘</kbd>
-            <kbd className="rounded border border-border bg-card px-1.5 py-0.5 text-[10px] tracking-normal">↵</kbd>
-            <span>전송</span>
-          </span>
-          <Button onClick={handleSubmit} disabled={!canSubmit} className="h-9 gap-1.5 px-4">
-            {submitting ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <CornerDownLeft className="h-3.5 w-3.5" />
-            )}
-            {submitting ? "전송 중…" : "전송"}
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
+      <footer className="flex items-center justify-between gap-3 border-t border-dashed border-hairline-strong px-6 py-3.5">
+        <span className="hidden items-center gap-1.5 font-mono text-[10.5px] uppercase tracking-[0.14em] text-muted-foreground sm:inline-flex">
+          <kbd className="inline-grid h-[18px] min-w-[18px] place-items-center rounded border border-b-2 border-hairline-strong bg-glass-3 px-1 text-[10.5px] tracking-normal">⌘</kbd>
+          <kbd className="inline-grid h-[18px] min-w-[18px] place-items-center rounded border border-b-2 border-hairline-strong bg-glass-3 px-1 text-[10.5px] tracking-normal">↵</kbd>
+          <span>전송</span>
+        </span>
+        <Button
+          onClick={handleSubmit}
+          disabled={!canSubmit}
+          className="h-9 gap-1.5 px-4 shadow-glass-button transition-all hover:-translate-y-px hover:bg-primary/90"
+        >
+          {submitting ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <CornerDownLeft className="h-3.5 w-3.5" />
+          )}
+          {submitting ? "전송 중…" : "작업 제출"}
+        </Button>
+      </footer>
+    </section>
   );
 }

@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { JobTimeline } from "@/components/JobTimeline";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -86,13 +85,13 @@ export function JobPanel({ jobId, onStatusChange }: JobPanelProps) {
   const primaryOutput = pickPrimaryOutput(result?.outputs);
 
   return (
-    <Card className="overflow-hidden border-border/80 shadow-soft">
-      <div className="border-b border-border/60 bg-muted/25">
+    <section className="overflow-hidden rounded-[22px] border border-hairline-2 bg-glass shadow-glass backdrop-blur-[18px] backdrop-saturate-150">
+      <div className="border-b border-hairline">
         <div className="flex flex-wrap items-start gap-x-6 gap-y-3 px-5 py-4">
           <div className="flex items-center gap-3">
             <StatusBadge status={statusKey} withDot />
             {isRunning && (
-              <span className="inline-flex items-center gap-1.5 font-mono text-[10.5px] uppercase tracking-[0.14em] text-muted-foreground">
+              <span className="t-eyebrow inline-flex items-center gap-1.5">
                 <Activity className="h-3 w-3 animate-pulse-soft" />
                 폴링
               </span>
@@ -106,7 +105,7 @@ export function JobPanel({ jobId, onStatusChange }: JobPanelProps) {
                 setCopied(true);
                 window.setTimeout(() => setCopied(false), 1500);
               }}
-              className="group inline-flex items-center gap-1.5 font-mono text-[12px] text-foreground hover:text-primary"
+              className="group inline-flex items-center gap-1.5 font-mono text-[12px] text-foreground hover:text-accent"
             >
               <Hash className="h-3 w-3 text-muted-foreground" />
               {shortId(jobId, 12)}
@@ -137,14 +136,14 @@ export function JobPanel({ jobId, onStatusChange }: JobPanelProps) {
           )}
         </div>
         {view && (
-          <div className="border-t border-border/40 px-5 py-2.5">
+          <div className="border-t border-hairline bg-glass-2 px-5 py-3">
             <JobTimeline view={view} />
           </div>
         )}
       </div>
 
       {(error || view?.errorCode) && (
-        <div className="border-b border-destructive/30 bg-destructive/8 px-5 py-3">
+        <div className="border-b border-destructive/30 bg-destructive/10 px-5 py-3">
           <div className="flex items-start gap-2 text-destructive">
             <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" />
             <div className="space-y-0.5">
@@ -159,13 +158,13 @@ export function JobPanel({ jobId, onStatusChange }: JobPanelProps) {
         </div>
       )}
 
-      <CardContent className="p-0">
+      <div>
         <Tabs defaultValue="result" className="w-full">
-          <TabsList className="h-auto w-full justify-start gap-0 rounded-none border-b border-border/60 bg-transparent p-0 px-3">
+          <TabsList className="h-auto w-full justify-start gap-0 rounded-none border-b border-hairline bg-transparent p-0 px-3">
             <TabTriggerSlim value="result">결과</TabTriggerSlim>
             <TabTriggerSlim value="artifacts">
               아티팩트
-              <span className="ml-1.5 rounded-full bg-muted px-1.5 py-0.5 font-mono text-[9.5px] tabular-nums text-muted-foreground">
+              <span className="ml-1.5 rounded-full border border-hairline-2 bg-glass-3 px-1.5 py-0.5 font-mono text-[9.5px] tabular-nums text-muted-foreground">
                 {(result?.outputs?.length ?? 0) + (result?.inputs?.length ?? 0)}
               </span>
             </TabTriggerSlim>
@@ -186,7 +185,7 @@ export function JobPanel({ jobId, onStatusChange }: JobPanelProps) {
                 <OutputPreview artifact={primaryOutput} />
               </div>
             ) : (
-              <div className="rounded-md border border-dashed border-border bg-muted/20 px-4 py-8 text-center text-[12.5px] text-muted-foreground">
+              <div className="rounded-lg border border-dashed border-hairline-strong bg-glass-2 px-4 py-8 text-center text-[12.5px] text-muted-foreground">
                 생성된 출력물이 없습니다.
               </div>
             )}
@@ -198,13 +197,13 @@ export function JobPanel({ jobId, onStatusChange }: JobPanelProps) {
           </TabsContent>
 
           <TabsContent value="raw" className="m-0 p-5">
-            <pre className="pretty-pre max-h-[480px] overflow-auto rounded-md border bg-card p-4 font-mono text-[12px] leading-relaxed shadow-soft">
+            <pre className="pretty-pre max-h-[480px] overflow-auto rounded-lg border border-hairline-2 bg-glass-2 p-4 font-mono text-[12px] leading-relaxed text-foreground/90">
               {JSON.stringify({ view, result }, null, 2)}
             </pre>
           </TabsContent>
         </Tabs>
-      </CardContent>
-    </Card>
+      </div>
+    </section>
   );
 }
 
@@ -217,9 +216,7 @@ function pickPrimaryOutput(outputs: ArtifactView[] | undefined): ArtifactView | 
 function Stat({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-0.5">
-      <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground/80">
-        {label}
-      </span>
+      <span className="t-mono-tag">{label}</span>
       <span>{children}</span>
     </div>
   );
@@ -229,7 +226,7 @@ function TabTriggerSlim({ value, children }: { value: string; children: React.Re
   return (
     <TabsTrigger
       value={value}
-      className="relative h-auto rounded-none border-b-2 border-transparent bg-transparent px-3.5 py-2.5 text-[11.5px] font-medium uppercase tracking-[0.14em] text-muted-foreground shadow-none data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none"
+      className="relative h-auto rounded-none border-b-2 border-transparent bg-transparent px-3.5 py-2.5 text-[11.5px] font-medium uppercase tracking-[0.14em] text-muted-foreground shadow-none data-[state=active]:border-accent data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none"
     >
       {children}
     </TabsTrigger>
@@ -246,9 +243,9 @@ function PendingState() {
         </h3>
       </div>
       <div className="space-y-2">
-        <div className="h-3 w-1/3 animate-pulse-soft rounded bg-muted" />
-        <div className="h-3 w-5/6 animate-pulse-soft rounded bg-muted" />
-        <div className="h-3 w-4/6 animate-pulse-soft rounded bg-muted" />
+        <div className="h-3 w-1/3 animate-pulse-soft rounded bg-glass-3" />
+        <div className="h-3 w-5/6 animate-pulse-soft rounded bg-glass-3" />
+        <div className="h-3 w-4/6 animate-pulse-soft rounded bg-glass-3" />
       </div>
       <p className="font-mono text-[10.5px] text-muted-foreground/70">
         {(POLL_INTERVAL_MS / 1000).toFixed(1)}초마다 폴링 · 작업이 종료 상태에 도달하면 출력이 표시됩니다.
@@ -274,7 +271,7 @@ function ArtifactSection({
         <h3
           className={cn(
             "text-[11px] font-semibold uppercase tracking-[0.14em]",
-            emphasize ? "text-primary" : "text-muted-foreground",
+            emphasize ? "text-foreground" : "text-muted-foreground",
           )}
         >
           {title}
@@ -284,11 +281,11 @@ function ArtifactSection({
         </span>
       </div>
       {pending ? (
-        <div className="rounded-md border border-dashed border-border bg-muted/20 px-4 py-6 text-center text-[12.5px] text-muted-foreground">
+        <div className="rounded-lg border border-dashed border-hairline-strong bg-glass-2 px-4 py-6 text-center text-[12.5px] text-muted-foreground">
           작업 완료 대기 중…
         </div>
       ) : artifacts.length === 0 ? (
-        <div className="rounded-md border border-dashed border-border bg-muted/20 px-4 py-5 text-center text-[12.5px] text-muted-foreground">
+        <div className="rounded-lg border border-dashed border-hairline-strong bg-glass-2 px-4 py-5 text-center text-[12.5px] text-muted-foreground">
           {title}이(가) 없습니다.
         </div>
       ) : (
@@ -296,15 +293,15 @@ function ArtifactSection({
           {artifacts.map((a) => (
             <li
               key={a.id}
-              className="group flex flex-wrap items-center gap-3 rounded-md border border-border/70 bg-card px-3 py-2.5 transition-colors hover:border-border"
+              className="group flex flex-wrap items-center gap-3 rounded-lg border border-hairline-2 bg-glass-3 px-3 py-2.5 transition-colors hover:border-hairline-strong"
             >
-              <div className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-muted/50 border border-border/60">
+              <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-hairline-2 bg-glass-strong">
                 <FileText className="h-3.5 w-3.5 text-muted-foreground" />
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-[12.5px] font-medium tracking-snug">{a.type}</span>
-                  <span className="rounded-full border border-border/60 bg-muted/40 px-1.5 py-0.5 font-mono text-[9.5px] uppercase tracking-[0.12em] text-muted-foreground">
+                  <span className="rounded-full border border-hairline-2 bg-glass-2 px-1.5 py-0.5 font-mono text-[9.5px] uppercase tracking-[0.12em] text-muted-foreground">
                     {a.role}
                   </span>
                 </div>
@@ -321,13 +318,13 @@ function ArtifactSection({
                 </div>
               </div>
               <div className="flex items-center gap-1">
-                <Button asChild variant="ghost" size="sm" className="h-7 gap-1.5 text-[11px]">
+                <Button asChild variant="ghost" size="sm" className="h-7 gap-1.5 text-[11px] hover:bg-glass-2">
                   <a href={artifactUrl(a.accessUrl)} target="_blank" rel="noreferrer">
                     <ExternalLink className="h-3 w-3" />
                     열기
                   </a>
                 </Button>
-                <Button asChild variant="ghost" size="sm" className="h-7 gap-1.5 text-[11px]">
+                <Button asChild variant="ghost" size="sm" className="h-7 gap-1.5 text-[11px] hover:bg-glass-2">
                   <a href={artifactUrl(a.accessUrl)} download>
                     <Download className="h-3 w-3" />
                     다운로드
@@ -344,9 +341,9 @@ function ArtifactSection({
 
 function EmptyState() {
   return (
-    <Card className="overflow-hidden border-dashed border-border/60 bg-card/40 shadow-none">
-      <CardContent className="grid place-items-center gap-3 px-6 py-16 text-center">
-        <div className="grid h-12 w-12 place-items-center rounded-full border border-border/80 bg-card text-muted-foreground/80 shadow-soft">
+    <section className="overflow-hidden rounded-[22px] border border-dashed border-hairline-strong bg-glass-2 backdrop-blur-[14px] backdrop-saturate-150">
+      <div className="grid place-items-center gap-3 px-6 py-16 text-center">
+        <div className="grid h-11 w-11 place-items-center rounded-full border border-hairline-2 bg-glass-3 text-muted-foreground shadow-soft">
           <Inbox className="h-5 w-5" />
         </div>
         <div className="space-y-1">
@@ -355,8 +352,8 @@ function EmptyState() {
             위에서 작업을 제출하거나 최근 목록에서 선택하세요.
           </p>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </section>
   );
 }
 

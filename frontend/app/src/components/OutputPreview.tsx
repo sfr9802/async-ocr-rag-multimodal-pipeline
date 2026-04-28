@@ -43,7 +43,7 @@ export function OutputPreview({ artifact }: OutputPreviewProps) {
 
   if (error === "binary") {
     return (
-      <div className="flex items-center gap-2 rounded-md border border-dashed bg-muted/30 px-4 py-6 text-xs text-muted-foreground">
+      <div className="flex items-center gap-2 rounded-lg border border-dashed border-hairline-strong bg-glass-2 px-4 py-6 text-xs text-muted-foreground">
         <FileWarning className="h-4 w-4" />
         바이너리 출력 ({artifact.contentType}) — 아래 다운로드를 사용하세요.
       </div>
@@ -53,16 +53,16 @@ export function OutputPreview({ artifact }: OutputPreviewProps) {
   if (loading) {
     return (
       <div className="space-y-2">
-        <div className="h-3 w-1/3 animate-pulse-soft rounded bg-muted" />
-        <div className="h-3 w-5/6 animate-pulse-soft rounded bg-muted" />
-        <div className="h-3 w-4/6 animate-pulse-soft rounded bg-muted" />
+        <div className="h-3 w-1/3 animate-pulse-soft rounded bg-glass-3" />
+        <div className="h-3 w-5/6 animate-pulse-soft rounded bg-glass-3" />
+        <div className="h-3 w-4/6 animate-pulse-soft rounded bg-glass-3" />
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+      <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
         출력 로드 실패: {error}
       </div>
     );
@@ -74,14 +74,14 @@ export function OutputPreview({ artifact }: OutputPreviewProps) {
     <div className="group relative">
       <div className="absolute right-2 top-2 z-10 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
         {isJson && (
-          <span className="rounded bg-background/80 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground backdrop-blur">
+          <span className="rounded border border-hairline-2 bg-glass-strong px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground backdrop-blur">
             json
           </span>
         )}
         <Button
           variant="ghost"
           size="icon"
-          className="h-7 w-7 bg-background/80 backdrop-blur"
+          className="h-7 w-7 border border-hairline-2 bg-glass-strong backdrop-blur hover:bg-glass-3"
           onClick={() => {
             navigator.clipboard.writeText(pretty);
             setCopied(true);
@@ -94,7 +94,7 @@ export function OutputPreview({ artifact }: OutputPreviewProps) {
       </div>
       <pre
         className={cn(
-          "pretty-pre max-h-[420px] overflow-auto rounded-md border bg-card p-4 font-mono text-[12.5px] leading-relaxed text-foreground/90",
+          "pretty-pre max-h-[420px] overflow-auto rounded-lg border border-hairline-2 bg-glass-2 p-4 font-mono text-[12.5px] leading-relaxed text-foreground/90",
           "shadow-soft",
         )}
       >
