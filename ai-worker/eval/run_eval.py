@@ -34,7 +34,7 @@ import logging
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional
+from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 from eval.harness.io_utils import (
     load_jsonl,
@@ -110,6 +110,30 @@ from eval.harness.corpus_preprocessor import (
     render_corpus_preprocess_summary_markdown,
     render_sample_diff_markdown,
 )
+from eval.harness.chunker_diagnostics import (
+    DEFAULT_THRESHOLDS as DEFAULT_DIAGNOSE_THRESHOLDS,
+    DEFAULT_TOP_N as DEFAULT_DIAGNOSE_TOP_N,
+    chunker_diagnosis_to_dict,
+    diagnose_chunker_long_tail,
+    render_chunker_diagnosis_markdown,
+    render_chunker_provenance_markdown,
+    samples_to_dict_list as diagnose_samples_to_dict_list,
+)
+from eval.harness.token_aware_emit import (
+    EmitConfig,
+    build_default_tokenizer_callables,
+    emit_summary_to_dict,
+    emit_token_aware_corpus,
+    render_emit_summary_markdown,
+)
+from app.capabilities.rag.token_aware_chunker import (
+    CHUNKER_VERSION as TOKEN_AWARE_CHUNKER_VERSION,
+    DEFAULT_HARD_MAX_TOKENS as DEFAULT_TA_HARD_MAX,
+    DEFAULT_OVERLAP_TOKENS as DEFAULT_TA_OVERLAP,
+    DEFAULT_SOFT_MAX_TOKENS as DEFAULT_TA_SOFT_MAX,
+    DEFAULT_TARGET_TOKENS as DEFAULT_TA_TARGET,
+    TokenAwareConfig,
+)
 from app.capabilities.rag.ingest import _iter_documents
 
 
@@ -135,6 +159,12 @@ def main(argv: Optional[List[str]] = None) -> int:
         return _run_multimodal_cli(args)
     if args.mode == "retrieval":
         return _run_retrieval_cli(args)
+    if args.mode == "retrieval-rerank":
+        return _run_retrieval_rerank_cli(args)
+    if args.mode == "phase2a-reranker-comparison":
+        return _run_phase2a_reranker_comparison_cli(args)
+    if args.mode == "phase2a-reranker-failure-analysis":
+        return _run_phase2a_reranker_failure_cli(args)
     if args.mode == "retrieval-compare":
         return _run_retrieval_compare_cli(args)
     if args.mode == "retrieval-miss-analysis":
@@ -151,6 +181,12 @@ def main(argv: Optional[List[str]] = None) -> int:
         return _run_emit_preprocessed_corpus_cli(args)
     if args.mode == "compare-corpus-lengths":
         return _run_compare_corpus_lengths_cli(args)
+    if args.mode == "diagnose-chunker-long-tail":
+        return _run_diagnose_chunker_long_tail_cli(args)
+    if args.mode == "emit-token-aware-chunks":
+        return _run_emit_token_aware_chunks_cli(args)
+    if args.mode == "compare-chunker-lengths":
+        return _run_compare_chunker_lengths_cli(args)
     parser.error(f"unknown mode: {args.mode}")
     return 2  # unreachable
 
@@ -265,6 +301,140 @@ def _build_parser() -> argparse.ArgumentParser:
                     help="Embedding batch size for the offline corpus "
                          "build (default: 32). Halve this if you still "
                          "OOM on a small GPU.")
+    rt.add_argument("--extra-hit-k", type=int, action="append", default=None,
+                    help="Additional hit@k cutoff to compute on top of "
+                         "the default {1,3,5}. Used for the Phase 2A "
+                         "candidate-recall report — pass --extra-hit-k 10 "
+                         "--extra-hit-k 20 --extra-hit-k 50 to surface "
+                         "hit@10 / hit@20 / hit@50 in the summary. The "
+                         "harness will warn if any cutoff exceeds top-k. "
+                         "Repeatable.")
+
+    # --- retrieval-rerank ---
+    #
+    # Phase 2A entrypoint. Same offline retrieval-eval flow as
+    # ``retrieval``, but builds the in-memory Retriever with a
+    # cross-encoder reranker stacked on top. dense-top-N candidates
+    # flow into the reranker; the reranker returns final-top-K. All
+    # rerank-specific knobs (model, batch_size, OOM-fallback) are
+    # explicit on the CLI so a sweep is reproducible from a single
+    # command line.
+    rrk = subs.add_parser(
+        "retrieval-rerank",
+        help="Phase 2A: run retrieval eval with a cross-encoder reranker "
+             "stacked on top of the dense retriever.",
+    )
+    rrk.add_argument("--dataset", required=True, type=Path,
+                     help="Eval-queries JSONL.")
+    rrk.add_argument("--corpus", required=True, type=Path,
+                     help="Offline corpus JSONL (B2 token-aware-v1 by "
+                          "default for Phase 2A).")
+    rrk.add_argument("--out-dir", type=Path, default=None,
+                     help="Directory to drop the four output artifacts "
+                          "into. Defaults to eval/reports/"
+                          "retrieval-rerank-<timestamp>/.")
+    rrk.add_argument("--final-top-k", type=int, default=10,
+                     help="Final top-k after reranking (default: 10).")
+    rrk.add_argument("--dense-top-n", type=int, default=20,
+                     help="Number of bi-encoder candidates fetched from "
+                          "FAISS before rerank (default: 20). MUST be "
+                          ">= --final-top-k.")
+    rrk.add_argument("--mrr-k", type=int, default=10)
+    rrk.add_argument("--ndcg-k", type=int, default=10)
+    rrk.add_argument("--max-seq-length", type=int, default=1024,
+                     help="Cap the embedder's max_seq_length on the "
+                          "offline corpus build (default: 1024).")
+    rrk.add_argument("--embed-batch-size", type=int, default=32,
+                     help="Embedding batch size for the offline corpus "
+                          "build (default: 32).")
+    rrk.add_argument("--reranker-model", type=str,
+                     default="BAAI/bge-reranker-v2-m3",
+                     help="Cross-encoder model name (default: "
+                          "BAAI/bge-reranker-v2-m3 — multilingual M3 "
+                          "reranker, the same family as the bge-m3 "
+                          "embedder used for the bi-encoder).")
+    rrk.add_argument("--reranker-batch-size", type=int, default=16,
+                     help="CrossEncoder.predict batch_size (default: 16).")
+    rrk.add_argument("--reranker-max-length", type=int, default=512,
+                     help="Cross-encoder tokenizer max_length (default: "
+                          "512). Truncates the (query, passage) pair "
+                          "before encoding.")
+    rrk.add_argument("--reranker-text-max-chars", type=int, default=800,
+                     help="Per-passage character cap before the "
+                          "cross-encoder tokenizer sees it. Keeps the "
+                          "tokenizer from blowing past max_length on "
+                          "very long chunks (default: 800).")
+    rrk.add_argument("--reranker-device", type=str, default=None,
+                     help="Force a CrossEncoder device ('cpu' / 'cuda'). "
+                          "Defaults to auto: cuda when torch reports it "
+                          "available, cpu otherwise.")
+    rrk.add_argument("--reranker-oom-fallback-batch-size", type=int,
+                     default=None,
+                     help="Batch size to retry at on a single CUDA OOM "
+                          "(default: half of --reranker-batch-size).")
+    rrk.add_argument("--extra-hit-k", type=int, action="append",
+                     default=None,
+                     help="Additional hit@k cutoffs (repeatable). Phase 2A "
+                          "rerank reports usually leave this empty — the "
+                          "candidate-recall report exists for that.")
+
+    # --- phase2a-reranker-comparison ---
+    #
+    # Pure post-processing: reads N labelled retrieval_eval_report.json
+    # files and emits the comparison .{json,md} into a target directory.
+    # Never re-runs retrieval, never re-embeds.
+    rcomp = subs.add_parser(
+        "phase2a-reranker-comparison",
+        help="Phase 2A: build the side-by-side reranker comparison report "
+             "from N labelled retrieval_eval_report.json files.",
+    )
+    rcomp.add_argument(
+        "--slice", action="append", required=True,
+        help="One labelled report. Format 'label:path/to/"
+             "retrieval_eval_report.json'. Repeatable.",
+    )
+    rcomp.add_argument(
+        "--out-json", type=Path, required=True,
+        help="Output path for reranker-comparison.json.",
+    )
+    rcomp.add_argument(
+        "--out-md", type=Path, required=True,
+        help="Output path for reranker-comparison.md.",
+    )
+    rcomp.add_argument(
+        "--caveat", type=str, action="append", default=None,
+        help="Override the default caveat list (repeatable). When omitted, "
+             "Phase 2A's standard caveats are emitted.",
+    )
+
+    # --- phase2a-reranker-failure-analysis ---
+    rfail = subs.add_parser(
+        "phase2a-reranker-failure-analysis",
+        help="Phase 2A: cross-tab dense vs. rerank hit@1 and dump samples "
+             "from the rescued / regressed / both-miss buckets.",
+    )
+    rfail.add_argument(
+        "--dense-report-dir", required=True, type=Path,
+        help="Run dir of the dense-only B2 retrieval eval (must contain "
+             "retrieval_eval_report.json + top_k_dump.jsonl).",
+    )
+    rfail.add_argument(
+        "--rerank-report-dir", required=True, type=Path,
+        help="Run dir of the reranked B2 retrieval eval (must contain "
+             "retrieval_eval_report.json + top_k_dump.jsonl).",
+    )
+    rfail.add_argument(
+        "--out-dir", type=Path, required=True,
+        help="Directory to write reranker-failure-analysis.{json,md}.",
+    )
+    rfail.add_argument(
+        "--k-preview", type=int, default=5,
+        help="Top-N preview rows per query (default: 5).",
+    )
+    rfail.add_argument(
+        "--sample-cap", type=int, default=10,
+        help="Cap on per-bucket samples emitted (default: 10).",
+    )
 
     # --- retrieval-compare ---
     rc = subs.add_parser(
@@ -570,6 +740,161 @@ def _build_parser() -> argparse.ArgumentParser:
     cl.add_argument(
         "--out-md", type=Path, required=True,
         help="Output path for the markdown comparison.",
+    )
+
+    # --- diagnose-chunker-long-tail ---
+    #
+    # Phase 1C entrypoint #1. Re-runs the corpus through the production
+    # chunker, ranks emitted chunks by token count, and dumps the top-N
+    # with full provenance (source payload type, original section
+    # shape, split attribution). Reads only — corpus is not modified.
+    dc = subs.add_parser(
+        "diagnose-chunker-long-tail",
+        help="Phase 1C: emit chunker provenance for the longest "
+             "chunks. Reads only.",
+    )
+    dc.add_argument(
+        "--corpus", required=True, type=Path,
+        help="Path to corpus.jsonl (raw or preprocessed).",
+    )
+    dc.add_argument(
+        "--tokenizer", type=str, default=DEFAULT_TOKENIZER_NAME,
+        help=f"HuggingFace tokenizer name (default: {DEFAULT_TOKENIZER_NAME}).",
+    )
+    dc.add_argument(
+        "--top-n", type=int, default=DEFAULT_DIAGNOSE_TOP_N,
+        help=f"Number of longest provenance samples to dump "
+             f"(default: {DEFAULT_DIAGNOSE_TOP_N}).",
+    )
+    dc.add_argument(
+        "--threshold", type=int, action="append", default=None,
+        help="Token thresholds for the chunks-over-cap table. May be "
+             f"passed multiple times. Defaults to "
+             f"{list(DEFAULT_DIAGNOSE_THRESHOLDS)}.",
+    )
+    dc.add_argument(
+        "--long-chunk-threshold", type=int, default=1024,
+        help="Token threshold above which a chunk is counted toward "
+             "the long-chunk attribution rollup (default: 1024).",
+    )
+    dc.add_argument(
+        "--batch-size", type=int, default=256,
+        help="Tokenizer batch size (default: 256).",
+    )
+    dc.add_argument(
+        "--out-dir", type=Path,
+        default=Path("eval/reports/phase1c-token-chunker"),
+        help="Directory to write diagnosis reports "
+             "(default: eval/reports/phase1c-token-chunker).",
+    )
+
+    # --- emit-token-aware-chunks ---
+    #
+    # Phase 1C entrypoint #2. Streams a corpus through the token-aware
+    # chunker and writes a new corpus.<variant>.jsonl whose section
+    # ``chunks`` lists are bounded by hard_max_tokens. Source corpus
+    # is never modified.
+    et = subs.add_parser(
+        "emit-token-aware-chunks",
+        help="Phase 1C: emit a token-aware chunked corpus + manifest. "
+             "Source corpus is never modified.",
+    )
+    et.add_argument(
+        "--corpus", required=True, type=Path,
+        help="Path to source corpus.jsonl. Not modified.",
+    )
+    et.add_argument(
+        "--tokenizer", type=str, default=DEFAULT_TOKENIZER_NAME,
+        help=f"HuggingFace tokenizer name (default: {DEFAULT_TOKENIZER_NAME}).",
+    )
+    et.add_argument(
+        "--target-tokens", type=int, default=DEFAULT_TA_TARGET,
+        help=f"Target chunk token count (default: {DEFAULT_TA_TARGET}).",
+    )
+    et.add_argument(
+        "--soft-max-tokens", type=int, default=DEFAULT_TA_SOFT_MAX,
+        help=f"Soft max - packer flushes when next unit would exceed "
+             f"this (default: {DEFAULT_TA_SOFT_MAX}).",
+    )
+    et.add_argument(
+        "--hard-max-tokens", type=int, default=DEFAULT_TA_HARD_MAX,
+        help=f"Hard max - no emitted chunk may exceed this in "
+             f"production emit (default: {DEFAULT_TA_HARD_MAX}).",
+    )
+    et.add_argument(
+        "--overlap-tokens", type=int, default=DEFAULT_TA_OVERLAP,
+        help=f"Adjacent-chunk overlap in tokens (default: "
+             f"{DEFAULT_TA_OVERLAP}).",
+    )
+    et.add_argument(
+        "--out-corpus", type=Path, required=True,
+        help="Output path for the token-aware corpus.jsonl. The "
+             "parent directory is created if needed. Refusing to "
+             "overwrite the source corpus.",
+    )
+    et.add_argument(
+        "--manifest", type=Path, default=None,
+        help="Output path for the manifest.json (default: "
+             "<out-corpus dir>/manifest.json).",
+    )
+    et.add_argument(
+        "--provenance", type=Path, default=None,
+        help="Optional path for the per-chunk provenance jsonl "
+             "(default: <out-corpus dir>/chunks_provenance.jsonl).",
+    )
+    et.add_argument(
+        "--no-provenance", action="store_true",
+        help="Skip writing the provenance jsonl.",
+    )
+    et.add_argument(
+        "--variant-label", type=str, default="combined.token-aware-v1",
+        help="Stable label for this variant - recorded in the manifest. "
+             "Default: combined.token-aware-v1.",
+    )
+
+    # --- compare-chunker-lengths ---
+    #
+    # Phase 1C entrypoint #3. Takes N corpora (label:path), runs the
+    # production chunker length analysis on each, and emits a
+    # side-by-side comparison. Unlike compare-corpus-lengths (which
+    # consumes pre-computed analysis JSONs), this tokenizes from
+    # scratch — useful when the corpora include token-aware-emitted
+    # variants whose final chunks live in ``sections.<>.chunks``.
+    ccl = subs.add_parser(
+        "compare-chunker-lengths",
+        help="Phase 1C: tokenize N corpora end-to-end and emit a "
+             "length-comparison table.",
+    )
+    ccl.add_argument(
+        "--corpus", action="append", required=True,
+        help="One labelled corpus. Format 'label:path' or just 'path' "
+             "(label defaults to the file stem). May be passed "
+             "multiple times.",
+    )
+    ccl.add_argument(
+        "--tokenizer", type=str, default=DEFAULT_TOKENIZER_NAME,
+        help=f"HuggingFace tokenizer name (default: {DEFAULT_TOKENIZER_NAME}).",
+    )
+    ccl.add_argument(
+        "--threshold", type=int, action="append", default=None,
+        help="Token thresholds for the chunks-over-cap table. Defaults "
+             f"to {list(DEFAULT_TOKEN_THRESHOLDS)}.",
+    )
+    ccl.add_argument(
+        "--top-longest", type=int, default=DEFAULT_TOP_LONGEST_CHUNKS,
+        help=f"Per-corpus longest-chunks count for the per-corpus "
+             f"length analysis (default: {DEFAULT_TOP_LONGEST_CHUNKS}).",
+    )
+    ccl.add_argument(
+        "--batch-size", type=int, default=256,
+        help="Tokenizer batch size (default: 256).",
+    )
+    ccl.add_argument(
+        "--out-dir", type=Path,
+        default=Path("eval/reports/phase1c-token-chunker"),
+        help="Directory to write per-corpus length JSONs + the "
+             "comparison report "
+             "(default: eval/reports/phase1c-token-chunker).",
     )
 
     return parser
@@ -910,7 +1235,10 @@ def _build_rag_stack(args: argparse.Namespace):
     from pathlib import Path as _P
 
     from app.capabilities.registry import _build_reranker
-    from app.capabilities.rag.embeddings import SentenceTransformerEmbedder
+    from app.capabilities.rag.embeddings import (
+        SentenceTransformerEmbedder,
+        resolve_max_seq_length,
+    )
     from app.capabilities.rag.faiss_index import FaissIndex
     from app.capabilities.rag.generation import ExtractiveGenerator
     from app.capabilities.rag.metadata_store import RagMetadataStore
@@ -926,6 +1254,9 @@ def _build_rag_stack(args: argparse.Namespace):
         model_name=settings.rag_embedding_model,
         query_prefix=settings.rag_embedding_prefix_query,
         passage_prefix=settings.rag_embedding_prefix_passage,
+        max_seq_length=resolve_max_seq_length(settings.rag_embedding_max_seq_length),
+        batch_size=int(settings.rag_embedding_batch_size),
+        cuda_alloc_conf=settings.rag_embedding_cuda_alloc_conf or None,
     )
     index = FaissIndex(_P(settings.rag_index_dir))
     reranker = _build_reranker(settings)
@@ -951,7 +1282,10 @@ def _build_offline_rag_stack(args: argparse.Namespace):
     import tempfile
     from pathlib import Path as _P
 
-    from app.capabilities.rag.embeddings import SentenceTransformerEmbedder
+    from app.capabilities.rag.embeddings import (
+        SentenceTransformerEmbedder,
+        resolve_max_seq_length,
+    )
     from app.core.config import get_settings
 
     from eval.harness.offline_corpus import build_offline_rag_stack
@@ -963,6 +1297,9 @@ def _build_offline_rag_stack(args: argparse.Namespace):
         model_name=settings.rag_embedding_model,
         query_prefix=settings.rag_embedding_prefix_query,
         passage_prefix=settings.rag_embedding_prefix_passage,
+        max_seq_length=resolve_max_seq_length(settings.rag_embedding_max_seq_length),
+        batch_size=int(settings.rag_embedding_batch_size),
+        cuda_alloc_conf=settings.rag_embedding_cuda_alloc_conf or None,
     )
     tmp_dir = _P(tempfile.mkdtemp(prefix="rag-eval-offline-"))
     retriever, generator, info = build_offline_rag_stack(
@@ -1510,6 +1847,9 @@ def _run_retrieval_cli(args: argparse.Namespace) -> int:
     top_k = int(args.top_k)
     mrr_k = int(args.mrr_k)
     ndcg_k = int(args.ndcg_k)
+    extra_hit_ks = _resolve_extra_hit_ks(
+        getattr(args, "extra_hit_k", None), top_k=top_k,
+    )
 
     summary, rows, dump, dup = run_retrieval_eval(
         dataset,
@@ -1517,6 +1857,7 @@ def _run_retrieval_cli(args: argparse.Namespace) -> int:
         top_k=top_k,
         mrr_k=mrr_k,
         ndcg_k=ndcg_k,
+        extra_hit_ks=extra_hit_ks,
         dataset_path=str(args.dataset),
         corpus_path=corpus_path,
     )
@@ -1622,10 +1963,12 @@ def _build_offline_retrieval_stack(args: argparse.Namespace):
         # 1024 tokens so the same retrieval baseline finishes in ~10
         # minutes instead of 2+ hours; the tail of those rare long
         # chunks is dropped, which doesn't materially change retrieval
-        # quality on this corpus.
+        # quality on this corpus. CLI flag wins over the worker
+        # setting so per-run experiments can override.
         max_seq_length=getattr(args, "max_seq_length", 1024),
         batch_size=getattr(args, "embed_batch_size", 32),
         show_progress_bar=True,
+        cuda_alloc_conf=settings.rag_embedding_cuda_alloc_conf or None,
     )
     tmp_dir = _P(tempfile.mkdtemp(prefix="retrieval-eval-offline-"))
     retriever, generator, info = build_offline_rag_stack(
@@ -1712,6 +2055,330 @@ def _print_retrieval_summary(
 def _default_retrieval_dir() -> Path:
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     return Path(f"eval/reports/retrieval-{timestamp}")
+
+
+def _resolve_extra_hit_ks(raw, *, top_k: int):
+    """Normalise the --extra-hit-k argparse list into a sorted tuple.
+
+    Values <= 0 are dropped; values > top_k log a warning because the
+    metric they produce is degenerate (the harness clamps to the
+    top-k slice it actually has). Duplicates are collapsed so the
+    summary shape is stable.
+    """
+    if not raw:
+        return ()
+    seen: set[int] = set()
+    out: list[int] = []
+    for value in raw:
+        try:
+            k = int(value)
+        except (TypeError, ValueError):
+            continue
+        if k <= 0 or k in seen:
+            continue
+        if k > top_k:
+            log.warning(
+                "extra-hit-k=%d exceeds top_k=%d; the metric will be "
+                "computed over the top_k slice (effective hit@top_k).",
+                k, top_k,
+            )
+        seen.add(k)
+        out.append(k)
+    out.sort()
+    return tuple(out)
+
+
+# ---------------------------------------------------------------------------
+# Phase 2A retrieval-rerank CLI.
+# ---------------------------------------------------------------------------
+
+
+def _run_retrieval_rerank_cli(args: argparse.Namespace) -> int:
+    """Run the offline retrieval eval with a cross-encoder reranker.
+
+    Builds the same offline retrieval stack as ``retrieval`` but plugs
+    a CrossEncoderReranker into the Retriever with candidate_k =
+    --dense-top-n. The reranker truncates the bi-encoder candidates
+    down to --final-top-k before the harness scores the top-k.
+    """
+    import json as _json
+    import tempfile
+    from pathlib import Path as _P
+
+    from app.capabilities.rag.embeddings import SentenceTransformerEmbedder
+    from app.capabilities.rag.reranker import CrossEncoderReranker
+    from app.core.config import get_settings
+    from eval.harness.offline_corpus import build_offline_rag_stack
+
+    final_top_k = int(args.final_top_k)
+    dense_top_n = int(args.dense_top_n)
+    if dense_top_n < final_top_k:
+        log.error(
+            "--dense-top-n (%d) must be >= --final-top-k (%d). The "
+            "reranker can only re-order what the bi-encoder hands it; "
+            "asking for more output than candidate input would force "
+            "the retriever to return fewer than --final-top-k results.",
+            dense_top_n, final_top_k,
+        )
+        return 2
+
+    settings = get_settings()
+    embedder = SentenceTransformerEmbedder(
+        model_name=settings.rag_embedding_model,
+        query_prefix=settings.rag_embedding_prefix_query,
+        passage_prefix=settings.rag_embedding_prefix_passage,
+        max_seq_length=int(args.max_seq_length),
+        batch_size=int(args.embed_batch_size),
+        show_progress_bar=True,
+        cuda_alloc_conf=settings.rag_embedding_cuda_alloc_conf or None,
+    )
+    try:
+        reranker = CrossEncoderReranker(
+            model_name=str(args.reranker_model),
+            max_length=int(args.reranker_max_length),
+            batch_size=int(args.reranker_batch_size),
+            text_max_chars=int(args.reranker_text_max_chars),
+            device=args.reranker_device or None,
+            oom_fallback_batch_size=(
+                int(args.reranker_oom_fallback_batch_size)
+                if args.reranker_oom_fallback_batch_size is not None
+                else None
+            ),
+        )
+    except Exception as ex:
+        log.error(
+            "Failed to construct CrossEncoderReranker (%s: %s). "
+            "Check that sentence-transformers is installed and that "
+            "the requested model name is valid: %s",
+            type(ex).__name__, ex, args.reranker_model,
+        )
+        return 2
+
+    tmp_dir = _P(tempfile.mkdtemp(prefix="retrieval-rerank-offline-"))
+    try:
+        retriever, _generator, info = build_offline_rag_stack(
+            _P(args.corpus),
+            embedder=embedder,
+            index_dir=tmp_dir,
+            top_k=final_top_k,
+            reranker=reranker,
+            candidate_k=dense_top_n,
+        )
+    except Exception as ex:
+        log.error(
+            "Failed to build the rerank retrieval stack (%s: %s). "
+            "Verify --corpus exists and has the expected sections "
+            "shape; eval/corpora/<dir>/README.md has staging notes.",
+            type(ex).__name__, ex,
+        )
+        return 2
+
+    dataset = load_jsonl(args.dataset)
+    extra_hit_ks = _resolve_extra_hit_ks(
+        getattr(args, "extra_hit_k", None), top_k=final_top_k,
+    )
+
+    summary, rows, dump, dup = run_retrieval_eval(
+        dataset,
+        retriever=retriever,
+        top_k=final_top_k,
+        mrr_k=int(args.mrr_k),
+        ndcg_k=int(args.ndcg_k),
+        extra_hit_ks=extra_hit_ks,
+        dataset_path=str(args.dataset),
+        corpus_path=str(args.corpus),
+    )
+
+    out_dir = args.out_dir or _default_retrieval_rerank_dir()
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    metadata: Dict[str, Any] = {
+        "harness": "retrieval-rerank",
+        "embedding_model": settings.rag_embedding_model,
+        "embedding_max_seq_length": int(args.max_seq_length),
+        "embedding_batch_size": int(args.embed_batch_size),
+        "rag_index_dir": str(settings.rag_index_dir),
+        "corpus_path": str(args.corpus),
+        "dataset": str(args.dataset),
+        "final_top_k": final_top_k,
+        "dense_top_n": dense_top_n,
+        "candidate_k": dense_top_n,
+        "mrr_k": int(args.mrr_k),
+        "ndcg_k": int(args.ndcg_k),
+        "extra_hit_ks": list(extra_hit_ks),
+        "reranker": "cross_encoder",
+        "reranker_model": str(args.reranker_model),
+        "reranker_batch_size": int(args.reranker_batch_size),
+        "reranker_max_length": int(args.reranker_max_length),
+        "reranker_text_max_chars": int(args.reranker_text_max_chars),
+        "reranker_device": args.reranker_device,
+        "reranker_oom_fallback_batch_size": (
+            int(args.reranker_oom_fallback_batch_size)
+            if args.reranker_oom_fallback_batch_size is not None
+            else None
+        ),
+        "offline_corpus": {
+            "path": info.corpus_path,
+            "document_count": info.document_count,
+            "chunk_count": info.chunk_count,
+            "index_version": info.index_version,
+            "dimension": info.dimension,
+        },
+        "run_at": datetime.now().isoformat(timespec="seconds"),
+    }
+
+    report_payload = {
+        "metadata": metadata,
+        "summary": retrieval_summary_to_dict(summary),
+        "rows": [retrieval_row_to_dict(r) for r in rows],
+    }
+    (out_dir / "retrieval_eval_report.json").write_text(
+        _json.dumps(report_payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    (out_dir / "retrieval_eval_report.md").write_text(
+        render_markdown_report(summary, rows, dup), encoding="utf-8",
+    )
+    with (out_dir / "top_k_dump.jsonl").open("w", encoding="utf-8") as fp:
+        for d in dump:
+            fp.write(
+                _json.dumps(retrieval_dump_row_to_dict(d), ensure_ascii=False)
+                + "\n"
+            )
+    (out_dir / "duplicate_analysis.json").write_text(
+        _json.dumps(duplicate_analysis_to_dict(dup), ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+    rows_for_miss = [retrieval_row_to_dict(r) for r in rows]
+    dump_for_miss = [retrieval_dump_row_to_dict(d) for d in dump]
+    miss_analysis = classify_miss_buckets(
+        rows_for_miss, dump_rows=dump_for_miss, top_k=final_top_k,
+    )
+    (out_dir / "miss_analysis.json").write_text(
+        _json.dumps(miss_analysis_to_dict(miss_analysis), ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    (out_dir / "miss_analysis.md").write_text(
+        render_miss_analysis_markdown(miss_analysis), encoding="utf-8",
+    )
+
+    try:
+        _print_retrieval_summary(summary, dup, out_dir)
+    except UnicodeEncodeError as ex:  # pragma: no cover
+        log.warning(
+            "Pretty summary print failed (%s); reports already in %s",
+            ex, out_dir,
+        )
+    return 0
+
+
+def _default_retrieval_rerank_dir() -> Path:
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    return Path(f"eval/reports/retrieval-rerank-{timestamp}")
+
+
+# ---------------------------------------------------------------------------
+# Phase 2A reranker comparison + failure-analysis CLIs (post-processing).
+# ---------------------------------------------------------------------------
+
+
+def _run_phase2a_reranker_comparison_cli(args: argparse.Namespace) -> int:
+    import json as _json
+
+    from eval.harness.reranker_eval import (
+        build_reranker_comparison,
+        render_reranker_comparison_markdown,
+    )
+
+    slices: List[Tuple[str, Path]] = []
+    for entry in args.slice:
+        label, _, path = str(entry).partition(":")
+        if not label or not path:
+            log.error(
+                "Bad --slice value %r; expected 'label:path/to/"
+                "retrieval_eval_report.json'.",
+                entry,
+            )
+            return 2
+        slices.append((label.strip(), Path(path.strip())))
+
+    try:
+        comparison = build_reranker_comparison(slices, caveats=args.caveat)
+    except FileNotFoundError as ex:
+        log.error("%s", ex)
+        return 2
+
+    args.out_json.parent.mkdir(parents=True, exist_ok=True)
+    args.out_md.parent.mkdir(parents=True, exist_ok=True)
+    args.out_json.write_text(
+        _json.dumps(comparison, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    args.out_md.write_text(
+        render_reranker_comparison_markdown(comparison),
+        encoding="utf-8",
+    )
+    log.info("Wrote %s and %s", args.out_json, args.out_md)
+    return 0
+
+
+def _run_phase2a_reranker_failure_cli(args: argparse.Namespace) -> int:
+    import json as _json
+
+    from eval.harness.reranker_eval import (
+        build_reranker_failure_analysis,
+        render_reranker_failure_markdown,
+    )
+
+    dense_dir = Path(args.dense_report_dir)
+    rerank_dir = Path(args.rerank_report_dir)
+
+    dense_report_path = dense_dir / "retrieval_eval_report.json"
+    rerank_report_path = rerank_dir / "retrieval_eval_report.json"
+    dense_dump_path = dense_dir / "top_k_dump.jsonl"
+    rerank_dump_path = rerank_dir / "top_k_dump.jsonl"
+    for p in (dense_report_path, rerank_report_path, dense_dump_path, rerank_dump_path):
+        if not p.exists():
+            log.error("Missing artifact: %s", p)
+            return 2
+
+    dense_report = _json.loads(dense_report_path.read_text(encoding="utf-8"))
+    rerank_report = _json.loads(rerank_report_path.read_text(encoding="utf-8"))
+
+    def _read_dump(path: Path) -> List[Mapping[str, Any]]:
+        rows: List[Mapping[str, Any]] = []
+        with path.open("r", encoding="utf-8") as fp:
+            for line in fp:
+                line = line.strip()
+                if not line:
+                    continue
+                rows.append(_json.loads(line))
+        return rows
+
+    analysis = build_reranker_failure_analysis(
+        dense_rows=list(dense_report.get("rows") or []),
+        rerank_rows=list(rerank_report.get("rows") or []),
+        dense_dump=_read_dump(dense_dump_path),
+        rerank_dump=_read_dump(rerank_dump_path),
+        k_preview=int(args.k_preview),
+        sample_cap=int(args.sample_cap),
+    )
+
+    out_dir = Path(args.out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_json = out_dir / "reranker-failure-analysis.json"
+    out_md = out_dir / "reranker-failure-analysis.md"
+    out_json.write_text(
+        _json.dumps(analysis, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    out_md.write_text(
+        render_reranker_failure_markdown(analysis), encoding="utf-8",
+    )
+    log.info("Wrote %s and %s", out_json, out_md)
+    return 0
 
 
 # ---------------------------------------------------------------------------
@@ -2504,6 +3171,426 @@ def _run_compare_corpus_lengths_cli(args: argparse.Namespace) -> int:
         + " | ".join(
             f"{r['label']}: chunks={r['chunk_count']}, "
             f"tok_p95={r['token_p95']:.0f}, >1024={r['over_1024']}"
+            for r in rows
+        )
+    )
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# Phase 1C — token-aware chunker CLIs.
+# ---------------------------------------------------------------------------
+
+
+def _run_diagnose_chunker_long_tail_cli(args: argparse.Namespace) -> int:
+    import json as _json
+
+    if not args.corpus.exists():
+        log.error("Corpus not found: %s", args.corpus)
+        return 2
+
+    thresholds = (
+        tuple(args.threshold)
+        if args.threshold
+        else DEFAULT_DIAGNOSE_THRESHOLDS
+    )
+
+    summary, top_samples = diagnose_chunker_long_tail(
+        args.corpus,
+        tokenizer_name=args.tokenizer,
+        thresholds=thresholds,
+        long_chunk_threshold=int(args.long_chunk_threshold),
+        top_n=int(args.top_n),
+        batch_size=int(args.batch_size),
+    )
+
+    out_dir: Path = args.out_dir
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    summary_payload = {
+        "metadata": {
+            "harness": "diagnose-chunker-long-tail",
+            "corpus": str(args.corpus),
+            "tokenizer": args.tokenizer,
+            "thresholds": list(thresholds),
+            "long_chunk_threshold": int(args.long_chunk_threshold),
+            "run_at": datetime.now().isoformat(timespec="seconds"),
+        },
+        "summary": chunker_diagnosis_to_dict(summary),
+    }
+    (out_dir / "chunker-diagnosis-summary.json").write_text(
+        _json.dumps(summary_payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    (out_dir / "chunker-diagnosis-summary.md").write_text(
+        render_chunker_diagnosis_markdown(summary),
+        encoding="utf-8",
+    )
+
+    top_payload = {
+        "metadata": {
+            "harness": "diagnose-chunker-long-tail",
+            "corpus": str(args.corpus),
+            "tokenizer": args.tokenizer,
+            "top_n": int(args.top_n),
+            "run_at": datetime.now().isoformat(timespec="seconds"),
+        },
+        "samples": diagnose_samples_to_dict_list(top_samples),
+    }
+    (out_dir / f"chunker-provenance-top{int(args.top_n)}.json").write_text(
+        _json.dumps(top_payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    (out_dir / f"chunker-provenance-top{int(args.top_n)}.md").write_text(
+        render_chunker_provenance_markdown(top_samples, summary=summary),
+        encoding="utf-8",
+    )
+
+    log.info("Wrote %s", out_dir / "chunker-diagnosis-summary.json")
+    log.info("Wrote %s", out_dir / "chunker-diagnosis-summary.md")
+    log.info("Wrote %s", out_dir / f"chunker-provenance-top{int(args.top_n)}.json")
+    log.info("Wrote %s", out_dir / f"chunker-provenance-top{int(args.top_n)}.md")
+
+    over_long = summary.chunks_over_token_threshold.get(
+        int(args.long_chunk_threshold), 0
+    )
+    print(
+        f"diagnose-chunker-long-tail: chunks={summary.chunk_count} "
+        f"sections={summary.section_count} "
+        f"over_{int(args.long_chunk_threshold)}={over_long} "
+        f"sections_with_long={summary.sections_with_long_chunks} "
+        f"out={out_dir}"
+    )
+    return 0
+
+
+def _run_emit_token_aware_chunks_cli(args: argparse.Namespace) -> int:
+    import json as _json
+
+    if not args.corpus.exists():
+        log.error("Corpus not found: %s", args.corpus)
+        return 2
+
+    out_corpus: Path = args.out_corpus
+    if out_corpus.resolve() == args.corpus.resolve():
+        log.error(
+            "Refusing to overwrite the source corpus %s — choose a "
+            "different --out-corpus path.",
+            args.corpus,
+        )
+        return 2
+
+    try:
+        chunker_config = TokenAwareConfig(
+            target_tokens=int(args.target_tokens),
+            soft_max_tokens=int(args.soft_max_tokens),
+            hard_max_tokens=int(args.hard_max_tokens),
+            overlap_tokens=int(args.overlap_tokens),
+        )
+    except ValueError as ex:
+        log.error("Invalid token-aware config: %s", ex)
+        return 2
+
+    counter, encode, decode = build_default_tokenizer_callables(args.tokenizer)
+
+    out_corpus.parent.mkdir(parents=True, exist_ok=True)
+
+    if args.no_provenance:
+        provenance_path = None
+    elif args.provenance is not None:
+        provenance_path = Path(args.provenance)
+    else:
+        provenance_path = out_corpus.parent / "chunks_provenance.jsonl"
+
+    summary = emit_token_aware_corpus(
+        args.corpus,
+        out_corpus,
+        config=EmitConfig(chunker=chunker_config, write_provenance=not args.no_provenance),
+        token_counter=counter,
+        encode_fn=encode,
+        decode_fn=decode,
+        provenance_path=provenance_path,
+    )
+
+    manifest_path: Path = (
+        Path(args.manifest)
+        if args.manifest is not None
+        else out_corpus.parent / "manifest.json"
+    )
+
+    manifest_entry = {
+        **emit_summary_to_dict(summary),
+        "variant": str(args.variant_label),
+        "tokenizer": args.tokenizer,
+        "provenance_path": str(provenance_path) if provenance_path else None,
+        "run_at": datetime.now().isoformat(timespec="seconds"),
+    }
+
+    # Merge with existing manifest under "variants" to preserve prior
+    # token-aware emits (mirrors the preprocess emit pattern).
+    if manifest_path.exists():
+        try:
+            existing = _json.loads(manifest_path.read_text(encoding="utf-8"))
+        except _json.JSONDecodeError:
+            existing = {}
+        if isinstance(existing, dict) and "variants" in existing:
+            existing["variants"][str(args.variant_label)] = manifest_entry
+            payload = existing
+        elif isinstance(existing, dict) and "variant" in existing:
+            payload = {"variants": {
+                existing["variant"]: existing,
+                str(args.variant_label): manifest_entry,
+            }}
+        else:
+            payload = {"variants": {str(args.variant_label): manifest_entry}}
+    else:
+        payload = manifest_entry
+
+    manifest_path.write_text(
+        _json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+    summary_md_path = out_corpus.parent / f"emit-summary.{args.variant_label}.md"
+    summary_md_path.write_text(
+        render_emit_summary_markdown(summary), encoding="utf-8",
+    )
+
+    log.info("Wrote %s", out_corpus)
+    log.info("Wrote %s", manifest_path)
+    log.info("Wrote %s", summary_md_path)
+
+    print(
+        f"emit-token-aware-chunks: variant={args.variant_label} "
+        f"chunker={TOKEN_AWARE_CHUNKER_VERSION} "
+        f"docs={summary.document_count} "
+        f"sections={summary.section_count} "
+        f"input_units={summary.input_payload_unit_count} "
+        f"output_chunks={summary.output_chunk_count} "
+        f"fallback={summary.fallback_used_count} "
+        f"over_hard_max={summary.chunks_over_hard_max} "
+        f"out={out_corpus}"
+    )
+    return 0
+
+
+def _run_compare_chunker_lengths_cli(args: argparse.Namespace) -> int:
+    import json as _json
+
+    bundles: List[Tuple[str, Path]] = []
+    for spec in args.corpus:
+        if ":" in spec and not Path(spec).exists():
+            label, _, raw_path = spec.partition(":")
+            path = Path(raw_path)
+        else:
+            path = Path(spec)
+            label = path.stem
+        if not path.exists():
+            log.error("Corpus file not found: %s", path)
+            return 2
+        bundles.append((label, path))
+
+    if not bundles:
+        log.error("No --corpus arguments provided.")
+        return 2
+
+    thresholds = (
+        tuple(args.threshold)
+        if args.threshold
+        else DEFAULT_TOKEN_THRESHOLDS
+    )
+
+    out_dir: Path = args.out_dir
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    rows: List[Dict[str, Any]] = []
+    for label, path in bundles:
+        log.info("Analyzing corpus: %s (%s)", label, path)
+        analysis = analyze_corpus_lengths(
+            path,
+            tokenizer_name=args.tokenizer,
+            thresholds=thresholds,
+            top_longest=int(args.top_longest),
+            batch_size=int(args.batch_size),
+        )
+
+        per_corpus_payload = {
+            "metadata": {
+                "harness": "compare-chunker-lengths · per-corpus",
+                "corpus_label": label,
+                "corpus_path": str(path),
+                "tokenizer": args.tokenizer,
+                "thresholds": list(thresholds),
+                "top_longest": int(args.top_longest),
+                "run_at": datetime.now().isoformat(timespec="seconds"),
+            },
+            "analysis": length_analysis_to_dict(analysis),
+        }
+        per_corpus_json = out_dir / f"length-{label}.json"
+        per_corpus_md = out_dir / f"length-{label}.md"
+        per_corpus_json.write_text(
+            _json.dumps(per_corpus_payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        per_corpus_md.write_text(
+            render_length_analysis_markdown(analysis),
+            encoding="utf-8",
+        )
+        log.info("Wrote %s", per_corpus_json)
+        log.info("Wrote %s", per_corpus_md)
+
+        char = analysis.char_length
+        tok = analysis.token_length
+        over = analysis.chunks_over_token_threshold
+        rows.append({
+            "label": label,
+            "path": str(path),
+            "chunk_count": analysis.chunk_count,
+            "document_count": analysis.document_count,
+            "char_p50": char.p50,
+            "char_p90": char.p90,
+            "char_p95": char.p95,
+            "char_p99": char.p99,
+            "char_max": char.max,
+            "token_p50": tok.p50,
+            "token_p90": tok.p90,
+            "token_p95": tok.p95,
+            "token_p99": tok.p99,
+            "token_max": tok.max,
+            **{f"over_{t}": int(over.get(int(t), 0)) for t in thresholds},
+        })
+
+    # Cross-corpus comparison artifact.
+    base_row = rows[0] if rows else None
+    deltas: List[Dict[str, Any]] = []
+    for r in rows[1:] if len(rows) > 1 else []:
+        if base_row is None:
+            break
+        d: Dict[str, Any] = {
+            "label": r["label"],
+            "vs_label": base_row["label"],
+            "chunk_count_delta": r["chunk_count"] - base_row["chunk_count"],
+            "chunk_count_ratio": (
+                round(r["chunk_count"] / base_row["chunk_count"], 4)
+                if base_row["chunk_count"] else 0.0
+            ),
+            "token_max_delta": r["token_max"] - base_row["token_max"],
+            "token_p95_delta": r["token_p95"] - base_row["token_p95"],
+        }
+        for t in thresholds:
+            key = f"over_{t}"
+            d[f"{key}_delta"] = r.get(key, 0) - base_row.get(key, 0)
+        deltas.append(d)
+
+    cmp_json = out_dir / "length-comparison.json"
+    cmp_md = out_dir / "length-comparison.md"
+    cmp_payload = {
+        "metadata": {
+            "harness": "compare-chunker-lengths",
+            "tokenizer": args.tokenizer,
+            "thresholds": list(thresholds),
+            "run_at": datetime.now().isoformat(timespec="seconds"),
+        },
+        "rows": rows,
+        "deltas_vs_first_row": deltas,
+        "accounting_note": (
+            "rows[*].chunk_count is the FINAL RETRIEVABLE CHUNK count "
+            "(what the FAISS index would contain). It is NOT the same "
+            "as the preprocess summary's 'chunks_processed', which counts "
+            "TRANSFORMED PAYLOAD ENTRIES (one entry per "
+            "sections.<name>.chunks[i] / list[i] / text). For "
+            "token-aware corpora, sections.<name>.chunks[i] is already "
+            "a final chunk; for raw / preprocessed corpora the production "
+            "chunker re-windows them via window_by_chars before they "
+            "become final chunks."
+        ),
+    }
+    cmp_json.write_text(
+        _json.dumps(cmp_payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+    md_lines: List[str] = []
+    md_lines.append("# Phase 1C — chunker length comparison")
+    md_lines.append("")
+    md_lines.append(f"_tokenizer: `{args.tokenizer}`_")
+    md_lines.append("")
+    md_lines.append(
+        "| variant | chunks | docs | char p50 | char p90 | char p95 | char p99 | char max | tok p50 | tok p90 | tok p95 | tok p99 | tok max | "
+        + " | ".join(f">{t}" for t in thresholds)
+        + " |"
+    )
+    md_lines.append("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|"
+                    + "---:|" * len(thresholds))
+    for r in rows:
+        md_lines.append(
+            f"| {r['label']} | {r['chunk_count']} | {r['document_count']} | "
+            f"{r['char_p50']:.0f} | {r['char_p90']:.0f} | "
+            f"{r['char_p95']:.0f} | {r['char_p99']:.0f} | {r['char_max']} | "
+            f"{r['token_p50']:.0f} | {r['token_p90']:.0f} | "
+            f"{r['token_p95']:.0f} | {r['token_p99']:.0f} | {r['token_max']} | "
+            + " | ".join(str(r.get(f"over_{t}", 0)) for t in thresholds)
+            + " |"
+        )
+    md_lines.append("")
+    if deltas:
+        md_lines.append(f"## Deltas vs `{base_row['label']}`")
+        md_lines.append("")
+        md_lines.append(
+            "| variant | chunk_count_delta | chunk_count_ratio | token_max_delta | token_p95_delta | "
+            + " | ".join(f">{t}_delta" for t in thresholds)
+            + " |"
+        )
+        md_lines.append(
+            "|---|---:|---:|---:|---:|"
+            + "---:|" * len(thresholds)
+        )
+        for d in deltas:
+            md_lines.append(
+                f"| {d['label']} | {d['chunk_count_delta']:+d} | "
+                f"{d['chunk_count_ratio']:.3f} | {d['token_max_delta']:+d} | "
+                f"{d['token_p95_delta']:+.0f} | "
+                + " | ".join(
+                    f"{d.get(f'over_{t}_delta', 0):+d}" for t in thresholds
+                )
+                + " |"
+            )
+        md_lines.append("")
+    md_lines.append("## Accounting note")
+    md_lines.append("")
+    md_lines.append(
+        "- `chunk_count` is the **final retrievable chunk count** (what "
+        "the FAISS index would hold after the production chunker runs)."
+    )
+    md_lines.append(
+        "- It is **not** the same number reported as `chunks_processed` "
+        "in the Phase 1B preprocess summary; that one counts "
+        "**transformed payload entries** (one per "
+        "`sections.<name>.chunks[i]` / `list[i]` / `text`)."
+    )
+    md_lines.append(
+        "- For token-aware corpora, `sections.<name>.chunks[i]` already "
+        "*is* a final chunk; for raw / preprocessed corpora the "
+        "production chunker (`window_by_chars`) re-windows them before "
+        "they become final chunks."
+    )
+    md_lines.append("")
+    md_lines.append("**Source corpora:**")
+    md_lines.append("")
+    for r in rows:
+        md_lines.append(f"- `{r['label']}` ← `{r['path']}`")
+    md_lines.append("")
+    cmp_md.write_text("\n".join(md_lines) + "\n", encoding="utf-8")
+
+    log.info("Wrote %s", cmp_json)
+    log.info("Wrote %s", cmp_md)
+
+    print(
+        f"compare-chunker-lengths: variants={len(rows)} "
+        + " | ".join(
+            f"{r['label']}: chunks={r['chunk_count']}, "
+            f"tok_p95={r['token_p95']:.0f}, tok_max={r['token_max']}, "
+            f">1024={r.get('over_1024', 0)}"
             for r in rows
         )
     )

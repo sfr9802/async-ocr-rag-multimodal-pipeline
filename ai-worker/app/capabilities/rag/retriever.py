@@ -26,6 +26,7 @@ selected chunk. ``use_mmr=False`` (default) reproduces Phase 1 exactly.
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass, field
 from typing import List, Optional
 
@@ -64,6 +65,11 @@ class RetrievalReport:
     parsed_query: Optional[ParsedQuery] = None
     filters: dict = field(default_factory=dict)
     filter_produced_no_docs: bool = False
+    # Wall-clock latency (ms) of the rerank step in isolation. ``None``
+    # for the NoOpReranker path so eval reports can distinguish "didn't
+    # rerank" from "reranked in ~0 ms". Phase 2A retrieval-rerank eval
+    # reads this to compute rerank_latency_avg_ms / p95.
+    rerank_ms: Optional[float] = None
 
 
 class Retriever:
@@ -277,7 +283,18 @@ class Retriever:
         # When MMR is off, trim at the reranker as before — bit-for-bit
         # Phase 1 behaviour.
         rerank_k = len(candidates) if self._use_mmr else self._top_k
+        # Time the rerank step in isolation so the Phase 2A retrieval
+        # eval can attribute latency to the reranker (separate from the
+        # bi-encoder + FAISS round-trip that dominates the NoOp path).
+        # NoOpReranker still gets timed — its measured cost is a
+        # microsecond, the harness reports None when reranker_name is
+        # "noop" so the metric stays meaningful.
+        rerank_t0 = time.perf_counter()
         reranked = self._reranker.rerank(embed_query, candidates, k=rerank_k)
+        rerank_ms = round((time.perf_counter() - rerank_t0) * 1000.0, 3)
+        report_rerank_ms: Optional[float] = (
+            None if self._reranker.name == "noop" else rerank_ms
+        )
 
         if self._use_mmr:
             results = _mmr_select(
@@ -308,6 +325,7 @@ class Retriever:
             parsed_query=parsed,
             filters=effective_filters,
             filter_produced_no_docs=filter_produced_no_docs,
+            rerank_ms=report_rerank_ms,
         )
 
     def _retrieve_candidates(

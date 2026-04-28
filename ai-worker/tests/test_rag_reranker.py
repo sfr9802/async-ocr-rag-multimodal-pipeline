@@ -54,6 +54,44 @@ def _chunk(
     )
 
 
+def _string_only_oom_check(exc):
+    """Pure-Python OOM detector — no torch import, no CUDA driver init."""
+    if isinstance(exc, RuntimeError):
+        return "out of memory" in str(exc).lower()
+    return False
+
+
+@pytest.fixture(autouse=True)
+def _no_cuda_helpers(monkeypatch):
+    """Replace torch-touching helpers with pure-Python stand-ins.
+
+    Phase 2A added two CUDA-touching helper calls inside
+    CrossEncoderReranker.rerank() — ``_log_cuda_memory`` (for
+    observability) and ``_is_cuda_oom_exception`` (for the OOM-retry
+    path). Both lazily ``import torch``. The existing comment in
+    ``tests/test_rag_embeddings_helpers.py`` documents that triggering
+    a torch import inside an already-loaded pytest process can SEGFAULT
+    the interpreter — not raise, abort.
+
+    Patching both at the reranker module's import sites keeps every
+    test in this module isolated from torch-init instability without
+    shipping a runtime setting that disables observability in
+    production. Real worker processes import torch via the embedder
+    long before any reranker call so the production path always sees
+    the real helpers.
+    """
+    from app.capabilities.rag import (
+        embeddings as embeddings_module,
+        reranker as reranker_module,
+    )
+
+    monkeypatch.setattr(reranker_module, "_log_cuda_memory", lambda _label: None)
+    monkeypatch.setattr(embeddings_module, "_log_cuda_memory", lambda _label: None)
+    monkeypatch.setattr(
+        reranker_module, "_is_cuda_oom_exception", _string_only_oom_check,
+    )
+
+
 class _FakeCrossEncoder:
     """Minimal stand-in for sentence_transformers.CrossEncoder.
 

@@ -26,7 +26,10 @@ import sys
 import time
 from pathlib import Path
 
-from app.capabilities.rag.embeddings import SentenceTransformerEmbedder
+from app.capabilities.rag.embeddings import (
+    SentenceTransformerEmbedder,
+    resolve_max_seq_length,
+)
 from app.capabilities.rag.faiss_index import FaissIndex
 from app.capabilities.rag.ingest import IngestService
 from app.capabilities.rag.metadata_store import RagMetadataStore
@@ -167,6 +170,19 @@ def main() -> int:
         model_name=settings.rag_embedding_model,
         query_prefix=settings.rag_embedding_prefix_query,
         passage_prefix=settings.rag_embedding_prefix_passage,
+        max_seq_length=resolve_max_seq_length(settings.rag_embedding_max_seq_length),
+        batch_size=int(settings.rag_embedding_batch_size),
+        cuda_alloc_conf=settings.rag_embedding_cuda_alloc_conf or None,
+    )
+    log.info(
+        "Embed max_seq_length cap: %s (settings.rag_embedding_max_seq_length=%s)",
+        resolve_max_seq_length(settings.rag_embedding_max_seq_length),
+        settings.rag_embedding_max_seq_length,
+    )
+    log.info(
+        "Embed batch_size=%d cuda_alloc_conf=%r",
+        int(settings.rag_embedding_batch_size),
+        settings.rag_embedding_cuda_alloc_conf,
     )
     metadata = RagMetadataStore(settings.rag_db_dsn)
     metadata.ping()

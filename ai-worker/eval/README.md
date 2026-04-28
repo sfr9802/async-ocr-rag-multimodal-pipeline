@@ -308,6 +308,87 @@ python -m eval.run_eval analyze-corpus-lengths \
 [`reports/phase0-baseline-tradeoffs.md`](reports/phase0-baseline-tradeoffs.md)
 에 있음.
 
+### Phase 2A — cross-encoder reranker (`retrieval-rerank`)
+
+`retrieval-rerank` 서브커맨드는 dense retriever 위에 cross-encoder
+reranker 를 후처리로 끼움. dense top-N candidate 를 가져와 cross-encoder
+로 재정렬한 뒤 final top-K 를 점수. corpus / chunker / preprocessor 는
+건드리지 않음 — 순수 retrieval 후처리.
+
+```bash
+# 1. Candidate-recall 진단 — reranker 성능 상한 측정.
+#    NoOp reranker + top-k=50 + extra-hit-k 로 hit@1/3/5/10/20/50 계산.
+python -m eval.run_eval retrieval \
+    --corpus  eval/corpora/anime_namu_v3_token_chunked/corpus.combined.token-aware-v1.jsonl \
+    --dataset eval/eval_queries/anime_silver_200.jsonl \
+    --top-k 50 \
+    --extra-hit-k 10 --extra-hit-k 20 --extra-hit-k 50 \
+    --out-dir eval/reports/phase2a-reranker/candidate-recall-b2
+
+# 2. dense top-20 → cross-encoder rerank → top-10
+python -m eval.run_eval retrieval-rerank \
+    --corpus  eval/corpora/anime_namu_v3_token_chunked/corpus.combined.token-aware-v1.jsonl \
+    --dataset eval/eval_queries/anime_silver_200.jsonl \
+    --dense-top-n 20 \
+    --final-top-k 10 \
+    --reranker-model BAAI/bge-reranker-v2-m3 \
+    --reranker-batch-size 16 \
+    --out-dir eval/reports/retrieval-silver200-combined-token-aware-v1-rerank-top20
+
+# 3. dense top-50 → cross-encoder rerank → top-10
+python -m eval.run_eval retrieval-rerank \
+    --corpus  eval/corpora/anime_namu_v3_token_chunked/corpus.combined.token-aware-v1.jsonl \
+    --dataset eval/eval_queries/anime_silver_200.jsonl \
+    --dense-top-n 50 \
+    --final-top-k 10 \
+    --reranker-model BAAI/bge-reranker-v2-m3 \
+    --reranker-batch-size 16 \
+    --out-dir eval/reports/retrieval-silver200-combined-token-aware-v1-rerank-top50
+
+# 4. 5-slice 비교 (B1 dense / B2 dense / candidate-recall / rerank top20 / rerank top50)
+python -m eval.run_eval phase2a-reranker-comparison \
+    --slice "B1 dense (combined-old):eval/reports/retrieval-silver200-combined-old-chunker/retrieval_eval_report.json" \
+    --slice "B2 dense (token-aware-v1):eval/reports/retrieval-silver200-combined-token-aware-v1/retrieval_eval_report.json" \
+    --slice "B2 dense top50 (candidate-recall):eval/reports/phase2a-reranker/candidate-recall-b2/retrieval_eval_report.json" \
+    --slice "B2 rerank top20:eval/reports/retrieval-silver200-combined-token-aware-v1-rerank-top20/retrieval_eval_report.json" \
+    --slice "B2 rerank top50:eval/reports/retrieval-silver200-combined-token-aware-v1-rerank-top50/retrieval_eval_report.json" \
+    --out-json eval/reports/phase2a-reranker/reranker-comparison.json \
+    --out-md   eval/reports/phase2a-reranker/reranker-comparison.md
+
+# 5. Failure analysis (dense top-10 vs rerank top-20 cross-tab)
+python -m eval.run_eval phase2a-reranker-failure-analysis \
+    --dense-report-dir  eval/reports/retrieval-silver200-combined-token-aware-v1 \
+    --rerank-report-dir eval/reports/retrieval-silver200-combined-token-aware-v1-rerank-top20 \
+    --out-dir eval/reports/phase2a-reranker \
+    --k-preview 5 --sample-cap 10
+```
+
+**Phase 2A silver-200 결과** (RTX 5080 / bge-m3 + bge-reranker-v2-m3):
+
+| run                              | hit@1 | hit@3 | hit@5 | MRR@10 | NDCG@10 | rerank p95 (ms) |
+|----------------------------------|------:|------:|------:|-------:|--------:|----------------:|
+| B1 dense (combined-old)          | 0.5600 | 0.6700 | 0.6850 | 0.6167 | 0.6428 |               – |
+| B2 dense (token-aware-v1)        | 0.5400 | 0.6650 | 0.6800 | 0.6044 | 0.6314 |               – |
+| **B2 + rerank top20**            | 0.6050 | 0.6800 | 0.7000 | 0.6526 | 0.6748 |             706 |
+| **B2 + rerank top50**            | **0.6150** | **0.7000** | **0.7150** | **0.6657** | **0.6885** |       1840 |
+
+Candidate recall ceiling (B2 dense top-50): hit@10=0.7150, hit@20=0.7700,
+hit@50=0.8000. reranker 는 candidate set 안의 순서만 바꿀 수 있으므로 이
+값들이 reranker hit@k 의 이론적 상한.
+
+**Caveat**
+
+- rerank latency 는 cross-encoder predict 만의 wall-clock — bi-encoder +
+  FAISS 부분은 `mean_retrieval_ms` 에 별도로 잡힘. p95 한 번에 700–1800ms 는
+  query-time UX 에 무거우므로 production default 로 승격하기 전에 batch
+  처리 / async 호출 설계 필요.
+- B1 (combined-old) 와 B2 (combined-token-aware-v1) 는 chunk granularity 가
+  다르므로 candidate population 자체가 동일하지 않음 — 직접 비교 시 chunker
+  효과 + reranker 효과가 섞여 있음.
+- production default 는 여전히 `rag_reranker="off"` (NoOp). reranker 는
+  eval CLI 에서만 활성화하며, registry 의 `cross_encoder` 분기를 production
+  으로 켤지는 별도 결정.
+
 ## eval CLI 실행
 
 두 서브커맨드 모두 stdout 에 짧은 사람용 요약을 출력하고 JSON 리포트

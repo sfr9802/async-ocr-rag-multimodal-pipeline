@@ -77,6 +77,11 @@ DEFAULT_TOP_K = 10
 DEFAULT_MRR_K = 10
 DEFAULT_NDCG_K = 10
 DEFAULT_HIT_KS: Tuple[int, ...] = (1, 3, 5)
+# Extra hit-cutoffs surfaced for the Phase 2A candidate-recall report.
+# Anything in this tuple beyond {1, 3, 5} flows into row.extra_hits and
+# summary.mean_extra_hits — the markdown writer renders the union as
+# additional headline-metrics rows. Pass an empty tuple to disable.
+DEFAULT_EXTRA_HIT_KS: Tuple[int, ...] = ()
 
 # Top-k dump preview cap — chunk_preview is meant to be eyeball-able
 # in jq / less, not the full chunk text (which is in the live store).
@@ -127,10 +132,17 @@ class RetrievalEvalRow:
     expected_keyword_match_rate: Optional[float] = None
     # Latency + provenance
     retrieval_ms: float = 0.0
+    rerank_ms: Optional[float] = None
     index_version: Optional[str] = None
     embedding_model: Optional[str] = None
     reranker_name: Optional[str] = None
     error: Optional[str] = None
+    # Extra hit@k cutoffs requested by the caller (Phase 2A
+    # candidate-recall: typically {10, 20, 50}). Keys are stringified
+    # ints so the JSON shape remains stable across writers; values are
+    # ``None`` for rows without expected_doc_ids, matching the contract
+    # of hit_at_1 / hit_at_3 / hit_at_5.
+    extra_hits: Dict[str, Optional[float]] = field(default_factory=dict)
 
 
 @dataclass
@@ -159,14 +171,27 @@ class RetrievalEvalSummary:
     p50_retrieval_ms: float
     p95_retrieval_ms: float
     max_retrieval_ms: float
+    # Rerank-specific latency (None when no row reported a rerank_ms).
+    # Phase 2A retrieval-rerank reports populate these; the
+    # NoOpReranker path leaves them None.
+    rerank_row_count: int = 0
+    mean_rerank_ms: Optional[float] = None
+    p50_rerank_ms: Optional[float] = None
+    p95_rerank_ms: Optional[float] = None
+    max_rerank_ms: Optional[float] = None
+    # Extra hit-cutoff aggregates surfaced for the candidate-recall
+    # report (Phase 2A). Keys are the same stringified-int form used on
+    # ``RetrievalEvalRow.extra_hits`` so dict round-tripping through
+    # ``asdict`` is stable.
+    mean_extra_hits: Dict[str, Optional[float]] = field(default_factory=dict)
     # Provenance
-    index_version: Optional[str]
-    embedding_model: Optional[str]
-    reranker_name: Optional[str]
-    started_at: Optional[str]
-    finished_at: Optional[str]
-    duration_ms: float
-    error_count: int
+    index_version: Optional[str] = None
+    embedding_model: Optional[str] = None
+    reranker_name: Optional[str] = None
+    started_at: Optional[str] = None
+    finished_at: Optional[str] = None
+    duration_ms: float = 0.0
+    error_count: int = 0
     # Per-answer-type breakdown (mean hit@5, mean ndcg@10, count)
     per_answer_type: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     per_difficulty: Dict[str, Dict[str, Any]] = field(default_factory=dict)
@@ -214,6 +239,7 @@ def run_retrieval_eval(
     top_k: int = DEFAULT_TOP_K,
     mrr_k: int = DEFAULT_MRR_K,
     ndcg_k: int = DEFAULT_NDCG_K,
+    extra_hit_ks: Tuple[int, ...] = DEFAULT_EXTRA_HIT_KS,
     dataset_path: Optional[str] = None,
     corpus_path: Optional[str] = None,
 ) -> Tuple[
@@ -228,6 +254,11 @@ def run_retrieval_eval(
     what the Retriever already returns. Knobs like top_k pass through to
     the Retriever, but the retriever's internal candidate_k / use_mmr /
     reranker config is taken as-is.
+
+    ``extra_hit_ks`` is the Phase 2A candidate-recall hook: pass
+    ``(10, 20, 50)`` to get hit@10/@20/@50 in row.extra_hits and the
+    corresponding aggregates in summary.mean_extra_hits. The default
+    empty tuple preserves byte-identical Phase 1 reports.
     """
     started_at = _now_iso()
     run_start = time.perf_counter()
@@ -288,6 +319,16 @@ def run_retrieval_eval(
             row.index_version = getattr(report, "index_version", None)
             row.embedding_model = getattr(report, "embedding_model", None)
             row.reranker_name = getattr(report, "reranker_name", None)
+            # Pull rerank latency off the RetrievalReport when present.
+            # ``None`` means the retriever is on the NoOpReranker path,
+            # which downstream aggregation distinguishes from a real
+            # 0 ms measurement.
+            rerank_ms_value = getattr(report, "rerank_ms", None)
+            if rerank_ms_value is not None:
+                try:
+                    row.rerank_ms = float(rerank_ms_value)
+                except (TypeError, ValueError):
+                    row.rerank_ms = None
 
             # Per-row metrics.
             if expected_doc_ids:
@@ -300,6 +341,17 @@ def run_retrieval_eval(
                 row.ndcg_at_10 = ndcg_at_k(
                     doc_ids, expected_doc_ids, k=ndcg_k
                 )
+                # Extra hit cutoffs (Phase 2A candidate-recall report).
+                # We compute over ``doc_ids`` which is already capped at
+                # ``top_k`` — the caller is expected to pass top_k >=
+                # max(extra_hit_ks) for the metric to be meaningful;
+                # values where k > top_k still resolve correctly (just
+                # against the available list) so we don't error.
+                row.extra_hits = {
+                    str(k): hit_at_k(doc_ids, expected_doc_ids, k=k)
+                    for k in extra_hit_ks
+                    if k > 0
+                }
             row.dup_rate = round(dup_rate(doc_ids), 4)
             row.unique_doc_coverage = unique_doc_coverage(doc_ids, k=top_k)
             row.top1_score_margin = (
@@ -410,6 +462,7 @@ def run_retrieval_eval(
         top_k=top_k,
         mrr_k=mrr_k,
         ndcg_k=ndcg_k,
+        extra_hit_ks=extra_hit_ks,
         dataset_path=dataset_path or "<inline>",
         corpus_path=corpus_path,
         errors=errors,
@@ -456,6 +509,7 @@ def _aggregate(
     top_k: int,
     mrr_k: int,
     ndcg_k: int,
+    extra_hit_ks: Tuple[int, ...],
     dataset_path: str,
     corpus_path: Optional[str],
     errors: int,
@@ -474,10 +528,39 @@ def _aggregate(
         if r.expected_keyword_match_rate is not None
     ]
     latencies = [r.retrieval_ms for r in rows if r.error is None]
+    rerank_latencies = [
+        float(r.rerank_ms) for r in rows
+        if r.error is None and r.rerank_ms is not None
+    ]
+
+    # Extra hit aggregates: per cutoff k, mean over rows that emitted a
+    # value (i.e. rows with non-empty expected_doc_ids).
+    mean_extra_hits: Dict[str, Optional[float]] = {}
+    for k in extra_hit_ks:
+        if k <= 0:
+            continue
+        key = str(k)
+        values = [
+            r.extra_hits[key] for r in rows
+            if isinstance(r.extra_hits, dict)
+            and r.extra_hits.get(key) is not None
+        ]
+        mean_extra_hits[key] = _mean_or_none(values)
 
     index_version = next((r.index_version for r in rows if r.index_version), None)
     embedding_model = next((r.embedding_model for r in rows if r.embedding_model), None)
     reranker_name = next((r.reranker_name for r in rows if r.reranker_name), None)
+
+    if rerank_latencies:
+        mean_rerank_ms = round(statistics.fmean(rerank_latencies), 3)
+        p50_rerank_ms = round(statistics.median(rerank_latencies), 3)
+        p95_rerank_ms = round(p_percentile(rerank_latencies, 95.0), 3)
+        max_rerank_ms = round(max(rerank_latencies), 3)
+    else:
+        mean_rerank_ms = None
+        p50_rerank_ms = None
+        p95_rerank_ms = None
+        max_rerank_ms = None
 
     return RetrievalEvalSummary(
         dataset_path=dataset_path,
@@ -502,6 +585,12 @@ def _aggregate(
         p50_retrieval_ms=_p50_or_zero(latencies),
         p95_retrieval_ms=round(p_percentile(latencies, 95.0), 3),
         max_retrieval_ms=round(max(latencies), 3) if latencies else 0.0,
+        rerank_row_count=len(rerank_latencies),
+        mean_rerank_ms=mean_rerank_ms,
+        p50_rerank_ms=p50_rerank_ms,
+        p95_rerank_ms=p95_rerank_ms,
+        max_rerank_ms=max_rerank_ms,
+        mean_extra_hits=mean_extra_hits,
         index_version=index_version,
         embedding_model=embedding_model,
         reranker_name=reranker_name,
@@ -591,6 +680,14 @@ def render_markdown_report(
     lines.append(f"| hit@1 | {_fmt(summary.mean_hit_at_1)} |")
     lines.append(f"| hit@3 | {_fmt(summary.mean_hit_at_3)} |")
     lines.append(f"| hit@5 | {_fmt(summary.mean_hit_at_5)} |")
+    # Extra hit cutoffs (Phase 2A candidate-recall) inserted between
+    # hit@5 and MRR — sorted by cutoff so the human-readable order
+    # matches the ascending k convention of the rest of the table.
+    if summary.mean_extra_hits:
+        for key in sorted(summary.mean_extra_hits.keys(), key=_safe_int):
+            lines.append(
+                f"| hit@{key} | {_fmt(summary.mean_extra_hits[key])} |"
+            )
     lines.append(f"| mrr@{summary.mrr_k} | {_fmt(summary.mean_mrr_at_10)} |")
     lines.append(f"| ndcg@{summary.ndcg_k} | {_fmt(summary.mean_ndcg_at_10)} |")
     lines.append(f"| dup_rate (top-{summary.top_k}) | {_fmt(summary.mean_dup_rate)} |")
@@ -607,6 +704,16 @@ def render_markdown_report(
     lines.append(f"- p95:  {summary.p95_retrieval_ms:.2f}")
     lines.append(f"- max:  {summary.max_retrieval_ms:.2f}")
     lines.append("")
+
+    if summary.rerank_row_count > 0:
+        lines.append("## Rerank latency (ms)")
+        lines.append("")
+        lines.append(f"- rows with rerank: {summary.rerank_row_count}")
+        lines.append(f"- mean: {_fmt_ms(summary.mean_rerank_ms)}")
+        lines.append(f"- p50:  {_fmt_ms(summary.p50_rerank_ms)}")
+        lines.append(f"- p95:  {_fmt_ms(summary.p95_rerank_ms)}")
+        lines.append(f"- max:  {_fmt_ms(summary.max_rerank_ms)}")
+        lines.append("")
 
     if summary.per_answer_type:
         lines.append("## Per answer_type")
@@ -721,6 +828,32 @@ def _truncate(text: str, limit: int) -> str:
 
 def _fmt(value: Optional[float]) -> str:
     return "n/a" if value is None else f"{value:.4f}"
+
+
+def _fmt_ms(value: Optional[float]) -> str:
+    """Format an optional millisecond value with 2 dp.
+
+    ``None`` becomes ``"n/a"`` so the markdown writer stays consistent
+    with the headline-metrics formatter when a row contributed nothing
+    (NoOpReranker path leaves rerank_ms unset).
+    """
+    return "n/a" if value is None else f"{value:.2f}"
+
+
+def _safe_int(value: str) -> int:
+    """Best-effort int parse for sort keys; falls back to a large sentinel.
+
+    ``mean_extra_hits`` keys are stringified ints (``"10"``, ``"20"``,
+    ``"50"``) so the markdown writer needs to sort them numerically
+    rather than lexicographically (otherwise ``"100"`` would sort
+    between ``"10"`` and ``"20"``). Values that don't parse fall to
+    the bottom of the sort — they shouldn't exist in practice but
+    silent failure is better than crashing the report writer.
+    """
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 1_000_000
 
 
 def _now_iso() -> str:

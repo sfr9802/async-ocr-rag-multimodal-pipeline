@@ -130,6 +130,46 @@ class WorkerSettings(BaseSettings):
             "models. Must match what was used to build the index."
         ),
     )
+    rag_embedding_max_seq_length: int = Field(
+        default=1024,
+        description=(
+            "Cap the embedding model's input window (in tokens). bge-m3's "
+            "model-default is 8192, but attention is O(seq_len^2) so "
+            "outlier-long passages (~100k chars exist in the namu-wiki "
+            "anime corpus) blow up GPU memory without improving retrieval "
+            "quality — Phase 1C measured no quality gain past 1024 and a "
+            "large memory regression. The Phase 1C token-aware chunker "
+            "also caps emitted chunks at 1024 tokens, so this value is "
+            "the natural twin of `token_aware_chunker.hard_max_tokens`. "
+            "Set to 0 / None to disable the cap and use the model's own "
+            "default (NOT recommended on commodity GPUs)."
+        ),
+    )
+    rag_embedding_batch_size: int = Field(
+        default=32,
+        description=(
+            "Default batch size for SentenceTransformer.encode. Phase 1C's "
+            "RTX 5080 + bge-m3 + max_seq_length=1024 plateau sits at ~13 GB "
+            "of 16 GB VRAM at this batch size; lower to 16 if you OOM, "
+            "raise to 64 only on a 24 GB+ card. Per-CLI overrides "
+            "(``retrieval --embed-batch-size``) take precedence."
+        ),
+    )
+    rag_embedding_cuda_alloc_conf: str = Field(
+        default="expandable_segments:True",
+        description=(
+            "Value applied to the ``PYTORCH_CUDA_ALLOC_CONF`` env var "
+            "before SentenceTransformer touches CUDA. Phase 1C diagnosis: "
+            "PyTorch's default caching allocator keeps a per-size-class "
+            "free pool, so variable-length batches monotonically grow "
+            "reserved memory as new padded sequence lengths show up. "
+            "PyTorch 2.1+'s ``expandable_segments`` backend keeps a single "
+            "growable segment instead — fragmentation effectively "
+            "disappears for inference workloads. An operator-set "
+            "PYTORCH_CUDA_ALLOC_CONF in the shell wins over this setting. "
+            "Set to empty string to disable the auto-set entirely."
+        ),
+    )
     rag_index_dir: str = Field(
         default="../rag-data",
         description="Directory holding the FAISS index file and build metadata. Resolved relative to the worker's CWD.",

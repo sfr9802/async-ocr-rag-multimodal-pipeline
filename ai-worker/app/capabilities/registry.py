@@ -388,7 +388,10 @@ def _get_shared_retriever_bundle(settings: WorkerSettings):
     if cached is not None:
         return cached
 
-    from app.capabilities.rag.embeddings import SentenceTransformerEmbedder
+    from app.capabilities.rag.embeddings import (
+        SentenceTransformerEmbedder,
+        resolve_max_seq_length,
+    )
     from app.capabilities.rag.faiss_index import FaissIndex
     from app.capabilities.rag.generation import ExtractiveGenerator
     from app.capabilities.rag.metadata_store import RagMetadataStore
@@ -401,6 +404,9 @@ def _get_shared_retriever_bundle(settings: WorkerSettings):
         model_name=settings.rag_embedding_model,
         query_prefix=settings.rag_embedding_prefix_query,
         passage_prefix=settings.rag_embedding_prefix_passage,
+        max_seq_length=resolve_max_seq_length(settings.rag_embedding_max_seq_length),
+        batch_size=int(settings.rag_embedding_batch_size),
+        cuda_alloc_conf=settings.rag_embedding_cuda_alloc_conf or None,
     )
     index = FaissIndex(Path(settings.rag_index_dir))
     reranker = _build_reranker(settings)

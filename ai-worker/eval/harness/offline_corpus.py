@@ -23,9 +23,44 @@ from app.capabilities.rag.faiss_index import FaissIndex
 from app.capabilities.rag.generation import ExtractiveGenerator
 from app.capabilities.rag.ingest import _chunks_from_section, _iter_documents, _stable_chunk_id
 from app.capabilities.rag.metadata_store import ChunkLookupResult
+from app.capabilities.rag.reranker import RerankerProvider
 from app.capabilities.rag.retriever import Retriever
 
 log = logging.getLogger(__name__)
+
+
+def _release_cuda_cache() -> None:
+    """Best-effort ``torch.cuda.empty_cache()`` for the offline pipeline.
+
+    Called between corpus encoding and downstream stack construction
+    so the bulk-encode free pool doesn't crowd out the reranker (or any
+    second model) on the same device.
+
+    The torch import is gated on ``sys.modules`` membership: if nothing
+    else in the process has imported torch yet (HashingEmbedder unit-
+    test paths, CPU-only installs without torch on the path), we
+    silently no-op rather than triggering a fresh torch init. Forcing
+    a torch import inside an already-loaded pytest process has bitten
+    the suite before — the existing comment in
+    ``tests/test_rag_embeddings_helpers.py`` documents the segfault
+    risk. The production retrieval-rerank CLI always loads torch via
+    SentenceTransformerEmbedder first, so the gate doesn't suppress
+    the cleanup in any real-world scenario.
+    """
+    import sys
+
+    if "torch" not in sys.modules:
+        return
+    torch = sys.modules["torch"]
+    try:
+        if torch.cuda.is_available() and torch.cuda.is_initialized():
+            torch.cuda.empty_cache()
+            log.info("Released cached CUDA memory after corpus encode.")
+    except Exception as ex:  # pragma: no cover — defensive
+        log.warning(
+            "torch.cuda.empty_cache() failed (%s: %s); continuing.",
+            type(ex).__name__, ex,
+        )
 
 
 @dataclass(frozen=True)
@@ -71,12 +106,19 @@ def build_offline_rag_stack(
     index_dir: Path,
     top_k: int,
     index_version: Optional[str] = None,
+    reranker: Optional[RerankerProvider] = None,
+    candidate_k: Optional[int] = None,
 ) -> Tuple[Retriever, ExtractiveGenerator, OfflineCorpusInfo]:
     """Chunk, embed, and index `corpus_path` into an in-memory stack.
 
     Re-uses the production chunker and FAISS wrapper so the retrieval
     numbers from this path are comparable to the live worker within the
     fidelity of the embedder choice.
+
+    ``reranker`` and ``candidate_k`` are Phase 2A passthroughs: when both
+    are set, the Retriever fetches ``candidate_k`` bi-encoder candidates
+    and asks the reranker for the final top-k. Leave them None to reproduce
+    the dense-only Phase 0/1 baseline byte-for-byte.
     """
     if not corpus_path.exists():
         raise FileNotFoundError(f"Corpus not found: {corpus_path}")
@@ -133,12 +175,23 @@ def build_offline_rag_stack(
         embedding_model=embedder.model_name,
     )
 
+    # Release the bulk-encoding free pool back to CUDA before any
+    # downstream component (reranker, second embedder, …) tries to
+    # allocate. Phase 2A reranker eval stacks bge-m3 + bge-reranker-v2-m3
+    # on the same GPU; on a 16 GB card the corpus-encode pass leaves a
+    # multi-GB cached free pool that fragments the address space and
+    # forces the reranker into expensive defragmentation loops. Best-
+    # effort, swallows any exception so a pure-CPU run never breaks.
+    _release_cuda_cache()
+
     store = _InMemoryMetadataStore(version, rows)
     retriever = Retriever(
         embedder=embedder,
         index=index,
         metadata=store,
         top_k=top_k,
+        reranker=reranker,
+        candidate_k=candidate_k,
     )
     retriever.ensure_ready()
 

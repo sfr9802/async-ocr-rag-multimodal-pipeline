@@ -1,0 +1,28 @@
+{
+  "chunker_version": "token-aware-v1",
+  "source_corpus": "eval\\corpora\\anime_namu_v3_preprocessed\\corpus.prefix-v1.inline-edit-v1.jsonl",
+  "output_corpus": "eval\\corpora\\anime_namu_v3_token_chunked\\corpus.combined.token-aware-v1.jsonl",
+  "config": {
+    "target_tokens": 512,
+    "soft_max_tokens": 768,
+    "hard_max_tokens": 1024,
+    "overlap_tokens": 80
+  },
+  "document_count": 1764,
+  "section_count": 4609,
+  "input_payload_unit_count": 221458,
+  "output_chunk_count": 47634,
+  "chunks_by_strategy": {
+    "short": 2305,
+    "paragraph": 45300,
+    "hard_token": 20,
+    "sentence": 9
+  },
+  "fallback_used_count": 20,
+  "chunks_over_hard_max": 0,
+  "sections_emitting_zero_chunks": 0,
+  "variant": "combined.token-aware-v1",
+  "tokenizer": "BAAI/bge-m3",
+  "provenance_path": "eval\\corpora\\anime_namu_v3_token_chunked\\chunks_provenance.combined.token-aware-v1.jsonl",
+  "run_at": "2026-04-28T16:18:30"
+}

@@ -1,0 +1,67 @@
+{
+  "variants": {
+    "prefix-v1": {
+      "preprocess_version": "v1",
+      "source_corpus": "eval\\corpora\\anime_namu_v3\\corpus.jsonl",
+      "variant": "prefix-v1",
+      "options": {
+        "strip_page_prefix": true,
+        "strip_inline_edit": false
+      },
+      "doc_count": 1764,
+      "sections_processed": 4609,
+      "chunks_processed": 218753,
+      "chunks_changed": 555,
+      "chunks_dropped": 52,
+      "text_blobs_changed": 128,
+      "list_entries_changed": 3137,
+      "total_removed_prefix_chars": 220976,
+      "total_inline_edit_removals": 0,
+      "prefix_strip_count": 683,
+      "output_corpus": "eval\\corpora\\anime_namu_v3_preprocessed\\corpus.prefix-v1.jsonl",
+      "run_at": "2026-04-28T15:41:13"
+    },
+    "inline-edit-v1": {
+      "preprocess_version": "v1",
+      "source_corpus": "eval\\corpora\\anime_namu_v3\\corpus.jsonl",
+      "variant": "inline-edit-v1",
+      "options": {
+        "strip_page_prefix": false,
+        "strip_inline_edit": true
+      },
+      "doc_count": 1764,
+      "sections_processed": 4609,
+      "chunks_processed": 218753,
+      "chunks_changed": 7634,
+      "chunks_dropped": 0,
+      "text_blobs_changed": 128,
+      "list_entries_changed": 3036,
+      "total_removed_prefix_chars": 0,
+      "total_inline_edit_removals": 45816,
+      "prefix_strip_count": 0,
+      "output_corpus": "eval\\corpora\\anime_namu_v3_preprocessed\\corpus.inline-edit-v1.jsonl",
+      "run_at": "2026-04-28T15:41:16"
+    },
+    "prefix-v1.inline-edit-v1": {
+      "preprocess_version": "v1",
+      "source_corpus": "eval\\corpora\\anime_namu_v3\\corpus.jsonl",
+      "variant": "prefix-v1.inline-edit-v1",
+      "options": {
+        "strip_page_prefix": true,
+        "strip_inline_edit": true
+      },
+      "doc_count": 1764,
+      "sections_processed": 4609,
+      "chunks_processed": 218753,
+      "chunks_changed": 8186,
+      "chunks_dropped": 52,
+      "text_blobs_changed": 128,
+      "list_entries_changed": 3137,
+      "total_removed_prefix_chars": 220976,
+      "total_inline_edit_removals": 45816,
+      "prefix_strip_count": 683,
+      "output_corpus": "eval\\corpora\\anime_namu_v3_preprocessed\\corpus.prefix-v1.inline-edit-v1.jsonl",
+      "run_at": "2026-04-28T15:41:19"
+    }
+  }
+}
