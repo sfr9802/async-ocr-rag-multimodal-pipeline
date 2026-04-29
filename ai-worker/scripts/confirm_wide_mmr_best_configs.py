@@ -42,7 +42,7 @@ Outputs:
 Run::
 
     python -m scripts.confirm_wide_mmr_best_configs \\
-        --cache-dir eval/agent_loop_ab/_indexes/BAAI_bge-m3-mseq1024-30fc1cc1cd8c319a
+        --cache-dir eval/agent_loop_ab/_indexes/bge-m3-anime-namu-v3-raw-mseq1024
 
 Use ``--limit N`` for a smoke run. ``--cells`` lets you filter the cell
 set by group (e.g. ``--cells optuna_winner,cap_final_sensitivity``).
@@ -72,7 +72,7 @@ _DEFAULT_QUERY_TYPE_DRAFT = Path(
     "eval/eval_queries/anime_silver_200.query_type_draft.jsonl"
 )
 _DEFAULT_CACHE_DIR = Path(
-    "eval/agent_loop_ab/_indexes/BAAI_bge-m3-mseq1024-30fc1cc1cd8c319a"
+    "eval/agent_loop_ab/_indexes/bge-m3-anime-namu-v3-raw-mseq1024"
 )
 _BASELINE_LABEL = "baseline_k50_top5"
 _PHASE1_BEST_LABEL = "phase1_best_cap2_top8"

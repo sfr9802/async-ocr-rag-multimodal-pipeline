@@ -41,7 +41,7 @@ Run::
     python -m scripts.eval_wide_mmr_titlecap_sweep \\
         --dataset eval/eval_queries/anime_silver_200.jsonl \\
         --corpus eval/corpora/anime_namu_v3_token_chunked/corpus.combined.token-aware-v1.jsonl \\
-        --cache-dir eval/agent_loop_ab/_indexes/BAAI_bge-m3-mseq1024-30fc1cc1cd8c319a
+        --cache-dir eval/agent_loop_ab/_indexes/bge-m3-anime-namu-v3-raw-mseq1024
 """
 
 from __future__ import annotations
