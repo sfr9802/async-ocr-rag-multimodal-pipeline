@@ -404,6 +404,50 @@ class TestWideRetrievalAdapter:
         assert retriever._use_mmr is False
         assert retriever._mmr_lambda == 0.7
 
+    def test_cap_policy_rerank_input_overrides_title_cap_int(self):
+        # When both knobs are set, the explicit CapPolicy wins; the
+        # legacy title-cap integer is ignored. This guards the cap-
+        # policy confirm sweep against accidentally double-capping.
+        from eval.harness.cap_policy import DocIdCapPolicy
+        retriever = _StubRetriever(self._pool())
+        adapter = WideRetrievalEvalAdapter(
+            retriever,
+            config=WideRetrievalConfig(
+                candidate_k=12, final_top_k=10, rerank_in=12,
+                # Title cap=1 would collapse Series-1 to ONE chunk;
+                # DocIdCapPolicy(cap=1) keeps one per doc_id (4 chunks).
+                title_cap_rerank_input=1,
+                cap_policy_rerank_input=DocIdCapPolicy(1),
+            ),
+            final_reranker=_StubReranker(),
+            title_provider=_title_of,
+        )
+        report = adapter.retrieve("q")
+        # If the policy overrides the integer correctly we keep one
+        # chunk per doc_id (4 docs total). If the integer were
+        # respected we'd see 3 chunks (one per title).
+        ids = [c.chunk_id for c in report.results]
+        # Reranker reverses the input → first 4 of reversed [c01,c04,c06,c08].
+        assert len(ids) == 4
+
+    def test_cap_policy_rerank_input_only_supplied(self):
+        # Only the explicit policy is supplied; legacy title-cap int
+        # is None. Verify the policy is applied.
+        from eval.harness.cap_policy import NoCapPolicy
+        retriever = _StubRetriever(self._pool())
+        adapter = WideRetrievalEvalAdapter(
+            retriever,
+            config=WideRetrievalConfig(
+                candidate_k=12, final_top_k=10, rerank_in=12,
+                cap_policy_rerank_input=NoCapPolicy(),
+            ),
+            final_reranker=_StubReranker(),
+            title_provider=_title_of,
+        )
+        report = adapter.retrieve("q")
+        # NoCap means all 12 chunks reach rerank; reranker returns all.
+        assert len(report.results) == 10  # final_top_k
+
 
 # ---------------------------------------------------------------------------
 # 4. query_type heuristic

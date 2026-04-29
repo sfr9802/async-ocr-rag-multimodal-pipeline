@@ -43,6 +43,7 @@ from dataclasses import dataclass, field
 from types import SimpleNamespace
 from typing import Any, Dict, List, Optional
 
+from eval.harness.cap_policy import CapPolicy
 from eval.harness.wide_retrieval_helpers import (
     DEFAULT_DOC_ID_PENALTY,
     DEFAULT_TITLE_PENALTY,
@@ -62,6 +63,14 @@ class WideRetrievalConfig:
     NOT inter-validate them. The sweep driver is responsible for
     composing sensible (candidate_k, mmr_k, rerank_in, final_top_k)
     tuples; the adapter just executes whatever it's handed.
+
+    The legacy ``title_cap_rerank_input`` / ``title_cap_final``
+    integers stay supported for the existing wide-MMR / format-confirm
+    sweeps. The newer ``cap_policy_rerank_input`` /
+    ``cap_policy_final`` fields override those integers when supplied —
+    used by the cap-policy confirm sweep to swap the cap *grouping
+    rule* (title / doc_id / no-cap / section_path) without changing
+    any of the other knobs.
     """
 
     candidate_k: int
@@ -74,6 +83,11 @@ class WideRetrievalConfig:
     title_cap_final: Optional[int] = None
     doc_id_penalty: float = DEFAULT_DOC_ID_PENALTY
     title_penalty: float = DEFAULT_TITLE_PENALTY
+    # Optional policy override. When set, takes precedence over the
+    # corresponding ``title_cap_*`` integer at that stage. ``None``
+    # means "fall back to the legacy title-cap integer".
+    cap_policy_rerank_input: Optional[CapPolicy] = None
+    cap_policy_final: Optional[CapPolicy] = None
 
 
 class WideRetrievalEvalAdapter:
@@ -191,8 +205,15 @@ class WideRetrievalEvalAdapter:
                     title_provider=self._title_provider,
                 )
 
-            # ---- Phase 2b: optional title cap on rerank input ----
-            if cfg.title_cap_rerank_input is not None:
+            # ---- Phase 2b: optional cap on rerank input ----
+            # Policy override wins. Falling back to legacy title cap
+            # keeps the existing wide-MMR sweep exactly reproducing
+            # apply_title_cap; the new cap-policy confirm sweep uses
+            # cap_policy_rerank_input to swap doc_id / section_path /
+            # no_cap variants without re-plumbing the adapter.
+            if cfg.cap_policy_rerank_input is not None:
+                staged = cfg.cap_policy_rerank_input.apply(staged)
+            elif cfg.title_cap_rerank_input is not None:
                 staged = apply_title_cap(
                     staged,
                     cap=cfg.title_cap_rerank_input,
@@ -211,9 +232,11 @@ class WideRetrievalEvalAdapter:
                 (time.perf_counter() - rerank_t0) * 1000.0, 3
             )
 
-            # ---- Phase 4: optional title cap on final ----
+            # ---- Phase 4: optional cap on final ----
             staged_final: List[Any] = list(reranked)
-            if cfg.title_cap_final is not None:
+            if cfg.cap_policy_final is not None:
+                staged_final = cfg.cap_policy_final.apply(staged_final)
+            elif cfg.title_cap_final is not None:
                 staged_final = apply_title_cap(
                     staged_final,
                     cap=cfg.title_cap_final,
