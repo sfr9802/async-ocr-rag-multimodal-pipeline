@@ -516,3 +516,505 @@ def test_deterministic_generator_is_seed_stable(tmp_path: Path):
     rows_c = generate_deterministic(docs, target=10, seed=456)
     # Different seed produces a different ordering / row mix.
     assert rows_a != rows_c
+
+
+# ---------------------------------------------------------------------------
+# 4. Phase 1 metric / diagnostics extensions.
+#
+# These tests pin the new candidate / pre-rerank / diversity / quality-score
+# / query-type / diagnostics behavior. Each test maps to one of the 12
+# acceptance criteria called out in the work-plan; the docstring lists which.
+# ---------------------------------------------------------------------------
+
+
+from dataclasses import dataclass as _phase1_dataclass
+from typing import Optional as _Phase1Optional
+
+from eval.harness import (
+    DEFAULT_CANDIDATE_KS,
+    DEFAULT_QUERY_TYPE_UNKNOWN,
+    DIAG_CANDIDATE_RECALL_BOTTLENECK_HIT_AT_50,
+    DIAG_HIGH_DUPLICATE_RATIO_AT_10,
+    DIAG_RERANKER_NEGATIVE_UPLIFT_HIT_AT_5,
+    DIAG_RERANKER_NEGATIVE_UPLIFT_MRR_AT_10,
+    DIAG_RERANKER_UPLIFT_LOW_HIT_AT_5,
+    QUALITY_SCORE_WEIGHT_HIT_AT_1,
+    QUALITY_SCORE_WEIGHT_HIT_AT_5,
+    QUALITY_SCORE_WEIGHT_MRR,
+    QUALITY_SCORE_WEIGHT_NDCG,
+    compute_retrieval_diagnostics,
+    duplicate_doc_ratio_at_k,
+    efficiency_score,
+    quality_score,
+    section_diversity_at_k,
+    unique_doc_count_at_k,
+)
+
+
+# --- helper: minimal fake retriever that emulates the production shape ---
+
+
+@_phase1_dataclass
+class _PhaseChunk:
+    """Stand-in for ``RetrievedChunk``.
+
+    Mirrors the duck-typed contract ``run_retrieval_eval`` reads off
+    each result: ``doc_id``, ``chunk_id``, ``section``, ``text``,
+    ``score``, ``rerank_score``. Section is required because the
+    Phase 1 diversity / dup metrics walk over ``section_paths``.
+    """
+
+    doc_id: str
+    chunk_id: str
+    section: str
+    text: str
+    score: float
+    rerank_score: _Phase1Optional[float] = None
+
+
+@_phase1_dataclass
+class _PhaseReport:
+    """Stand-in for ``RetrievalReport``.
+
+    Optional fields exposed: ``candidate_doc_ids`` for the wider
+    pre-rerank pool, ``rerank_ms`` / ``dense_retrieval_ms`` for
+    latency aggregation. Defaults match a NoOp reranker run so a
+    test that doesn't touch reranker fields gets a backward-compat
+    shape.
+    """
+
+    results: list
+    candidate_doc_ids: _Phase1Optional[list] = None
+    rerank_ms: _Phase1Optional[float] = None
+    dense_retrieval_ms: _Phase1Optional[float] = None
+    index_version: str = "phase1-v1"
+    embedding_model: str = "phase1-embed"
+    reranker_name: str = "phase1-rerank"
+
+
+class _ScriptedRetriever:
+    """Returns a per-query scripted ``_PhaseReport``."""
+
+    def __init__(self, by_query):
+        self._by_query = by_query
+
+    def retrieve(self, query: str):
+        if query not in self._by_query:
+            raise KeyError(f"Unscripted query: {query!r}")
+        return self._by_query[query]
+
+
+def test_phase1_singular_expected_doc_id_normalizes_to_list():
+    """1. ``expected_doc_id`` (singular) on the dataset row must
+    surface as ``RetrievalEvalRow.expected_doc_ids`` containing the
+    same id, so per-row hit/recall metrics still fire even on the
+    older schema.
+    """
+    chunks = [
+        _PhaseChunk("doc-A", "c1", "intro", "alpha", 0.9),
+        _PhaseChunk("doc-B", "c2", "intro", "beta", 0.7),
+    ]
+    retriever = _ScriptedRetriever({
+        "q1": _PhaseReport(results=chunks),
+    })
+    dataset = [{
+        "id": "row-1",
+        "query": "q1",
+        # singular field only — no expected_doc_ids list
+        "expected_doc_id": "doc-A",
+    }]
+    summary, rows, _, _ = run_retrieval_eval(
+        dataset, retriever=retriever, top_k=5,
+    )
+    row = rows[0]
+    assert row.expected_doc_ids == ["doc-A"]
+    assert row.hit_at_1 == 1.0
+    assert summary.rows_with_expected_doc_ids == 1
+
+
+def test_phase1_candidate_recall_with_multiple_expected_docs():
+    """2. ``expected_doc_ids`` with multiple gold ids: candidate recall
+    must reflect ``matched / |gold|`` over the candidate pool, not the
+    final top-k.
+    """
+    chunks = [_PhaseChunk(f"doc-final-{i}", f"c{i}", "s", "t", 0.5) for i in range(3)]
+    candidate_pool = [
+        # Two of the three expected docs surface in the candidate pool
+        # at ranks 1 and 4. The third is missed entirely → recall@10
+        # = 2/3.
+        "doc-gold-1",
+        "doc-other-1",
+        "doc-other-2",
+        "doc-gold-2",
+        "doc-other-3",
+    ]
+    retriever = _ScriptedRetriever({
+        "q1": _PhaseReport(results=chunks, candidate_doc_ids=candidate_pool),
+    })
+    dataset = [{
+        "id": "row-1",
+        "query": "q1",
+        "expected_doc_ids": ["doc-gold-1", "doc-gold-2", "doc-gold-3"],
+    }]
+    _, rows, _, _ = run_retrieval_eval(
+        dataset, retriever=retriever, top_k=5,
+    )
+    row = rows[0]
+    assert row.candidate_recalls.get("10") == pytest.approx(2 / 3)
+    # Also: candidate_hit@10 fires because at least one gold landed.
+    assert row.candidate_hits.get("10") == 1.0
+
+
+def test_phase1_candidate_metrics_separate_from_final():
+    """3. Candidate hit@K reads from the candidate pool; final hit@K
+    reads from the final top-k. The two MUST diverge when the candidate
+    pool contains the gold doc but the final top-k doesn't.
+    """
+    final_chunks = [_PhaseChunk("doc-other", "c1", "s", "t", 0.9)]
+    candidate_pool = ["doc-other", "doc-other2", "doc-gold"]
+    retriever = _ScriptedRetriever({
+        "q1": _PhaseReport(results=final_chunks, candidate_doc_ids=candidate_pool),
+    })
+    dataset = [{
+        "id": "row-1",
+        "query": "q1",
+        "expected_doc_ids": ["doc-gold"],
+    }]
+    _, rows, _, _ = run_retrieval_eval(
+        dataset, retriever=retriever, top_k=5,
+    )
+    row = rows[0]
+    # Final top-k missed the gold → hit@5 == 0
+    assert row.hit_at_5 == 0.0
+    # Candidate pool contained the gold at rank 3 → hit@10 == 1
+    assert row.candidate_hits.get("10") == 1.0
+
+
+def test_phase1_rerank_uplift_computed_from_pre_vs_final():
+    """4. With reranker pulling the gold from rank 5 to rank 1:
+    pre_rerank_hit_at_1 == 0, final hit_at_1 == 1, uplift = +1.
+    """
+    chunks = [
+        # Final order: gold first (reranker did its job)
+        _PhaseChunk("doc-gold", "g", "s", "t", 0.40, rerank_score=0.95),
+        _PhaseChunk("doc-A", "a", "s", "t", 0.55, rerank_score=0.55),
+        _PhaseChunk("doc-B", "b", "s", "t", 0.50, rerank_score=0.40),
+        _PhaseChunk("doc-C", "c", "s", "t", 0.45, rerank_score=0.30),
+        _PhaseChunk("doc-D", "d", "s", "t", 0.42, rerank_score=0.20),
+    ]
+    retriever = _ScriptedRetriever({"q1": _PhaseReport(results=chunks)})
+    dataset = [{
+        "id": "row-1",
+        "query": "q1",
+        "expected_doc_ids": ["doc-gold"],
+    }]
+    summary, rows, _, _ = run_retrieval_eval(
+        dataset, retriever=retriever, top_k=5,
+    )
+    row = rows[0]
+    # Pre-rerank order = sorted by raw dense score:
+    #   doc-A (0.55), doc-B (0.50), doc-C (0.45), doc-D (0.42), doc-gold (0.40)
+    # so pre_rerank_hit_at_1 = 0 (gold at rank 5).
+    assert row.pre_rerank_hit_at_1 == 0.0
+    assert row.hit_at_1 == 1.0
+    assert summary.mean_pre_rerank_hit_at_1 == 0.0
+    assert summary.mean_hit_at_1 == 1.0
+    assert summary.rerank_uplift_hit_at_1 == pytest.approx(1.0)
+
+
+def test_phase1_negative_uplift_flags_diagnostic():
+    """5. When reranker hurts hit@5 (final < pre by more than the
+    epsilon), ``diagnostics.rerankerNegativeUplift.flagged`` must be
+    True.
+    """
+    # Build 6 rows: dense ordering would put gold in top-5; rerank
+    # demotes gold below top-5.
+    queries = {}
+    dataset = []
+    for i in range(6):
+        chunks = [
+            _PhaseChunk("doc-A", f"a{i}", "s", "t", 0.90, rerank_score=0.90),
+            _PhaseChunk("doc-B", f"b{i}", "s", "t", 0.85, rerank_score=0.85),
+            _PhaseChunk("doc-C", f"c{i}", "s", "t", 0.80, rerank_score=0.80),
+            _PhaseChunk("doc-D", f"d{i}", "s", "t", 0.75, rerank_score=0.75),
+            _PhaseChunk("doc-E", f"e{i}", "s", "t", 0.70, rerank_score=0.70),
+            _PhaseChunk("doc-gold", f"g{i}", "s", "t", 0.65, rerank_score=0.10),
+        ]
+        # Final order matches rerank score → gold last (rank 6)
+        # Pre-rerank order = sorted by score → gold also at rank 6 here,
+        # which would mean uplift = 0. Instead, swap so dense puts gold
+        # at rank 5 (above doc-E):
+        chunks[5].score = 0.71  # gold dense > doc-E dense (0.70)
+        # Final order is the list as-is (which reflects rerank ordering).
+        queries[f"q{i}"] = _PhaseReport(results=chunks)
+        dataset.append({
+            "id": f"row-{i}",
+            "query": f"q{i}",
+            "expected_doc_ids": ["doc-gold"],
+        })
+    retriever = _ScriptedRetriever(queries)
+    summary, _, _, _ = run_retrieval_eval(
+        dataset, retriever=retriever, top_k=10,
+    )
+    # Pre-rerank hit@5 should be 1.0 across all 6 rows; final hit@5
+    # should be 0.0 → uplift = -1.0, well past the negative threshold.
+    assert summary.mean_pre_rerank_hit_at_5 == pytest.approx(1.0)
+    assert summary.mean_hit_at_5 == 0.0
+    assert summary.rerank_uplift_hit_at_5 == pytest.approx(-1.0)
+    diag = summary.diagnostics
+    assert diag["rerankerNegativeUplift"]["flagged"] is True
+
+
+def test_phase1_query_type_missing_falls_back_to_unknown():
+    """6. Rows without ``query_type`` land in the ``unknown`` bucket of
+    the by_query_type breakdown so they remain visible.
+    """
+    chunks = [_PhaseChunk("doc-X", "c", "s", "t", 0.9)]
+    retriever = _ScriptedRetriever({
+        "q1": _PhaseReport(results=chunks),
+        "q2": _PhaseReport(results=chunks),
+    })
+    dataset = [
+        {"id": "r1", "query": "q1", "expected_doc_ids": ["doc-X"]},
+        {"id": "r2", "query": "q2", "expected_doc_ids": ["doc-X"],
+         "query_type": "title_direct"},
+    ]
+    summary, rows, _, _ = run_retrieval_eval(
+        dataset, retriever=retriever, top_k=5,
+    )
+    bt = summary.by_query_type
+    assert DEFAULT_QUERY_TYPE_UNKNOWN in bt
+    assert "title_direct" in bt
+    assert bt[DEFAULT_QUERY_TYPE_UNKNOWN]["count"] == 1
+    assert bt["title_direct"]["count"] == 1
+    # And the per-row column on the unknown row stays None — the
+    # source-of-truth is "the dataset didn't say".
+    assert rows[0].query_type is None
+    assert rows[1].query_type == "title_direct"
+
+
+def test_phase1_query_type_breakdown_has_count_and_metrics():
+    """7. byQueryType breakdown carries count + the spec-required fields
+    (``hit_at_1``, ``hit_at_5``, ``mrr_at_10``, ``ndcg_at_10``,
+    ``candidate_hit_at_50``, ``candidate_recall_at_50``,
+    ``avg_total_retrieval_ms``, ``p95_total_retrieval_ms``,
+    ``duplicate_doc_ratio_at_10``).
+    """
+    chunks = [_PhaseChunk("doc-G", "c", "s", "t", 0.9)]
+    candidate_pool = ["doc-G"] + [f"doc-{i}" for i in range(60)]
+    retriever = _ScriptedRetriever({
+        "q1": _PhaseReport(results=chunks, candidate_doc_ids=candidate_pool),
+    })
+    dataset = [
+        {"id": f"r{i}", "query": "q1", "expected_doc_ids": ["doc-G"],
+         "query_type": "plot_event"}
+        for i in range(7)
+    ]
+    summary, _, _, _ = run_retrieval_eval(
+        dataset, retriever=retriever, top_k=5,
+    )
+    bucket = summary.by_query_type["plot_event"]
+    expected_keys = {
+        "count", "hit_at_1", "hit_at_3", "hit_at_5", "mrr_at_10",
+        "ndcg_at_10", "candidate_hit_at_50", "candidate_recall_at_50",
+        "avg_total_retrieval_ms", "p95_total_retrieval_ms",
+        "duplicate_doc_ratio_at_10",
+    }
+    assert expected_keys.issubset(set(bucket.keys()))
+    assert bucket["count"] == 7
+    assert bucket["hit_at_1"] == 1.0
+    assert bucket["candidate_hit_at_50"] == 1.0
+
+
+def test_phase1_duplicate_doc_ratio_at_k_with_repeated_docs():
+    """8. ``duplicate_doc_ratio_at_k`` over a list with repeated doc_ids
+    must equal ``1 - unique/k``.
+    """
+    # 5 results, 2 distinct doc_ids → dup ratio = 1 - 2/5 = 0.6
+    assert duplicate_doc_ratio_at_k(["a", "a", "a", "b", "b"], k=5) == pytest.approx(0.6)
+    # All same → 1 - 1/5 = 0.8
+    assert duplicate_doc_ratio_at_k(["a"] * 5, k=5) == pytest.approx(0.8)
+    # All distinct → 0
+    assert duplicate_doc_ratio_at_k(["a", "b", "c", "d", "e"], k=5) == pytest.approx(0.0)
+    assert unique_doc_count_at_k(["a", "a", "b", "c", "c"], k=5) == 3
+    # Empty input: None (metric undefined)
+    assert duplicate_doc_ratio_at_k([], k=5) is None
+    assert unique_doc_count_at_k([], k=5) is None
+
+
+def test_phase1_section_diversity_safe_when_sections_missing():
+    """9. ``section_diversity_at_k`` returns ``None`` (not 0) when no
+    section info was populated — the harness must skip the metric
+    rather than zero it out.
+    """
+    assert section_diversity_at_k([None, None, None], k=3) is None
+    assert section_diversity_at_k(["", "", ""], k=3) is None
+    # Mixed: 2 distinct non-empty sections out of 3 → 2/3
+    assert section_diversity_at_k(["a", "b", None], k=3) == pytest.approx(2 / 3)
+
+
+def test_phase1_quality_score_matches_definition():
+    """10. ``quality_score`` must equal
+    ``0.30·hit@1 + 0.25·hit@5 + 0.25·MRR + 0.20·NDCG``.
+    """
+    assert (
+        QUALITY_SCORE_WEIGHT_HIT_AT_1
+        + QUALITY_SCORE_WEIGHT_HIT_AT_5
+        + QUALITY_SCORE_WEIGHT_MRR
+        + QUALITY_SCORE_WEIGHT_NDCG
+    ) == pytest.approx(1.0)
+    score = quality_score(
+        hit_at_1=0.5, hit_at_5=0.7, mrr_at_10=0.65, ndcg_at_10=0.68,
+    )
+    expected = 0.30 * 0.5 + 0.25 * 0.7 + 0.25 * 0.65 + 0.20 * 0.68
+    assert score == pytest.approx(expected, rel=1e-6)
+    # Any None input → None composite
+    assert quality_score(hit_at_1=None, hit_at_5=0.7, mrr_at_10=0.5, ndcg_at_10=0.5) is None
+
+
+def test_phase1_efficiency_score_safe_when_p95_missing_or_zero():
+    """11. Efficiency score must not raise when p95 is missing or
+    non-positive — it returns ``None`` instead.
+    """
+    assert efficiency_score(0.5, None) is None
+    assert efficiency_score(0.5, 0.0) is None
+    assert efficiency_score(0.5, -1.0) is None
+    assert efficiency_score(None, 10.0) is None
+    # Positive p95 → finite value with the natural-log denominator
+    v = efficiency_score(0.65, 16.5)
+    assert v is not None
+    assert v == pytest.approx(0.65 / math.log(1 + 16.5), rel=1e-6)
+
+
+def test_phase1_legacy_report_still_renders_without_phase1_data():
+    """12. A run that produced no candidate pool / no rerank scores
+    must still render through ``render_markdown_report`` cleanly. The
+    Phase 1 sections silently skip; the legacy headline + latency +
+    duplicate-analysis sections remain in their original shape so an
+    older reader sees a byte-compatible (apart from new tail sections)
+    report.
+    """
+    retriever = _build_in_memory_retriever(Path("/tmp")) if False else None
+    # Use a stub retriever that returns 1 chunk per query, no candidate
+    # pool, no rerank_score, no dense_retrieval_ms — purely Phase 0 shape.
+
+    class _LegacyChunk:
+        def __init__(self, doc_id, chunk_id, section, text, score):
+            self.doc_id = doc_id
+            self.chunk_id = chunk_id
+            self.section = section
+            self.text = text
+            self.score = score
+            self.rerank_score = None
+
+    class _LegacyReport:
+        def __init__(self, results):
+            self.results = results
+            self.index_version = "legacy-v1"
+            self.embedding_model = "legacy-embed"
+            self.reranker_name = "noop"
+            # No candidate_doc_ids, no rerank_ms, no dense_retrieval_ms.
+
+    class _LegacyRetriever:
+        def retrieve(self, query):
+            return _LegacyReport([
+                _LegacyChunk("doc-X", "c1", "s", "alpha beta", 0.9),
+            ])
+
+    dataset = [
+        {"id": "r1", "query": "anything", "expected_doc_ids": ["doc-X"]},
+    ]
+    summary, rows, _, dup = run_retrieval_eval(
+        dataset, retriever=_LegacyRetriever(), top_k=5,
+    )
+    # Headline metrics intact.
+    assert summary.mean_hit_at_5 is not None
+    # Phase 1 candidate metrics absent (no candidate pool surfaced).
+    assert summary.candidate_hit_rates.get("10") is None
+    # Pre-rerank metrics equal final metrics (no rerank scores → uplift 0).
+    assert summary.rerank_uplift_hit_at_5 == pytest.approx(0.0)
+    # Markdown renderer must not raise; legacy sections still present.
+    md = render_markdown_report(summary, rows, dup)
+    assert "## Headline metrics" in md
+    assert "## Latency (ms)" in md
+    assert "## Duplicate analysis" in md
+    # Phase 1 candidate / reranker sections silently skipped; presence
+    # is conditional on the data, so absence here is the contract.
+    assert "## Candidate Retrieval Quality" not in md
+
+
+def test_phase1_diagnostics_thresholds_pin_constants():
+    """Pin the Phase 1 diagnostic thresholds so a future refactor
+    can't silently drift them. Constants are intentionally exposed
+    via the public ``eval.harness`` namespace.
+    """
+    assert DIAG_CANDIDATE_RECALL_BOTTLENECK_HIT_AT_50 == 0.80
+    assert DIAG_RERANKER_UPLIFT_LOW_HIT_AT_5 == 0.01
+    assert DIAG_RERANKER_NEGATIVE_UPLIFT_HIT_AT_5 == -0.005
+    assert DIAG_RERANKER_NEGATIVE_UPLIFT_MRR_AT_10 == -0.005
+    assert DIAG_HIGH_DUPLICATE_RATIO_AT_10 == 0.50
+
+
+def test_phase1_high_duplicate_ratio_diagnostic_fires():
+    """``highDuplicateRatio`` flag must trigger when top-10 dup ratio
+    crosses the ceiling.
+    """
+    # 10 chunks all of the same doc_id → dup_ratio_at_10 = 0.9 > 0.5
+    chunks = [_PhaseChunk("doc-A", f"c{i}", "s", "t", 0.9 - i * 0.01) for i in range(10)]
+    retriever = _ScriptedRetriever({"q1": _PhaseReport(results=chunks)})
+    dataset = [{"id": "r1", "query": "q1", "expected_doc_ids": ["doc-A"]}]
+    summary, _, _, _ = run_retrieval_eval(
+        dataset, retriever=retriever, top_k=10,
+    )
+    assert summary.duplicate_doc_ratios["10"] == pytest.approx(0.9)
+    assert summary.diagnostics["highDuplicateRatio"]["flagged"] is True
+
+
+def test_phase1_candidate_recall_bottleneck_diagnostic():
+    """``candidateRecallBottleneck`` flag fires when candidate hit@50
+    falls below 0.80.
+    """
+    # 4 rows: only 1 has candidate hit@50 → rate = 0.25 < 0.80
+    queries = {}
+    dataset = []
+    for i in range(4):
+        if i == 0:
+            cand = ["doc-gold"] + [f"doc-{j}" for j in range(60)]
+        else:
+            cand = [f"doc-{j}" for j in range(60)]  # gold absent
+        chunks = [_PhaseChunk("doc-other", f"c{i}", "s", "t", 0.5)]
+        queries[f"q{i}"] = _PhaseReport(results=chunks, candidate_doc_ids=cand)
+        dataset.append({
+            "id": f"r{i}", "query": f"q{i}", "expected_doc_ids": ["doc-gold"],
+        })
+    retriever = _ScriptedRetriever(queries)
+    summary, _, _, _ = run_retrieval_eval(
+        dataset, retriever=retriever, top_k=10,
+    )
+    assert summary.candidate_hit_rates["50"] == pytest.approx(0.25)
+    assert summary.diagnostics["candidateRecallBottleneck"]["flagged"] is True
+
+
+def test_phase1_compute_diagnostics_handles_missing_metrics_gracefully():
+    """`compute_retrieval_diagnostics` must return ``None`` for the
+    ``flagged`` field when the underlying metric isn't measurable —
+    we don't want missing data to render as "looks fine".
+    """
+    # Build a fresh summary with a minimum of fields populated.
+    minimal = RetrievalEvalSummary(
+        dataset_path="<inline>", corpus_path=None, row_count=0,
+        rows_with_expected_doc_ids=0, rows_with_expected_keywords=0,
+        top_k=10, mrr_k=10, ndcg_k=10,
+        mean_hit_at_1=None, mean_hit_at_3=None, mean_hit_at_5=None,
+        mean_mrr_at_10=None, mean_ndcg_at_10=None,
+        mean_dup_rate=None, mean_unique_doc_coverage=None,
+        mean_top1_score_margin=None, mean_avg_context_token_count=None,
+        mean_expected_keyword_match_rate=None,
+        mean_retrieval_ms=0.0, p50_retrieval_ms=0.0,
+        p95_retrieval_ms=0.0, max_retrieval_ms=0.0,
+    )
+    diag = compute_retrieval_diagnostics(minimal)
+    assert diag["candidateRecallBottleneck"]["flagged"] is None
+    assert diag["highDuplicateRatio"]["flagged"] is None
+    assert diag["rerankerUpliftLow"]["flagged"] is None
+    assert diag["rerankerNegativeUplift"]["flagged"] is None

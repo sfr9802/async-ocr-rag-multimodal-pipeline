@@ -700,6 +700,27 @@ VERDICT_TIE = "tie"
 VERDICT_REGRESSION = "regression"
 
 
+# Recommendation labels emitted by ``summarize_runs``. Kept as module-level
+# constants so callers (report renderer, tests) can reference them by name
+# instead of repeating string literals.
+RECOMMENDATION_ADOPT = "adopt_candidate"
+RECOMMENDATION_HOLD_NO_QUALITY_GAIN = "hold_no_quality_gain"
+RECOMMENDATION_HOLD_EXPERIMENTAL = "hold_experimental_backend_only"
+RECOMMENDATION_HOLD_REVIEW_REGRESSIONS = "hold_review_regressions"
+RECOMMENDATION_HOLD_REVIEW_ERRORS = "hold_review_errors"
+
+# Minimum gap (in absolute rate units) for the aggregate quality metrics
+# graph - legacy comparison. Set to 0.005 so that a 0.5pp lift is the floor
+# for declaring a quality improvement; smaller gaps are treated as noise.
+QUALITY_LIFT_EPSILON = 0.005
+
+# Maximum graph p95 / legacy p95 ratio that still qualifies as
+# "latency neutral" for adoption. Quality lifts above this ratio are
+# downgraded to ``hold_review_regressions`` because the cost of adoption
+# exceeds the bar even when retrieval quality improved.
+LATENCY_RATIO_ADOPT_CEILING = 1.5
+
+
 def compare_one(
     *,
     query_row: AgentLoopABQuery,
@@ -909,58 +930,125 @@ def summarize_runs(
     summary["ties"] = verdict_counter[VERDICT_TIE]
     summary["regressions"] = verdict_counter[VERDICT_REGRESSION]
 
-    summary["recommendation"] = _recommendation(summary, expected_rows, rows)
+    summary["recommendation"] = _recommendation(summary)
     return summary
 
 
-def _recommendation(
+def has_quality_lift(
     summary: Mapping[str, Any],
-    expected_rows: Sequence[AgentLoopABComparisonRow],
-    rows: Sequence[AgentLoopABComparisonRow],
-) -> str:
-    """Mirror the spec's adoption rules in plain text.
+    *,
+    epsilon: float = QUALITY_LIFT_EPSILON,
+) -> bool:
+    """Return ``True`` iff graph beats legacy on at least one quality metric.
 
-    * Adopt: graph lifts hit@k or candidate recall AND p95 latency does
-      not blow up.
-    * Hold (no quality gain): graph adds LLM/retrieval cost without
-      quality movement.
-    * Hold (debug-only): graph only improves trace/debuggability, not
-      retrieval quality — keep as experimental backend.
+    "Quality" is one of: hit@1 / hit@3 / hit@5 (rate of expected_doc_id
+    landing in the top-k of the aggregated chunks), MRR (across rows
+    with expected_doc_id), and keyword hit rate (across rows with
+    expected_keywords). All are pairwise compared with an additive
+    epsilon margin so trailing-decimal jitter from the rate aggregator
+    can't trip the gate. Latency, success rate, trace count, and
+    iteration count are deliberately *not* quality signals — those are
+    cost / robustness signals and live in their own gates.
+
+    Public so the comparison report renderer and tests can share the
+    exact same check the recommendation function applies.
     """
-    regressions = summary.get("regressions", 0)
-    graph_wins = summary.get("graphWins", 0)
-    legacy_wins = summary.get("legacyWins", 0)
+    for legacy_key, graph_key in (
+        ("legacyHitAt1", "graphHitAt1"),
+        ("legacyHitAt3", "graphHitAt3"),
+        ("legacyHitAt5", "graphHitAt5"),
+        ("legacyMRR", "graphMRR"),
+        ("legacyKeywordHitRate", "graphKeywordHitRate"),
+    ):
+        legacy_v = summary.get(legacy_key)
+        graph_v = summary.get(graph_key)
+        if legacy_v is None or graph_v is None:
+            continue
+        try:
+            if float(graph_v) > float(legacy_v) + epsilon:
+                return True
+        except (TypeError, ValueError):
+            continue
+    return False
+
+
+def _recommendation(summary: Mapping[str, Any]) -> str:
+    """Conservative adoption rule applied to the aggregate summary.
+
+    Priority order (first match wins) — chosen so that "adopt" is only
+    reachable when the aggregate numbers actually move on retrieval
+    quality, not on latency or trace shape:
+
+      1. ``hold_review_errors``         — graph success rate is below
+                                          legacy by more than epsilon
+                                          (i.e. graph errored on queries
+                                          legacy succeeded on).
+      2. ``hold_review_regressions``    — at least one per-query verdict
+                                          is ``regression``. Even one
+                                          regression must be triaged
+                                          before any promotion.
+      3. ``adopt_candidate``            — strict quality lift (hit@k /
+                                          MRR / keyword) AND p95 latency
+                                          ratio (graph / legacy) within
+                                          ``LATENCY_RATIO_ADOPT_CEILING``.
+      4. ``hold_review_regressions``    — quality lift exists but p95
+                                          latency blew past the ceiling;
+                                          adoption would buy quality at
+                                          a latency cost that warrants
+                                          review.
+      5. ``hold_no_quality_gain``       — no quality lift AND graph
+                                          spends more LLM or retrieval
+                                          calls on average. Pure cost
+                                          regression.
+      6. ``hold_experimental_backend_only`` — fallback. No quality lift,
+                                          no extra cost. Graph may still
+                                          win on trace / debuggability or
+                                          on isolated cold-start latency
+                                          rows, but those are not enough
+                                          to flip the default backend.
+
+    The rule deliberately ignores per-query ``graphWins`` counters when
+    no aggregate quality metric moved — a single latency-only graph_win
+    used to flip ``adopt_candidate`` and that's the bug this rule fixes.
+    """
+    regressions = int(summary.get("regressions", 0) or 0)
     legacy_p95 = summary.get("legacyLatencyP95") or 0.0
     graph_p95 = summary.get("graphLatencyP95") or 0.0
     latency_ratio = (graph_p95 / legacy_p95) if legacy_p95 > 0 else 1.0
 
-    # Quality lift signal - prefer hit@k when available.
-    quality_lift = False
-    if expected_rows:
-        if (summary.get("graphHitAt5") or 0.0) > (summary.get("legacyHitAt5") or 0.0):
-            quality_lift = True
-        if (summary.get("graphHitAt1") or 0.0) > (summary.get("legacyHitAt1") or 0.0):
-            quality_lift = True
-        if (summary.get("graphMRR") or 0.0) > (summary.get("legacyMRR") or 0.0):
-            quality_lift = True
-    if not quality_lift and rows and graph_wins > legacy_wins + regressions:
-        quality_lift = True
-
-    if quality_lift and latency_ratio <= 1.5 and regressions == 0:
-        return "adopt_candidate"
+    legacy_succ = summary.get("legacySuccessRate")
+    graph_succ = summary.get("graphSuccessRate")
     if (
-        not quality_lift
-        and (
-            (summary.get("graphAvgLlmCalls") or 0.0)
-            > (summary.get("legacyAvgLlmCalls") or 0.0)
-            or (summary.get("graphAvgRetrievalCalls") or 0.0)
-            > (summary.get("legacyAvgRetrievalCalls") or 0.0)
-        )
+        legacy_succ is not None
+        and graph_succ is not None
+        and float(graph_succ) + QUALITY_LIFT_EPSILON < float(legacy_succ)
     ):
-        return "hold_no_quality_gain"
-    if not quality_lift:
-        return "hold_experimental_backend_only"
-    return "hold_review_regressions"
+        return RECOMMENDATION_HOLD_REVIEW_ERRORS
+
+    if regressions > 0:
+        return RECOMMENDATION_HOLD_REVIEW_REGRESSIONS
+
+    quality_lift = has_quality_lift(summary)
+
+    if quality_lift and latency_ratio <= LATENCY_RATIO_ADOPT_CEILING:
+        return RECOMMENDATION_ADOPT
+
+    if quality_lift:
+        # Quality lift but the latency tax is over the adoption ceiling.
+        return RECOMMENDATION_HOLD_REVIEW_REGRESSIONS
+
+    extra_llm = (
+        (summary.get("graphAvgLlmCalls") or 0.0)
+        > (summary.get("legacyAvgLlmCalls") or 0.0)
+    )
+    extra_retrieval = (
+        (summary.get("graphAvgRetrievalCalls") or 0.0)
+        > (summary.get("legacyAvgRetrievalCalls") or 0.0)
+    )
+    if extra_llm or extra_retrieval:
+        return RECOMMENDATION_HOLD_NO_QUALITY_GAIN
+
+    return RECOMMENDATION_HOLD_EXPERIMENTAL
 
 
 # ---------------------------------------------------------------------------

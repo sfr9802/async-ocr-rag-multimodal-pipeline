@@ -57,14 +57,20 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Protocol, Tuple
 
 from eval.harness.metrics import (
     count_whitespace_tokens,
+    duplicate_doc_ratio_at_k,
     dup_rate,
+    efficiency_score,
     expected_keyword_match_rate,
     hit_at_k,
     ndcg_at_k,
     normalized_text_hash,
     p_percentile,
+    quality_score,
+    recall_at_k,
     reciprocal_rank_at_k,
+    section_diversity_at_k,
     top1_score_margin,
+    unique_doc_count_at_k,
     unique_doc_coverage,
 )
 
@@ -89,6 +95,24 @@ PREVIEW_CHARS = 160
 
 # Duplicate analysis — most-common reporting cap.
 DUP_TOP_N = 10
+
+# Phase 1 retrieval-eval extensions ------------------------------------------
+# K cutoffs for candidate hit / recall (retrieval pre-rerank step).
+DEFAULT_CANDIDATE_KS: Tuple[int, ...] = (10, 20, 50, 100)
+# K cutoffs for diversity / duplicate diagnostics over the final top-k.
+DEFAULT_DIVERSITY_KS: Tuple[int, ...] = (5, 10)
+# Sample-size threshold below which a query_type breakdown is flagged
+# as low-confidence in the markdown report.
+DEFAULT_LOW_QUERY_TYPE_SAMPLE = 5
+# Default fallback bucket name for rows with no explicit query_type.
+DEFAULT_QUERY_TYPE_UNKNOWN = "unknown"
+# Diagnostic thresholds — surfaced as module-level constants so the
+# unit tests pin them and the report renderer can quote the values.
+DIAG_CANDIDATE_RECALL_BOTTLENECK_HIT_AT_50 = 0.80
+DIAG_RERANKER_UPLIFT_LOW_HIT_AT_5 = 0.01
+DIAG_RERANKER_NEGATIVE_UPLIFT_HIT_AT_5 = -0.005
+DIAG_RERANKER_NEGATIVE_UPLIFT_MRR_AT_10 = -0.005
+DIAG_HIGH_DUPLICATE_RATIO_AT_10 = 0.50
 
 
 # ---------------------------------------------------------------------------
@@ -154,6 +178,57 @@ class RetrievalEvalRow:
     # ``None`` for rows without expected_doc_ids, matching the contract
     # of hit_at_1 / hit_at_3 / hit_at_5.
     extra_hits: Dict[str, Optional[float]] = field(default_factory=dict)
+    # Phase 1 retrieval-eval extensions ----------------------------------
+    # Query-type bucket. Pulled from raw row's ``query_type`` field; rows
+    # without one are bucketed under ``DEFAULT_QUERY_TYPE_UNKNOWN`` for
+    # the byQueryType breakdown (left ``None`` here to preserve the
+    # source-of-truth: "the dataset didn't say").
+    query_type: Optional[str] = None
+    # Section paths captured from ``chunk.section`` for diversity / dup
+    # accounting. Same length as ``retrieved_doc_ids``.
+    section_paths: List[str] = field(default_factory=list)
+    # Pre-rerank ranking — derived by sorting the retriever's results by
+    # raw dense score in descending order. When the report doesn't
+    # surface rerank_scores at all, pre_rerank == final and the row's
+    # rerank-uplift metrics are 0.
+    pre_rerank_doc_ids: List[str] = field(default_factory=list)
+    pre_rerank_scores: List[float] = field(default_factory=list)
+    # Candidate-pool ranking. When the retriever surfaces a wider pre-
+    # rerank candidate pool (e.g. ``report.candidate_doc_ids`` in the
+    # ``BoostingRetrievalReport`` shape), the harness records it here
+    # so candidate hit@10 / hit@50 / hit@100 can score what the
+    # reranker started from rather than what it returned. Empty list
+    # when no candidate pool was surfaced.
+    candidate_doc_ids: List[str] = field(default_factory=list)
+    candidate_count: Optional[int] = None
+    final_context_count: Optional[int] = None
+    # Sum of whitespace tokens across the final top-k chunks; coexists
+    # with ``avg_context_token_count`` (mean) so the aggregator can
+    # surface both per-chunk and per-query views.
+    context_tokens: Optional[int] = None
+    # Candidate hit / recall at the wider cutoffs (10/20/50/100). Values
+    # are ``None`` when no candidate pool was surfaced AND the row's
+    # final top-k is shorter than the cutoff *or* the row has no
+    # expected_doc_ids. Keys: stringified ints for stable JSON shape.
+    candidate_hits: Dict[str, Optional[float]] = field(default_factory=dict)
+    candidate_recalls: Dict[str, Optional[float]] = field(default_factory=dict)
+    # Pre-rerank quality at the same headline cutoffs as the final
+    # metrics. ``None`` when the row has no expected_doc_ids.
+    pre_rerank_hit_at_1: Optional[float] = None
+    pre_rerank_hit_at_3: Optional[float] = None
+    pre_rerank_hit_at_5: Optional[float] = None
+    pre_rerank_mrr_at_10: Optional[float] = None
+    pre_rerank_ndcg_at_10: Optional[float] = None
+    # Diversity / duplicate diagnostics over the final top-k.
+    # ``duplicate_doc_ratio_at_k`` complements ``unique_doc_count_at_k``
+    # for the K cutoffs in ``DEFAULT_DIVERSITY_KS`` (5, 10). Keys are
+    # the same stringified-int convention.
+    duplicate_doc_ratios: Dict[str, Optional[float]] = field(default_factory=dict)
+    unique_doc_counts: Dict[str, Optional[int]] = field(default_factory=dict)
+    # ``section_diversity_at_k`` is ``None`` when no section info was
+    # populated on the retrieved chunks (the dataset / retriever didn't
+    # surface section paths) — this is "metric not measurable", not 0.
+    section_diversities: Dict[str, Optional[float]] = field(default_factory=dict)
 
 
 @dataclass
@@ -232,6 +307,63 @@ class RetrievalEvalSummary:
     # Per-answer-type breakdown (mean hit@5, mean ndcg@10, count)
     per_answer_type: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     per_difficulty: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    # ----------------------------------------------------------------
+    # Phase 1 retrieval-eval extensions. All fields are Optional /
+    # default-empty so older readers diff cleanly: no key disappeared,
+    # only new ones added. Aggregation helpers (``_mean_or_none`` etc.)
+    # leave the field at ``None`` when no row contributed a value.
+    # ----------------------------------------------------------------
+    # Candidate-pool aggregates. Keys are the same stringified ints used
+    # on the per-row ``candidate_hits`` / ``candidate_recalls`` dicts.
+    candidate_hit_rates: Dict[str, Optional[float]] = field(default_factory=dict)
+    candidate_recalls: Dict[str, Optional[float]] = field(default_factory=dict)
+    # Pre-rerank aggregates at the headline cutoffs.
+    mean_pre_rerank_hit_at_1: Optional[float] = None
+    mean_pre_rerank_hit_at_3: Optional[float] = None
+    mean_pre_rerank_hit_at_5: Optional[float] = None
+    mean_pre_rerank_mrr_at_10: Optional[float] = None
+    mean_pre_rerank_ndcg_at_10: Optional[float] = None
+    # Reranker uplift = final - pre_rerank. ``None`` when either side is
+    # missing. The aggregator only computes uplift when both sides have
+    # populated rows so a 0-uplift run looks identical to a no-rerank
+    # run only when the reranker truly didn't move the order.
+    rerank_uplift_hit_at_1: Optional[float] = None
+    rerank_uplift_hit_at_3: Optional[float] = None
+    rerank_uplift_hit_at_5: Optional[float] = None
+    rerank_uplift_mrr_at_10: Optional[float] = None
+    rerank_uplift_ndcg_at_10: Optional[float] = None
+    # Diversity / duplicate aggregates at the K cutoffs in
+    # ``DEFAULT_DIVERSITY_KS`` (5, 10). Keys: stringified ints.
+    duplicate_doc_ratios: Dict[str, Optional[float]] = field(default_factory=dict)
+    unique_doc_counts: Dict[str, Optional[float]] = field(default_factory=dict)
+    section_diversities: Dict[str, Optional[float]] = field(default_factory=dict)
+    # Latency / cost aggregates kept side-by-side with quality so the
+    # report can say "what did this query cost". The ``*_total_*`` fields
+    # are spec-preferred aliases of mean_retrieval_ms / p95_retrieval_ms;
+    # ``avg_dense_retrieval_ms`` mirrors mean_dense_retrieval_ms and
+    # ``avg_rerank_ms`` mirrors mean_rerank_ms so consumers can read the
+    # spec's field names. The original ``mean_*`` / ``p95_*`` fields are
+    # left untouched for backward compat — both names round-trip.
+    avg_total_retrieval_ms: Optional[float] = None
+    p95_total_retrieval_ms: Optional[float] = None
+    avg_dense_retrieval_ms: Optional[float] = None
+    avg_rerank_ms: Optional[float] = None
+    avg_candidate_count: Optional[float] = None
+    avg_final_context_count: Optional[float] = None
+    avg_context_tokens: Optional[float] = None
+    # Composite scores. Both are *comparison* aids, not adoption
+    # decisions; the markdown writer flags them accordingly.
+    quality_score: Optional[float] = None
+    efficiency_score: Optional[float] = None
+    # By-query-type breakdown — same shape as ``per_answer_type`` but
+    # over the spec's query_type field, with the row-count threshold
+    # surfaced for the markdown writer's "low sample count" callout.
+    by_query_type: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    # Diagnostic flags. Each value is a 3-tuple of (bool/None, threshold
+    # value, observed value) so the markdown writer can quote both. We
+    # represent it as a dict per flag with stable keys so the JSON
+    # round-trip stays clean.
+    diagnostics: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -277,6 +409,8 @@ def run_retrieval_eval(
     mrr_k: int = DEFAULT_MRR_K,
     ndcg_k: int = DEFAULT_NDCG_K,
     extra_hit_ks: Tuple[int, ...] = DEFAULT_EXTRA_HIT_KS,
+    candidate_ks: Tuple[int, ...] = DEFAULT_CANDIDATE_KS,
+    diversity_ks: Tuple[int, ...] = DEFAULT_DIVERSITY_KS,
     dataset_path: Optional[str] = None,
     corpus_path: Optional[str] = None,
 ) -> Tuple[
@@ -319,9 +453,23 @@ def run_retrieval_eval(
             log.warning("Row %d (id=%s) has no query — skipping", idx, query_id)
             continue
 
+        # Phase 1: ``expected_doc_id`` (singular) is normalized into the
+        # plural ``expected_doc_ids`` list so older datasets work
+        # without a separate projection pass. Plural wins when both are
+        # present.
         expected_doc_ids = _list_of_str(raw.get("expected_doc_ids"))
+        if not expected_doc_ids:
+            singular = raw.get("expected_doc_id")
+            if singular:
+                expected_doc_ids = [str(singular).strip()]
         expected_keywords = _list_of_str(raw.get("expected_section_keywords"))
         tags = _list_of_str(raw.get("tags"))
+        query_type_raw = raw.get("query_type")
+        query_type = (
+            str(query_type_raw).strip()
+            if query_type_raw is not None and str(query_type_raw).strip()
+            else None
+        )
 
         row = RetrievalEvalRow(
             id=query_id,
@@ -332,6 +480,7 @@ def run_retrieval_eval(
             answer_type=str(raw["answer_type"]) if raw.get("answer_type") else None,
             difficulty=str(raw["difficulty"]) if raw.get("difficulty") else None,
             tags=tags,
+            query_type=query_type,
         )
 
         try:
@@ -353,9 +502,54 @@ def run_retrieval_eval(
             row.retrieved_doc_ids = doc_ids
             row.retrieved_chunk_ids = chunk_ids
             row.retrieval_scores = [round(s, 6) for s in scores]
+            row.section_paths = [str(s) for s in sections]
             row.index_version = getattr(report, "index_version", None)
             row.embedding_model = getattr(report, "embedding_model", None)
             row.reranker_name = getattr(report, "reranker_name", None)
+
+            # Phase 1: derive pre-rerank ranking by sorting by raw dense
+            # score in descending order. When the report carries no
+            # rerank_scores at all (NoOp reranker path), the dense order
+            # IS the final order — sorted_by_dense is identical to the
+            # incoming list and uplift collapses to 0.
+            has_rerank_score = any(rs is not None for rs in rerank_scores)
+            paired = list(zip(doc_ids, scores))
+            if has_rerank_score:
+                pre_pairs = sorted(paired, key=lambda p: -float(p[1]))
+            else:
+                pre_pairs = paired
+            row.pre_rerank_doc_ids = [p[0] for p in pre_pairs]
+            row.pre_rerank_scores = [round(float(p[1]), 6) for p in pre_pairs]
+
+            # Pre-rerank candidate pool — surfaced by the retriever's
+            # report when it wraps its own reranker (BoostingRetrieval-
+            # Report.dense_candidates / candidate_doc_ids). Falling back
+            # to the final result's doc_ids would conflate candidate@K
+            # with hit@K, so we only populate when the report explicitly
+            # exposes a wider pool.
+            cand_doc_ids: List[str] = []
+            cand_attr = getattr(report, "candidate_doc_ids", None)
+            if isinstance(cand_attr, (list, tuple)):
+                cand_doc_ids = [str(d) for d in cand_attr if d]
+            else:
+                dense_attr = getattr(report, "dense_candidates", None)
+                if isinstance(dense_attr, (list, tuple)):
+                    cand_doc_ids = [
+                        str(getattr(c, "doc_id", "") or "")
+                        for c in dense_attr
+                        if getattr(c, "doc_id", None)
+                    ]
+                else:
+                    cand_results = getattr(report, "candidate_results", None)
+                    if isinstance(cand_results, (list, tuple)):
+                        cand_doc_ids = [
+                            str(getattr(c, "doc_id", "") or "")
+                            for c in cand_results
+                            if getattr(c, "doc_id", None)
+                        ]
+            row.candidate_doc_ids = cand_doc_ids
+            row.candidate_count = len(cand_doc_ids) if cand_doc_ids else None
+            row.final_context_count = len(doc_ids)
             # Pull rerank latency off the RetrievalReport when present.
             # ``None`` means the retriever is on the NoOpReranker path,
             # which downstream aggregation distinguishes from a real
@@ -421,9 +615,65 @@ def run_retrieval_eval(
                 row.avg_context_token_count = round(
                     sum(token_counts) / len(token_counts), 2
                 )
+                row.context_tokens = sum(token_counts)
             row.expected_keyword_match_rate = expected_keyword_match_rate(
                 chunk_texts, expected_keywords
             )
+
+            # Phase 1 — pre-rerank quality (over the dense-sorted order).
+            # Only computed when expected_doc_ids is populated, matching
+            # the contract of the final-rerank metrics above.
+            if expected_doc_ids:
+                pre_doc_ids = row.pre_rerank_doc_ids
+                row.pre_rerank_hit_at_1 = hit_at_k(pre_doc_ids, expected_doc_ids, k=1)
+                row.pre_rerank_hit_at_3 = hit_at_k(pre_doc_ids, expected_doc_ids, k=3)
+                row.pre_rerank_hit_at_5 = hit_at_k(pre_doc_ids, expected_doc_ids, k=5)
+                row.pre_rerank_mrr_at_10 = reciprocal_rank_at_k(
+                    pre_doc_ids, expected_doc_ids, k=mrr_k
+                )
+                row.pre_rerank_ndcg_at_10 = ndcg_at_k(
+                    pre_doc_ids, expected_doc_ids, k=ndcg_k
+                )
+
+            # Phase 1 — candidate hit / recall over the wider candidate
+            # pool. When the retriever didn't surface a separate pool,
+            # row.candidate_doc_ids is empty and the candidate metrics
+            # stay None (skipped in aggregation) — backward-compatible
+            # with reports from retrievers that don't expose candidates.
+            if expected_doc_ids and row.candidate_doc_ids:
+                cand_hits: Dict[str, Optional[float]] = {}
+                cand_recalls: Dict[str, Optional[float]] = {}
+                for k in candidate_ks:
+                    if k <= 0:
+                        continue
+                    key = str(k)
+                    cand_hits[key] = hit_at_k(
+                        row.candidate_doc_ids, expected_doc_ids, k=k
+                    )
+                    cand_recalls[key] = recall_at_k(
+                        row.candidate_doc_ids, expected_doc_ids, k=k
+                    )
+                row.candidate_hits = cand_hits
+                row.candidate_recalls = cand_recalls
+
+            # Phase 1 — diversity / duplicate diagnostics over the final
+            # top-k (per-K). Section-diversity stays None when the
+            # retriever didn't populate section paths.
+            dup_ratios: Dict[str, Optional[float]] = {}
+            unique_counts: Dict[str, Optional[int]] = {}
+            section_divs: Dict[str, Optional[float]] = {}
+            for k in diversity_ks:
+                if k <= 0:
+                    continue
+                key = str(k)
+                dup_ratios[key] = duplicate_doc_ratio_at_k(doc_ids, k=k)
+                unique_counts[key] = unique_doc_count_at_k(doc_ids, k=k)
+                section_divs[key] = section_diversity_at_k(
+                    row.section_paths, k=k
+                )
+            row.duplicate_doc_ratios = dup_ratios
+            row.unique_doc_counts = unique_counts
+            row.section_diversities = section_divs
 
             # Top-k dump rows.
             expected_set = set(expected_doc_ids)
@@ -520,6 +770,8 @@ def run_retrieval_eval(
         mrr_k=mrr_k,
         ndcg_k=ndcg_k,
         extra_hit_ks=extra_hit_ks,
+        candidate_ks=candidate_ks,
+        diversity_ks=diversity_ks,
         dataset_path=dataset_path or "<inline>",
         corpus_path=corpus_path,
         errors=errors,
@@ -567,6 +819,8 @@ def _aggregate(
     mrr_k: int,
     ndcg_k: int,
     extra_hit_ks: Tuple[int, ...],
+    candidate_ks: Tuple[int, ...] = DEFAULT_CANDIDATE_KS,
+    diversity_ks: Tuple[int, ...] = DEFAULT_DIVERSITY_KS,
     dataset_path: str,
     corpus_path: Optional[str],
     errors: int,
@@ -680,7 +934,116 @@ def _aggregate(
             "count": float(len(values)),
         }
 
-    return RetrievalEvalSummary(
+    # Phase 1 ----------------------------------------------------------
+    # Candidate-pool hit / recall aggregates per cutoff.
+    candidate_hit_rates: Dict[str, Optional[float]] = {}
+    candidate_recalls: Dict[str, Optional[float]] = {}
+    for k in candidate_ks:
+        if k <= 0:
+            continue
+        key = str(k)
+        hits_vals = [
+            r.candidate_hits[key] for r in rows
+            if isinstance(r.candidate_hits, dict)
+            and r.candidate_hits.get(key) is not None
+        ]
+        recall_vals = [
+            r.candidate_recalls[key] for r in rows
+            if isinstance(r.candidate_recalls, dict)
+            and r.candidate_recalls.get(key) is not None
+        ]
+        candidate_hit_rates[key] = _mean_or_none(hits_vals)
+        candidate_recalls[key] = _mean_or_none(recall_vals)
+
+    # Pre-rerank metric aggregates.
+    pre_h1 = [r.pre_rerank_hit_at_1 for r in rows if r.pre_rerank_hit_at_1 is not None]
+    pre_h3 = [r.pre_rerank_hit_at_3 for r in rows if r.pre_rerank_hit_at_3 is not None]
+    pre_h5 = [r.pre_rerank_hit_at_5 for r in rows if r.pre_rerank_hit_at_5 is not None]
+    pre_mrr = [
+        r.pre_rerank_mrr_at_10 for r in rows if r.pre_rerank_mrr_at_10 is not None
+    ]
+    pre_ndcg = [
+        r.pre_rerank_ndcg_at_10 for r in rows if r.pre_rerank_ndcg_at_10 is not None
+    ]
+    mean_pre_h1 = _mean_or_none(pre_h1)
+    mean_pre_h3 = _mean_or_none(pre_h3)
+    mean_pre_h5 = _mean_or_none(pre_h5)
+    mean_pre_mrr = _mean_or_none(pre_mrr)
+    mean_pre_ndcg = _mean_or_none(pre_ndcg)
+
+    final_h1 = _mean_or_none(h1)
+    final_h3 = _mean_or_none(h3)
+    final_h5 = _mean_or_none(h5)
+    final_mrr = _mean_or_none(mrr)
+    final_ndcg = _mean_or_none(ndcg)
+
+    rerank_uplift_h1 = _delta_or_none(final_h1, mean_pre_h1)
+    rerank_uplift_h3 = _delta_or_none(final_h3, mean_pre_h3)
+    rerank_uplift_h5 = _delta_or_none(final_h5, mean_pre_h5)
+    rerank_uplift_mrr = _delta_or_none(final_mrr, mean_pre_mrr)
+    rerank_uplift_ndcg = _delta_or_none(final_ndcg, mean_pre_ndcg)
+
+    # Diversity / duplicate aggregates per cutoff.
+    duplicate_doc_ratios_agg: Dict[str, Optional[float]] = {}
+    unique_doc_counts_agg: Dict[str, Optional[float]] = {}
+    section_diversities_agg: Dict[str, Optional[float]] = {}
+    for k in diversity_ks:
+        if k <= 0:
+            continue
+        key = str(k)
+        dup_vals = [
+            r.duplicate_doc_ratios[key] for r in rows
+            if isinstance(r.duplicate_doc_ratios, dict)
+            and r.duplicate_doc_ratios.get(key) is not None
+        ]
+        unique_vals = [
+            float(r.unique_doc_counts[key]) for r in rows
+            if isinstance(r.unique_doc_counts, dict)
+            and r.unique_doc_counts.get(key) is not None
+        ]
+        section_vals = [
+            r.section_diversities[key] for r in rows
+            if isinstance(r.section_diversities, dict)
+            and r.section_diversities.get(key) is not None
+        ]
+        duplicate_doc_ratios_agg[key] = _mean_or_none(dup_vals)
+        unique_doc_counts_agg[key] = _mean_or_none(unique_vals)
+        section_diversities_agg[key] = _mean_or_none(section_vals)
+
+    # Latency aliases + extra cost aggregates.
+    avg_total_ms = _mean_or_none(latencies) if latencies else None
+    p95_total_ms = (
+        round(p_percentile(latencies, 95.0), 3) if latencies else None
+    )
+    cand_count_vals = [
+        float(r.candidate_count) for r in rows if r.candidate_count is not None
+    ]
+    final_count_vals = [
+        float(r.final_context_count) for r in rows
+        if r.final_context_count is not None
+    ]
+    context_token_vals = [
+        float(r.context_tokens) for r in rows if r.context_tokens is not None
+    ]
+    avg_candidate_count = _mean_or_none(cand_count_vals)
+    avg_final_context_count = _mean_or_none(final_count_vals)
+    avg_context_tokens = _mean_or_none(context_token_vals)
+
+    composite_quality = quality_score(
+        hit_at_1=final_h1,
+        hit_at_5=final_h5,
+        mrr_at_10=final_mrr,
+        ndcg_at_10=final_ndcg,
+    )
+    composite_efficiency = efficiency_score(composite_quality, p95_total_ms)
+
+    by_query_type = _query_type_breakdown(
+        rows,
+        candidate_ks=candidate_ks,
+        diversity_ks=diversity_ks,
+    )
+
+    summary = RetrievalEvalSummary(
         dataset_path=dataset_path,
         corpus_path=corpus_path,
         row_count=len(rows),
@@ -689,11 +1052,11 @@ def _aggregate(
         top_k=top_k,
         mrr_k=mrr_k,
         ndcg_k=ndcg_k,
-        mean_hit_at_1=_mean_or_none(h1),
+        mean_hit_at_1=final_h1,
         mean_hit_at_3=_mean_or_none(h3),
-        mean_hit_at_5=_mean_or_none(h5),
-        mean_mrr_at_10=_mean_or_none(mrr),
-        mean_ndcg_at_10=_mean_or_none(ndcg),
+        mean_hit_at_5=final_h5,
+        mean_mrr_at_10=final_mrr,
+        mean_ndcg_at_10=final_ndcg,
         mean_dup_rate=_mean_or_none(dup),
         mean_unique_doc_coverage=_mean_or_none(udc),
         mean_top1_score_margin=_mean_or_none(margin),
@@ -734,7 +1097,34 @@ def _aggregate(
         error_count=errors,
         per_answer_type=_breakdown(rows, key=lambda r: r.answer_type),
         per_difficulty=_breakdown(rows, key=lambda r: r.difficulty),
+        candidate_hit_rates=candidate_hit_rates,
+        candidate_recalls=candidate_recalls,
+        mean_pre_rerank_hit_at_1=mean_pre_h1,
+        mean_pre_rerank_hit_at_3=mean_pre_h3,
+        mean_pre_rerank_hit_at_5=mean_pre_h5,
+        mean_pre_rerank_mrr_at_10=mean_pre_mrr,
+        mean_pre_rerank_ndcg_at_10=mean_pre_ndcg,
+        rerank_uplift_hit_at_1=rerank_uplift_h1,
+        rerank_uplift_hit_at_3=rerank_uplift_h3,
+        rerank_uplift_hit_at_5=rerank_uplift_h5,
+        rerank_uplift_mrr_at_10=rerank_uplift_mrr,
+        rerank_uplift_ndcg_at_10=rerank_uplift_ndcg,
+        duplicate_doc_ratios=duplicate_doc_ratios_agg,
+        unique_doc_counts=unique_doc_counts_agg,
+        section_diversities=section_diversities_agg,
+        avg_total_retrieval_ms=avg_total_ms,
+        p95_total_retrieval_ms=p95_total_ms,
+        avg_dense_retrieval_ms=mean_dense_ms,
+        avg_rerank_ms=mean_rerank_ms,
+        avg_candidate_count=avg_candidate_count,
+        avg_final_context_count=avg_final_context_count,
+        avg_context_tokens=avg_context_tokens,
+        quality_score=composite_quality,
+        efficiency_score=composite_efficiency,
+        by_query_type=by_query_type,
     )
+    summary.diagnostics = compute_retrieval_diagnostics(summary)
+    return summary
 
 
 def _breakdown(
@@ -769,6 +1159,191 @@ def _breakdown(
                 [r.ndcg_at_10 for r in brows if r.ndcg_at_10 is not None]
             ),
         }
+    return out
+
+
+def _query_type_breakdown(
+    rows: List[RetrievalEvalRow],
+    *,
+    candidate_ks: Tuple[int, ...],
+    diversity_ks: Tuple[int, ...],
+) -> Dict[str, Dict[str, Any]]:
+    """Per-query-type aggregate following the Phase 1 spec.
+
+    Rows with no ``query_type`` land in the ``DEFAULT_QUERY_TYPE_UNKNOWN``
+    bucket so the breakdown still surfaces every row — the spec wants
+    visibility on rows that the dataset author hadn't tagged. Each bucket
+    carries: ``count``, ``hit_at_1/3/5``, ``mrr_at_10``, ``ndcg_at_10``,
+    ``candidate_hit_at_50``, ``candidate_recall_at_50``,
+    ``avg_total_retrieval_ms``, ``p95_total_retrieval_ms``,
+    ``duplicate_doc_ratio_at_10``. Sub-threshold sample counts are
+    flagged by the markdown writer (not here — keep aggregation pure).
+    """
+    candidate_breakdown_k = 50 if 50 in candidate_ks else (
+        max(candidate_ks) if candidate_ks else 50
+    )
+    diversity_breakdown_k = 10 if 10 in diversity_ks else (
+        max(diversity_ks) if diversity_ks else 10
+    )
+    cand_key = str(candidate_breakdown_k)
+    div_key = str(diversity_breakdown_k)
+
+    buckets: Dict[str, List[RetrievalEvalRow]] = {}
+    for r in rows:
+        bucket = r.query_type if r.query_type else DEFAULT_QUERY_TYPE_UNKNOWN
+        buckets.setdefault(bucket, []).append(r)
+
+    out: Dict[str, Dict[str, Any]] = {}
+    for k, brows in sorted(buckets.items()):
+        latency_vals = [r.retrieval_ms for r in brows if r.error is None]
+        cand_hit_vals: List[float] = []
+        cand_recall_vals: List[float] = []
+        for r in brows:
+            if isinstance(r.candidate_hits, dict):
+                v = r.candidate_hits.get(cand_key)
+                if v is not None:
+                    cand_hit_vals.append(float(v))
+            if isinstance(r.candidate_recalls, dict):
+                v = r.candidate_recalls.get(cand_key)
+                if v is not None:
+                    cand_recall_vals.append(float(v))
+        dup_at_k_vals = [
+            float(r.duplicate_doc_ratios[div_key]) for r in brows
+            if isinstance(r.duplicate_doc_ratios, dict)
+            and r.duplicate_doc_ratios.get(div_key) is not None
+        ]
+        out[k] = {
+            "count": len(brows),
+            "hit_at_1": _mean_or_none(
+                [r.hit_at_1 for r in brows if r.hit_at_1 is not None]
+            ),
+            "hit_at_3": _mean_or_none(
+                [r.hit_at_3 for r in brows if r.hit_at_3 is not None]
+            ),
+            "hit_at_5": _mean_or_none(
+                [r.hit_at_5 for r in brows if r.hit_at_5 is not None]
+            ),
+            "mrr_at_10": _mean_or_none(
+                [r.mrr_at_10 for r in brows if r.mrr_at_10 is not None]
+            ),
+            "ndcg_at_10": _mean_or_none(
+                [r.ndcg_at_10 for r in brows if r.ndcg_at_10 is not None]
+            ),
+            f"candidate_hit_at_{candidate_breakdown_k}": _mean_or_none(
+                cand_hit_vals
+            ),
+            f"candidate_recall_at_{candidate_breakdown_k}": _mean_or_none(
+                cand_recall_vals
+            ),
+            "avg_total_retrieval_ms": (
+                round(statistics.fmean(latency_vals), 3)
+                if latency_vals else None
+            ),
+            "p95_total_retrieval_ms": (
+                round(p_percentile(latency_vals, 95.0), 3)
+                if latency_vals else None
+            ),
+            f"duplicate_doc_ratio_at_{diversity_breakdown_k}": _mean_or_none(
+                dup_at_k_vals
+            ),
+        }
+    return out
+
+
+def _delta_or_none(
+    final_value: Optional[float],
+    pre_value: Optional[float],
+) -> Optional[float]:
+    """final - pre when both are populated, else None.
+
+    Used to compute reranker uplift on metrics like hit@k / MRR / NDCG.
+    Rounding stays at 6 dp so the signed delta is precise enough for
+    the diagnostic threshold (``-0.005``) to compare faithfully.
+    """
+    if final_value is None or pre_value is None:
+        return None
+    return round(float(final_value) - float(pre_value), 6)
+
+
+def compute_retrieval_diagnostics(
+    summary: RetrievalEvalSummary,
+) -> Dict[str, Any]:
+    """Map summary-level signals to the four Phase 1 diagnostic flags.
+
+    Each flag entry carries ``flagged`` (True/False/None — None when the
+    underlying metric isn't measurable, so the writer can render
+    ``"n/a"`` instead of a falsy "looks fine"), ``threshold`` (the
+    constant the comparison used), and ``observed`` (the value the
+    summary reported). This 3-tuple shape lets the markdown writer
+    quote the threshold without re-typing the constants.
+
+    Diagnostics:
+      * ``candidateRecallBottleneck`` — graph candidate-stage missed
+        the ``DIAG_CANDIDATE_RECALL_BOTTLENECK_HIT_AT_50`` floor on
+        candidate hit@50.
+      * ``rerankerUpliftLow`` — candidate hit@50 cleared the floor but
+        rerank uplift on hit@5 is below
+        ``DIAG_RERANKER_UPLIFT_LOW_HIT_AT_5``.
+      * ``rerankerNegativeUplift`` — uplift on hit@5 OR MRR went
+        negative beyond the configured tolerance (small-magnitude
+        regressions only count when one of the two metrics moved
+        below its threshold).
+      * ``highDuplicateRatio`` — the duplicate doc ratio at the top-10
+        cutoff is at or above ``DIAG_HIGH_DUPLICATE_RATIO_AT_10``.
+    """
+    out: Dict[str, Any] = {}
+
+    cand_at_50 = (summary.candidate_hit_rates or {}).get("50")
+    out["candidateRecallBottleneck"] = {
+        "flagged": (
+            None if cand_at_50 is None
+            else bool(cand_at_50 < DIAG_CANDIDATE_RECALL_BOTTLENECK_HIT_AT_50)
+        ),
+        "threshold": DIAG_CANDIDATE_RECALL_BOTTLENECK_HIT_AT_50,
+        "observed": cand_at_50,
+    }
+
+    uplift_h5 = summary.rerank_uplift_hit_at_5
+    rerank_low_flag: Optional[bool]
+    if cand_at_50 is None or uplift_h5 is None:
+        rerank_low_flag = None
+    else:
+        rerank_low_flag = bool(
+            cand_at_50 >= DIAG_CANDIDATE_RECALL_BOTTLENECK_HIT_AT_50
+            and uplift_h5 < DIAG_RERANKER_UPLIFT_LOW_HIT_AT_5
+        )
+    out["rerankerUpliftLow"] = {
+        "flagged": rerank_low_flag,
+        "threshold": DIAG_RERANKER_UPLIFT_LOW_HIT_AT_5,
+        "observed": uplift_h5,
+    }
+
+    uplift_mrr = summary.rerank_uplift_mrr_at_10
+    if uplift_h5 is None and uplift_mrr is None:
+        rerank_neg_flag: Optional[bool] = None
+    else:
+        rerank_neg_flag = bool(
+            (uplift_h5 is not None
+             and uplift_h5 < DIAG_RERANKER_NEGATIVE_UPLIFT_HIT_AT_5)
+            or (uplift_mrr is not None
+                and uplift_mrr < DIAG_RERANKER_NEGATIVE_UPLIFT_MRR_AT_10)
+        )
+    out["rerankerNegativeUplift"] = {
+        "flagged": rerank_neg_flag,
+        "threshold": DIAG_RERANKER_NEGATIVE_UPLIFT_HIT_AT_5,
+        "observed_hit_at_5": uplift_h5,
+        "observed_mrr_at_10": uplift_mrr,
+    }
+
+    dup_at_10 = (summary.duplicate_doc_ratios or {}).get("10")
+    out["highDuplicateRatio"] = {
+        "flagged": (
+            None if dup_at_10 is None
+            else bool(dup_at_10 >= DIAG_HIGH_DUPLICATE_RATIO_AT_10)
+        ),
+        "threshold": DIAG_HIGH_DUPLICATE_RATIO_AT_10,
+        "observed": dup_at_10,
+    }
     return out
 
 
@@ -947,6 +1522,36 @@ def render_markdown_report(
             )
         lines.append("")
 
+    # Phase 1 sections: rendered before the (legacy) duplicate-analysis
+    # block. They surface only when there's actually data to show — for
+    # an older run with no candidate pool / pre-rerank data, the writer
+    # silently skips them and produces a byte-identical pre-Phase-1
+    # report.
+    cand_section = _render_candidate_quality_section(summary)
+    if cand_section:
+        lines.append(cand_section)
+        lines.append("")
+    rerank_section = _render_reranker_uplift_section(summary)
+    if rerank_section:
+        lines.append(rerank_section)
+        lines.append("")
+    qt_section = _render_query_type_section(summary)
+    if qt_section:
+        lines.append(qt_section)
+        lines.append("")
+    div_section = _render_diversity_section(summary)
+    if div_section:
+        lines.append(div_section)
+        lines.append("")
+    qe_section = _render_quality_efficiency_section(summary)
+    if qe_section:
+        lines.append(qe_section)
+        lines.append("")
+    diag_section = _render_diagnostics_section(summary)
+    if diag_section:
+        lines.append(diag_section)
+        lines.append("")
+
     lines.append("## Duplicate analysis")
     lines.append("")
     lines.append(
@@ -1075,6 +1680,303 @@ def _log_summary(summary: RetrievalEvalSummary) -> None:
         summary.ndcg_k, _fmt(summary.mean_ndcg_at_10),
         _fmt(summary.mean_dup_rate), summary.p95_retrieval_ms,
     )
+
+
+# ---------------------------------------------------------------------------
+# Phase 1 markdown report sections.
+# ---------------------------------------------------------------------------
+
+
+def _render_candidate_quality_section(
+    summary: RetrievalEvalSummary,
+) -> Optional[str]:
+    """Render the Candidate Retrieval Quality table or skip entirely.
+
+    Returns ``None`` when no row in the summary contributed candidate-
+    pool data — no key in ``candidate_hit_rates`` is non-None. That
+    keeps older runs (no candidate pool surfaced) from getting empty
+    sections in the rendered report.
+    """
+    rates = summary.candidate_hit_rates or {}
+    recalls = summary.candidate_recalls or {}
+    if not any(v is not None for v in rates.values()):
+        if not any(v is not None for v in recalls.values()):
+            return None
+    lines = ["## Candidate Retrieval Quality", ""]
+    lines.append("| metric | value |")
+    lines.append("|---|---|")
+    for key in sorted(rates.keys() | recalls.keys(), key=_safe_int):
+        lines.append(f"| candidate_hit@{key} | {_fmt(rates.get(key))} |")
+        lines.append(f"| candidate_recall@{key} | {_fmt(recalls.get(key))} |")
+    cand50 = rates.get("50")
+    if cand50 is not None:
+        if cand50 < DIAG_CANDIDATE_RECALL_BOTTLENECK_HIT_AT_50:
+            lines.append("")
+            lines.append(
+                "> _Candidate hit@50 below "
+                f"{DIAG_CANDIDATE_RECALL_BOTTLENECK_HIT_AT_50:.2f} — the "
+                "reranker can only ever reorder what the candidate stage "
+                "surfaced, so this is a candidate-stage / chunking / "
+                "embedding bottleneck, not a reranker problem._"
+            )
+        else:
+            lines.append("")
+            lines.append(
+                "> _Candidate hit@50 cleared "
+                f"{DIAG_CANDIDATE_RECALL_BOTTLENECK_HIT_AT_50:.2f}; if final "
+                "hit@5 is still low, that points to the reranker._"
+            )
+    return "\n".join(lines)
+
+
+def _render_reranker_uplift_section(
+    summary: RetrievalEvalSummary,
+) -> Optional[str]:
+    """Render the pre-rerank vs final comparison table or skip.
+
+    Skipped when the run has no rows with expected_doc_ids — uplift is
+    undefined in that case.
+    """
+    if summary.mean_pre_rerank_hit_at_5 is None and summary.mean_hit_at_5 is None:
+        return None
+    rows = [
+        ("hit@1", summary.mean_pre_rerank_hit_at_1, summary.mean_hit_at_1,
+         summary.rerank_uplift_hit_at_1),
+        ("hit@3", summary.mean_pre_rerank_hit_at_3, summary.mean_hit_at_3,
+         summary.rerank_uplift_hit_at_3),
+        ("hit@5", summary.mean_pre_rerank_hit_at_5, summary.mean_hit_at_5,
+         summary.rerank_uplift_hit_at_5),
+        (f"mrr@{summary.mrr_k}", summary.mean_pre_rerank_mrr_at_10,
+         summary.mean_mrr_at_10, summary.rerank_uplift_mrr_at_10),
+        (f"ndcg@{summary.ndcg_k}", summary.mean_pre_rerank_ndcg_at_10,
+         summary.mean_ndcg_at_10, summary.rerank_uplift_ndcg_at_10),
+    ]
+    lines = ["## Reranker Uplift", ""]
+    lines.append("| metric | pre_rerank | final | uplift (final − pre) |")
+    lines.append("|---|---|---|---|")
+    for label, pre, final, uplift in rows:
+        lines.append(
+            f"| {label} | {_fmt(pre)} | {_fmt(final)} | {_fmt_signed(uplift)} |"
+        )
+    neg_h5 = summary.rerank_uplift_hit_at_5
+    neg_mrr = summary.rerank_uplift_mrr_at_10
+    if (
+        (neg_h5 is not None and neg_h5 < DIAG_RERANKER_NEGATIVE_UPLIFT_HIT_AT_5)
+        or (neg_mrr is not None
+            and neg_mrr < DIAG_RERANKER_NEGATIVE_UPLIFT_MRR_AT_10)
+    ):
+        lines.append("")
+        lines.append(
+            "> ⚠️ _Negative reranker uplift detected. The reranker may be "
+            "out-of-domain or fed mismatched input formatting._"
+        )
+    return "\n".join(lines)
+
+
+def _render_query_type_section(
+    summary: RetrievalEvalSummary,
+) -> Optional[str]:
+    """Per-query-type breakdown with low-sample-count callouts.
+
+    Skipped when no row contributed a query_type (the breakdown would
+    be a single ``unknown`` row that adds no information).
+    """
+    by_type = summary.by_query_type or {}
+    if not by_type:
+        return None
+    if (
+        len(by_type) == 1
+        and DEFAULT_QUERY_TYPE_UNKNOWN in by_type
+        and by_type[DEFAULT_QUERY_TYPE_UNKNOWN].get("count", 0) == 0
+    ):
+        return None
+    lines = ["## Query Type Breakdown", ""]
+    lines.append(
+        "| query_type | n | hit@5 | mrr@10 | candidate_hit@50 | "
+        "p95_total_ms | dup_ratio@10 | note |"
+    )
+    lines.append("|---|---:|---:|---:|---:|---:|---:|---|")
+    for k in sorted(by_type.keys()):
+        agg = by_type[k]
+        n = int(agg.get("count", 0) or 0)
+        cand_h50 = agg.get("candidate_hit_at_50")
+        dup_at_10 = agg.get("duplicate_doc_ratio_at_10")
+        note = (
+            "low sample count" if n < DEFAULT_LOW_QUERY_TYPE_SAMPLE else ""
+        )
+        lines.append(
+            f"| {k} | {n} | {_fmt(agg.get('hit_at_5'))} | "
+            f"{_fmt(agg.get('mrr_at_10'))} | {_fmt(cand_h50)} | "
+            f"{_fmt(agg.get('p95_total_retrieval_ms'))} | "
+            f"{_fmt(dup_at_10)} | {note} |"
+        )
+    lines.append("")
+    lines.append(
+        f"> _Per-query-type metrics with `n < {DEFAULT_LOW_QUERY_TYPE_SAMPLE}` "
+        "are noted as low-sample; treat their numbers as anecdotal._"
+    )
+    return "\n".join(lines)
+
+
+def _render_diversity_section(
+    summary: RetrievalEvalSummary,
+) -> Optional[str]:
+    """Diversity / duplication diagnostics block.
+
+    Section is rendered only when at least one diversity / duplicate
+    aggregate is populated — older runs without diversity_ks fall
+    through cleanly.
+    """
+    dup = summary.duplicate_doc_ratios or {}
+    uniq = summary.unique_doc_counts or {}
+    sect = summary.section_diversities or {}
+    if (
+        not any(v is not None for v in dup.values())
+        and not any(v is not None for v in uniq.values())
+        and not any(v is not None for v in sect.values())
+    ):
+        return None
+    lines = ["## Diversity / Duplication", ""]
+    lines.append("| metric | value |")
+    lines.append("|---|---|")
+    keys = sorted({*dup.keys(), *uniq.keys(), *sect.keys()}, key=_safe_int)
+    for key in keys:
+        lines.append(f"| duplicate_doc_ratio@{key} | {_fmt(dup.get(key))} |")
+        lines.append(f"| unique_doc_count@{key} | {_fmt(uniq.get(key))} |")
+        lines.append(f"| section_diversity@{key} | {_fmt(sect.get(key))} |")
+    lines.append("")
+    lines.append(
+        "> _Diagnostic metrics — high duplicate ratios are not always bad "
+        "(e.g. queries that legitimately need multiple chunks of the same "
+        "document). Cross-reference with the candidate / reranker section "
+        "before concluding._"
+    )
+    return "\n".join(lines)
+
+
+def _render_quality_efficiency_section(
+    summary: RetrievalEvalSummary,
+) -> Optional[str]:
+    """Composite quality / efficiency summary.
+
+    Skipped when ``quality_score`` is None (the run had no rows with
+    expected_doc_ids) — the composite is undefined.
+    """
+    if summary.quality_score is None:
+        return None
+    lines = ["## Quality / Efficiency Summary", ""]
+    lines.append(
+        f"- quality_score: {_fmt(summary.quality_score)}  "
+        "(0.30·hit@1 + 0.25·hit@5 + 0.25·MRR@10 + 0.20·NDCG@10)"
+    )
+    lines.append(
+        f"- efficiency_score: {_fmt(summary.efficiency_score)}  "
+        "(quality_score / log(1 + p95_total_retrieval_ms))"
+    )
+    lines.append(
+        f"- p95_total_retrieval_ms: {_fmt(summary.p95_total_retrieval_ms)}"
+    )
+    lines.append("")
+    lines.append(
+        "> _quality_score / efficiency_score are **comparison aids**, not "
+        "adoption rules. Adoption decisions still require the conservative "
+        "per-metric checks (see eval.harness.agent_loop_ab)._"
+    )
+    return "\n".join(lines)
+
+
+def _render_diagnostics_section(
+    summary: RetrievalEvalSummary,
+) -> Optional[str]:
+    """Diagnostics block: which Phase 1 flags fired + next-experiment hints."""
+    diag = summary.diagnostics or {}
+    if not diag:
+        return None
+    lines = ["## Diagnostics", ""]
+    lines.append("| flag | flagged | threshold | observed |")
+    lines.append("|---|:--:|---:|---|")
+    flag_rows = [
+        ("candidateRecallBottleneck", "candidate hit@50 below floor"),
+        ("rerankerUpliftLow", "rerank uplift on hit@5 below floor"),
+        ("rerankerNegativeUplift", "rerank uplift on hit@5 / MRR negative"),
+        ("highDuplicateRatio", "top-10 duplicate doc ratio above ceiling"),
+    ]
+    for key, _label in flag_rows:
+        entry = diag.get(key) or {}
+        flagged = entry.get("flagged")
+        threshold = entry.get("threshold")
+        if key == "rerankerNegativeUplift":
+            obs_h5 = entry.get("observed_hit_at_5")
+            obs_mrr = entry.get("observed_mrr_at_10")
+            observed = f"hit@5={_fmt(obs_h5)} mrr@10={_fmt(obs_mrr)}"
+        else:
+            observed = _fmt(entry.get("observed"))
+        flag_cell = (
+            "n/a" if flagged is None
+            else ("YES" if flagged else "no")
+        )
+        lines.append(
+            f"| {key} | {flag_cell} | {_fmt(threshold)} | {observed} |"
+        )
+
+    suggestions: List[str] = []
+    if diag.get("candidateRecallBottleneck", {}).get("flagged") is True:
+        suggestions.append(
+            "- candidateRecallBottleneck → "
+            "**Next experiment:** section-aware chunking, title/section "
+            "prefix, BM25 hybrid retrieval."
+        )
+    if diag.get("rerankerUpliftLow", {}).get("flagged") is True:
+        suggestions.append(
+            "- rerankerUpliftLow → "
+            "**Next experiment:** reranker input formatting, candidateK "
+            "sweep, max_seq_length sweep."
+        )
+    if diag.get("rerankerNegativeUplift", {}).get("flagged") is True:
+        suggestions.append(
+            "- rerankerNegativeUplift → "
+            "**Next experiment:** swap to a domain-tuned reranker, audit "
+            "input formatting (title/section prefix, query/passage "
+            "delimiters)."
+        )
+    if diag.get("highDuplicateRatio", {}).get("flagged") is True:
+        suggestions.append(
+            "- highDuplicateRatio → "
+            "**Next experiment:** MMR or per-doc cap on the top-k."
+        )
+    by_type = summary.by_query_type or {}
+    weak_types = [
+        k for k, v in by_type.items()
+        if (v.get("count") or 0) >= DEFAULT_LOW_QUERY_TYPE_SAMPLE
+        and v.get("hit_at_5") is not None
+        and float(v["hit_at_5"]) < 0.50
+    ]
+    if weak_types:
+        suggestions.append(
+            "- weak query_type(s) " + ", ".join(sorted(weak_types))
+            + " → **Next experiment:** query-type-specific preprocessing "
+            "or metadata boost."
+        )
+    if suggestions:
+        lines.append("")
+        lines.append("### Next-experiment suggestions")
+        lines.append("")
+        lines.extend(suggestions)
+    return "\n".join(lines)
+
+
+def _fmt_signed(value: Optional[float]) -> str:
+    """Format a signed delta with explicit ``+`` / ``-`` for clarity.
+
+    Used by the rerank-uplift table — a positive uplift renders with a
+    leading ``+`` so a quick scan distinguishes "no movement" (``0``)
+    from "small lift" (``+0.001``) without re-reading the column.
+    """
+    if value is None:
+        return "n/a"
+    if value > 0:
+        return f"+{value:.4f}"
+    return f"{value:.4f}"
 
 
 # ---------------------------------------------------------------------------

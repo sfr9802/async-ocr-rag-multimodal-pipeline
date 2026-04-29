@@ -61,10 +61,17 @@ from app.capabilities.rag.reranker import (
 from app.core.config import WorkerSettings, get_settings
 from eval.harness.agent_loop_ab import (
     AgentLoopABComparisonRow,
+    LATENCY_RATIO_ADOPT_CEILING,
+    RECOMMENDATION_ADOPT,
+    RECOMMENDATION_HOLD_EXPERIMENTAL,
+    RECOMMENDATION_HOLD_NO_QUALITY_GAIN,
+    RECOMMENDATION_HOLD_REVIEW_ERRORS,
+    RECOMMENDATION_HOLD_REVIEW_REGRESSIONS,
     VERDICT_GRAPH_WIN,
     VERDICT_LEGACY_WIN,
     VERDICT_REGRESSION,
     VERDICT_TIE,
+    has_quality_lift,
     load_query_rows,
     make_default_executor_builder,
     run_ab_eval,
@@ -1132,14 +1139,7 @@ def _render_recommendation(summary: Mapping[str, Any]) -> str:
     legacy_p95 = summary.get("legacyLatencyP95") or 0.0
     graph_p95 = summary.get("graphLatencyP95") or 0.0
     ratio = (graph_p95 / legacy_p95) if legacy_p95 > 0 else float("nan")
-    legacy_hit5 = summary.get("legacyHitAt5")
-    graph_hit5 = summary.get("graphHitAt5")
-    legacy_mrr = summary.get("legacyMRR")
-    graph_mrr = summary.get("graphMRR")
-    quality_lift = (
-        (graph_hit5 is not None and legacy_hit5 is not None and graph_hit5 > legacy_hit5)
-        or (graph_mrr is not None and legacy_mrr is not None and graph_mrr > legacy_mrr)
-    )
+    quality_lift = has_quality_lift(summary)
     regressions = int(summary.get("regressions", 0) or 0)
     legacy_avg_llm = summary.get("legacyAvgLlmCalls") or 0.0
     graph_avg_llm = summary.get("graphAvgLlmCalls") or 0.0
@@ -1150,10 +1150,13 @@ def _render_recommendation(summary: Mapping[str, Any]) -> str:
 
     bullets = [
         f"- harness recommendation: **{label or 'unknown'}**",
-        f"- p95 latency ratio (graph / legacy): {_fmt(ratio)} (threshold ≤ 1.5)",
+        (
+            f"- p95 latency ratio (graph / legacy): {_fmt(ratio)} "
+            f"(threshold ≤ {LATENCY_RATIO_ADOPT_CEILING})"
+        ),
         f"- regressions: {regressions} (threshold = 0)",
         (
-            "- quality lift on hit@5 / MRR: "
+            "- quality lift on hit@k / MRR / keyword: "
             + ("yes" if quality_lift else "no")
         ),
         (
@@ -1169,57 +1172,45 @@ def _render_recommendation(summary: Mapping[str, Any]) -> str:
         ),
     ]
 
-    if label == "adopt_candidate":
+    if label == RECOMMENDATION_ADOPT:
         bullets.append(
             "- decision: **adopt graph backend as candidate.** Quality lifts "
             "without breaking the latency/regression bars; graph backend "
             "remains experimental until promoted by a follow-up config "
             "change. agent_loop_backend default stays `legacy`."
         )
-    elif label == "hold_no_quality_gain":
+    elif label == RECOMMENDATION_HOLD_NO_QUALITY_GAIN:
         bullets.append(
             "- decision: **hold — no quality gain.** Graph adds LLM/retrieval "
             "cost without measurable improvement. Keep `agent_loop_backend=legacy`."
         )
-    elif label == "hold_experimental_backend_only":
+    elif label == RECOMMENDATION_HOLD_EXPERIMENTAL:
         bullets.append(
             "- decision: **hold — experimental backend only.** Trace / "
-            "debuggability may improve but retrieval quality is flat. Keep "
+            "debuggability or cold-start latency may improve, but retrieval "
+            "quality (hit@k / MRR / keyword) is flat. Keep "
             "`agent_loop_backend=legacy`; revisit if a graph-only feature "
             "(branching plans, parallel retrieves) lands."
         )
-    elif label == "hold_review_regressions":
+    elif label == RECOMMENDATION_HOLD_REVIEW_REGRESSIONS:
         bullets.append(
-            "- decision: **hold — investigate regressions.** Graph improves "
-            "in aggregate but at least one query regressed. Triage the "
+            "- decision: **hold — investigate regressions.** Graph either "
+            "regressed on at least one query or its quality lift came at a "
+            "p95 latency cost that exceeds the adoption ceiling. Triage the "
             "regression cases above before any promotion."
         )
+    elif label == RECOMMENDATION_HOLD_REVIEW_ERRORS:
+        bullets.append(
+            "- decision: **hold — graph error rate is higher than legacy.** "
+            "Inspect graph_build_failed / graph_invoke_failed rows in "
+            "raw_results.jsonl before promoting."
+        )
     else:
-        # Cover the spec's hold_review_errors / hold_cost_regression
-        # paths even though the harness doesn't emit those literal labels
-        # today — reading from this report should still surface the
-        # right action when those signals dominate.
-        if (graph_succ is not None and legacy_succ is not None and graph_succ < legacy_succ):
-            bullets.append(
-                "- decision: **hold — graph error rate is higher than legacy.** "
-                "Inspect graph_build_failed / graph_invoke_failed rows in "
-                "raw_results.jsonl before promoting."
-            )
-        elif (
-            graph_avg_llm > legacy_avg_llm * 1.5
-            or graph_avg_retr > legacy_avg_retr * 1.5
-        ):
-            bullets.append(
-                "- decision: **hold — graph cost regression.** LLM / retrieval "
-                "calls exceed legacy by more than 50% on average. Review "
-                "before adoption."
-            )
-        else:
-            bullets.append(
-                "- decision: **hold — see verdict counters and regression "
-                "examples above.** Default `agent_loop_backend=legacy` "
-                "remains in effect."
-            )
+        bullets.append(
+            "- decision: **hold — see verdict counters and regression "
+            "examples above.** Default `agent_loop_backend=legacy` "
+            "remains in effect."
+        )
 
     return "\n".join(bullets)
 

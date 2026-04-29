@@ -50,12 +50,19 @@ from eval.harness.agent_loop_ab import (
     BACKEND_LEGACY,
     BackendRunOutcome,
     METRIC_COLUMNS,
+    QUALITY_LIFT_EPSILON,
+    RECOMMENDATION_ADOPT,
+    RECOMMENDATION_HOLD_EXPERIMENTAL,
+    RECOMMENDATION_HOLD_NO_QUALITY_GAIN,
+    RECOMMENDATION_HOLD_REVIEW_ERRORS,
+    RECOMMENDATION_HOLD_REVIEW_REGRESSIONS,
     VERDICT_GRAPH_WIN,
     VERDICT_LEGACY_WIN,
     VERDICT_REGRESSION,
     VERDICT_TIE,
     compare_one,
     extract_metrics,
+    has_quality_lift,
     load_query_rows,
     make_default_executor_builder,
     run_ab_eval,
@@ -780,3 +787,335 @@ def test_run_ab_eval_with_real_graph_runner_smoke():
     assert row.legacy["expected_doc_hit_at_1"] == row.graph["expected_doc_hit_at_1"]
     assert row.legacy["candidate_count"] == row.graph["candidate_count"]
     assert summary["queryCount"] == 1
+
+
+# ---------------------------------------------------------------------------
+# 8. Conservative recommendation rule
+# ---------------------------------------------------------------------------
+#
+# These tests pin down the priority order of the adoption rule. Each builds
+# a synthetic ``rows`` list whose aggregate ``summarize_runs`` shape matches
+# one of the spec's five cases, then asserts the recommendation label.
+# A latency-only graph_win must NOT trigger ``adopt_candidate`` — that's
+# the regression these tests guard against.
+
+
+def _row_pair(
+    *,
+    query_id: str,
+    expected_doc_id: str = None,
+    expected_keywords=None,
+    legacy: AgentLoopABMetrics,
+    graph: AgentLoopABMetrics,
+) -> AgentLoopABComparisonRow:
+    qrow = AgentLoopABQuery(
+        query_id=query_id,
+        query="q",
+        expected_doc_id=expected_doc_id,
+        expected_keywords=list(expected_keywords or []),
+    )
+    return compare_one(query_row=qrow, legacy=legacy, graph=graph)
+
+
+def test_recommendation_latency_only_graph_win_holds_experimental():
+    """Case 1: quality identical, graphWins=1 latency-only, regressions=0
+    must yield ``hold_experimental_backend_only``. This is the bug case
+    where the previous rule promoted graph_wins > legacy_wins to a
+    quality_lift and emitted ``adopt_candidate`` — the new rule must
+    refuse adoption when no aggregate quality metric moved.
+    """
+    rows = []
+    # 99 ties at identical hit@k.
+    for i in range(99):
+        legacy = _metrics(
+            "legacy", h1=True, h3=True, h5=True, mrr=1.0, latency=1000.0,
+        )
+        graph = _metrics(
+            "graph", h1=True, h3=True, h5=True, mrr=1.0, latency=1010.0,
+        )
+        rows.append(_row_pair(
+            query_id=f"q-{i}", expected_doc_id="doc-7",
+            legacy=legacy, graph=graph,
+        ))
+    # One latency-only graph_win: identical quality, graph noticeably faster.
+    legacy = _metrics(
+        "legacy", h1=True, h3=True, h5=True, mrr=1.0, latency=1000.0,
+    )
+    graph = _metrics(
+        "graph", h1=True, h3=True, h5=True, mrr=1.0, latency=200.0,
+    )
+    rows.append(_row_pair(
+        query_id="q-cold-start", expected_doc_id="doc-7",
+        legacy=legacy, graph=graph,
+    ))
+
+    summary = summarize_runs(rows=rows)
+    assert summary["graphWins"] >= 1
+    assert summary["regressions"] == 0
+    # Aggregate hit@k / MRR identical — no quality lift.
+    assert summary["legacyHitAt1"] == summary["graphHitAt1"]
+    assert summary["legacyHitAt5"] == summary["graphHitAt5"]
+    assert summary["legacyMRR"] == summary["graphMRR"]
+    assert summary["recommendation"] == RECOMMENDATION_HOLD_EXPERIMENTAL
+
+
+def test_recommendation_hit_at_3_lift_within_latency_adopts():
+    """Case 2: graph improves hit@3 (and MRR) by > epsilon, p95 latency
+    stays inside the 1.5x ceiling, no regressions → ``adopt_candidate``.
+    """
+    rows = []
+    # Half the queries: legacy misses, graph hits — drives a hit@3 lift.
+    for i in range(20):
+        if i < 10:
+            legacy = _metrics(
+                "legacy", h1=False, h3=False, h5=False, mrr=0.0, latency=1000.0,
+            )
+            graph = _metrics(
+                "graph", h1=False, h3=True, h5=True, mrr=0.5, latency=1100.0,
+            )
+        else:
+            legacy = _metrics(
+                "legacy", h1=True, h3=True, h5=True, mrr=1.0, latency=1000.0,
+            )
+            graph = _metrics(
+                "graph", h1=True, h3=True, h5=True, mrr=1.0, latency=1100.0,
+            )
+        rows.append(_row_pair(
+            query_id=f"q-{i}", expected_doc_id="doc-7",
+            legacy=legacy, graph=graph,
+        ))
+
+    summary = summarize_runs(rows=rows)
+    assert summary["regressions"] == 0
+    legacy_p95 = summary["legacyLatencyP95"]
+    graph_p95 = summary["graphLatencyP95"]
+    assert (graph_p95 / legacy_p95) <= 1.5
+    assert summary["graphHitAt3"] > summary["legacyHitAt3"] + QUALITY_LIFT_EPSILON
+    assert summary["recommendation"] == RECOMMENDATION_ADOPT
+
+
+def test_recommendation_no_quality_gain_with_extra_calls():
+    """Case 3: identical quality but graph spends more LLM/retrieval
+    calls on average → ``hold_no_quality_gain``.
+    """
+    rows = []
+    for i in range(10):
+        legacy = _metrics(
+            "legacy", h1=True, h3=True, h5=True, mrr=1.0,
+            latency=1000.0, llm=1, retr=1,
+        )
+        graph = _metrics(
+            "graph", h1=True, h3=True, h5=True, mrr=1.0,
+            latency=1100.0, llm=2, retr=2,
+        )
+        rows.append(_row_pair(
+            query_id=f"q-{i}", expected_doc_id="doc-7",
+            legacy=legacy, graph=graph,
+        ))
+
+    summary = summarize_runs(rows=rows)
+    assert summary["regressions"] == 0
+    assert summary["graphAvgLlmCalls"] > summary["legacyAvgLlmCalls"]
+    assert summary["graphAvgRetrievalCalls"] > summary["legacyAvgRetrievalCalls"]
+    assert summary["legacyHitAt5"] == summary["graphHitAt5"]
+    assert summary["recommendation"] == RECOMMENDATION_HOLD_NO_QUALITY_GAIN
+
+
+def test_recommendation_regressions_take_priority():
+    """Case 4: at least one per-query regression → ``hold_review_regressions``,
+    even if the aggregate has a quality lift (the regression must be
+    triaged before any adoption decision).
+    """
+    rows = []
+    # Eight queries where graph improves quality.
+    for i in range(8):
+        legacy = _metrics(
+            "legacy", h1=False, h3=False, h5=False, mrr=0.0, latency=1000.0,
+        )
+        graph = _metrics(
+            "graph", h1=True, h3=True, h5=True, mrr=1.0, latency=1100.0,
+        )
+        rows.append(_row_pair(
+            query_id=f"q-win-{i}", expected_doc_id="doc-7",
+            legacy=legacy, graph=graph,
+        ))
+    # One query where graph regresses on hit@1 (legacy hits, graph misses).
+    legacy = _metrics(
+        "legacy", h1=True, h3=True, h5=True, mrr=1.0, latency=1000.0,
+    )
+    graph = _metrics(
+        "graph", h1=False, h3=False, h5=False, mrr=0.0, latency=1000.0,
+    )
+    rows.append(_row_pair(
+        query_id="q-regression", expected_doc_id="doc-7",
+        legacy=legacy, graph=graph,
+    ))
+
+    summary = summarize_runs(rows=rows)
+    assert summary["regressions"] >= 1
+    # Aggregate quality may still lift; rule still holds for review.
+    assert summary["recommendation"] == RECOMMENDATION_HOLD_REVIEW_REGRESSIONS
+
+
+def test_recommendation_graph_error_rate_takes_top_priority():
+    """Case 5: graph success rate is below legacy → ``hold_review_errors``,
+    even if regressions or quality signals would otherwise dominate.
+    Errors are the highest-priority gate.
+    """
+    rows = []
+    # Eight successful pairs with identical quality.
+    for i in range(8):
+        legacy = _metrics(
+            "legacy", h1=True, h3=True, h5=True, mrr=1.0, latency=1000.0,
+        )
+        graph = _metrics(
+            "graph", h1=True, h3=True, h5=True, mrr=1.0, latency=1000.0,
+        )
+        rows.append(_row_pair(
+            query_id=f"q-{i}", expected_doc_id="doc-7",
+            legacy=legacy, graph=graph,
+        ))
+    # Two queries where graph fails outright (legacy succeeds).
+    for i in range(2):
+        legacy = _metrics(
+            "legacy", h1=True, h3=True, h5=True, mrr=1.0, latency=1000.0,
+        )
+        graph = _metrics(
+            "graph", success=False, h1=None, h3=None, h5=None, mrr=None,
+            latency=1000.0,
+        )
+        rows.append(_row_pair(
+            query_id=f"q-err-{i}", expected_doc_id="doc-7",
+            legacy=legacy, graph=graph,
+        ))
+
+    summary = summarize_runs(rows=rows)
+    # Sanity: graph success rate strictly below legacy.
+    assert summary["graphSuccessRate"] + QUALITY_LIFT_EPSILON < summary["legacySuccessRate"]
+    assert summary["recommendation"] == RECOMMENDATION_HOLD_REVIEW_ERRORS
+
+
+def test_recommendation_quality_lift_with_p95_blowup_holds_review():
+    """Quality lift with p95 latency past the 1.5x ceiling falls into
+    ``hold_review_regressions`` rather than ``adopt_candidate`` — the
+    quality is real but the cost exceeds the adoption bar.
+    """
+    rows = []
+    # Bulk of queries match in quality with a latency tax just under the
+    # per-query regression bar (2x), so per-query verdict stays tie/win
+    # but aggregate p95 ratio blows past 1.5x.
+    for i in range(10):
+        if i < 5:
+            legacy = _metrics(
+                "legacy", h1=False, h3=False, h5=False, mrr=0.0, latency=500.0,
+            )
+            graph = _metrics(
+                "graph", h1=False, h3=True, h5=True, mrr=0.5, latency=900.0,
+            )
+        else:
+            legacy = _metrics(
+                "legacy", h1=True, h3=True, h5=True, mrr=1.0, latency=500.0,
+            )
+            graph = _metrics(
+                "graph", h1=True, h3=True, h5=True, mrr=1.0, latency=900.0,
+            )
+        rows.append(_row_pair(
+            query_id=f"q-{i}", expected_doc_id="doc-7",
+            legacy=legacy, graph=graph,
+        ))
+
+    summary = summarize_runs(rows=rows)
+    legacy_p95 = summary["legacyLatencyP95"]
+    graph_p95 = summary["graphLatencyP95"]
+    assert (graph_p95 / legacy_p95) > 1.5
+    assert summary["graphHitAt3"] > summary["legacyHitAt3"] + QUALITY_LIFT_EPSILON
+    assert summary["regressions"] == 0
+    assert summary["recommendation"] == RECOMMENDATION_HOLD_REVIEW_REGRESSIONS
+
+
+def test_has_quality_lift_uses_epsilon():
+    """Quality lift requires graph - legacy > epsilon. Sub-epsilon noise
+    must not flip the gate.
+    """
+    # Sub-epsilon delta -- not a lift.
+    summary_sub = {
+        "legacyHitAt5": 0.700,
+        "graphHitAt5": 0.700 + (QUALITY_LIFT_EPSILON / 2.0),
+        "legacyMRR": 0.65,
+        "graphMRR": 0.65,
+    }
+    assert has_quality_lift(summary_sub) is False
+    # Just over the epsilon -- counts as a lift.
+    summary_over = dict(summary_sub)
+    summary_over["graphHitAt5"] = 0.700 + (QUALITY_LIFT_EPSILON * 2.0)
+    assert has_quality_lift(summary_over) is True
+
+
+def test_has_quality_lift_keyword_only():
+    """Keyword hit rate alone is enough to declare a quality lift when
+    there are no expected_doc_id rows.
+    """
+    summary = {
+        "legacyKeywordHitRate": 0.60,
+        "graphKeywordHitRate": 0.60 + (QUALITY_LIFT_EPSILON * 5.0),
+    }
+    assert has_quality_lift(summary) is True
+
+
+def test_recommendation_no_signals_holds_experimental():
+    """Empty edge case: when no expected_doc_id and no keyword rows
+    exist, no quality lift can be detected. With no extra cost either,
+    the rule lands on ``hold_experimental_backend_only``.
+    """
+    rows = []
+    for i in range(5):
+        legacy = _metrics("legacy", latency=1000.0)
+        graph = _metrics("graph", latency=1000.0)
+        rows.append(_row_pair(
+            query_id=f"q-{i}", legacy=legacy, graph=graph,
+        ))
+    summary = summarize_runs(rows=rows)
+    # No expected_doc_id, no expected_keywords → no hit@k aggregates.
+    assert "graphHitAt5" not in summary
+    assert "graphKeywordHitRate" not in summary
+    assert summary["recommendation"] == RECOMMENDATION_HOLD_EXPERIMENTAL
+
+
+def test_recommendation_applied_to_existing_ab_run_is_experimental():
+    """Apply the conservative rule to a synthetic copy of the historical
+    A/B summary that previously emitted ``adopt_candidate``: hit@k / MRR
+    identical, graphWins=1, regressions=0. The new rule must downgrade
+    it to ``hold_experimental_backend_only`` — that's the user-reported
+    bug fix this whole change targets.
+    """
+    rows = []
+    # 199 ties on identical quality + tiny latency wobble.
+    for i in range(199):
+        legacy = _metrics(
+            "legacy", h1=True, h3=True, h5=True, mrr=1.0, latency=1000.0,
+        )
+        graph = _metrics(
+            "graph", h1=True, h3=True, h5=True, mrr=1.0, latency=1015.0,
+        )
+        rows.append(_row_pair(
+            query_id=f"q-{i:04d}", expected_doc_id="doc-7",
+            legacy=legacy, graph=graph,
+        ))
+    # One latency-only graph win — graph noticeably faster on a single
+    # query (the cold-start case) with quality unchanged.
+    legacy = _metrics(
+        "legacy", h1=True, h3=True, h5=True, mrr=1.0, latency=1000.0,
+    )
+    graph = _metrics(
+        "graph", h1=True, h3=True, h5=True, mrr=1.0, latency=200.0,
+    )
+    rows.append(_row_pair(
+        query_id="q-cold-start", expected_doc_id="doc-7",
+        legacy=legacy, graph=graph,
+    ))
+
+    summary = summarize_runs(rows=rows)
+    assert summary["graphWins"] == 1
+    assert summary["legacyWins"] == 0
+    assert summary["regressions"] == 0
+    assert summary["recommendation"] == RECOMMENDATION_HOLD_EXPERIMENTAL

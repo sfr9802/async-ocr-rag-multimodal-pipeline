@@ -662,3 +662,165 @@ def normalized_text_hash(text: str, *, prefix_chars: int = 512) -> str:
     head = collapsed[: max(1, int(prefix_chars))]
     digest = hashlib.sha1(head.encode("utf-8")).hexdigest()
     return digest[:16]
+
+
+# ---------------------------------------------------------------------------
+# Phase 1 retrieval-eval extensions: candidate / diversity / composite scores.
+#
+# All pure functions; same Optional-returning conventions as the existing
+# retrieval helpers above so the aggregator can skip rows that didn't
+# contribute. The composite scores (quality_score / efficiency_score) are
+# meant as cross-run *comparison* helpers — single-number adoption rules
+# live in the recommendation layer (eval.harness.agent_loop_ab), not here.
+# ---------------------------------------------------------------------------
+
+
+def duplicate_doc_ratio_at_k(
+    retrieved_doc_ids: Sequence[str],
+    *,
+    k: int,
+) -> Optional[float]:
+    """Fraction of duplicate doc-id slots in the top-k window.
+
+    Defined as ``1 - unique_doc_count_at_k / k`` — the complement of
+    ``unique_doc_coverage`` but expressed against the budgeted slot count
+    ``k`` (not the actual ``len(retrieved)``) so two retrievers returning
+    different result counts compare cleanly.
+
+    Returns ``None`` when ``retrieved_doc_ids`` is empty (the metric is
+    undefined). When fewer than ``k`` results exist, the ratio is still
+    computed against ``k`` slots, which matches the report convention of
+    "how full was the top-k vs how diverse was it".
+    """
+    if not retrieved_doc_ids:
+        return None
+    cutoff = max(0, int(k))
+    if cutoff == 0:
+        return 0.0
+    top = [d for d in list(retrieved_doc_ids)[:cutoff] if d]
+    if not top:
+        return 0.0
+    distinct = len(set(top))
+    return 1.0 - (distinct / float(cutoff))
+
+
+def unique_doc_count_at_k(
+    retrieved_doc_ids: Sequence[str],
+    *,
+    k: int,
+) -> Optional[int]:
+    """Distinct doc-id count in the top-k window.
+
+    Returns the integer count, ``None`` when the input list is empty.
+    Empty doc-ids are dropped before counting (they're a sentinel for
+    a malformed chunk and shouldn't bump the diversity number).
+    """
+    if not retrieved_doc_ids:
+        return None
+    cutoff = max(0, int(k))
+    if cutoff == 0:
+        return 0
+    top = [d for d in list(retrieved_doc_ids)[:cutoff] if d]
+    return len(set(top))
+
+
+def section_diversity_at_k(
+    section_paths: Sequence[Optional[str]],
+    *,
+    k: int,
+) -> Optional[float]:
+    """Fraction of distinct sections in the top-k window.
+
+    ``len({sections[:k]}) / k`` over non-empty section labels. A value
+    near 1.0 means every chunk landed under a different section path,
+    which is usually what we want for diverse evidence; a value near
+    1/k means the retriever piled up chunks under a single section.
+
+    Returns ``None`` when no section information is available — every
+    entry is missing / empty / ``None``. This is the "section info not
+    populated" path: the harness must skip the metric, not zero it out.
+    """
+    if not section_paths:
+        return None
+    cutoff = max(0, int(k))
+    if cutoff == 0:
+        return 0.0
+    cleaned = [
+        str(s).strip() for s in list(section_paths)[:cutoff]
+        if s is not None and str(s).strip()
+    ]
+    if not cleaned:
+        return None
+    distinct = len(set(cleaned))
+    return distinct / float(cutoff)
+
+
+# Composite-score weights documented for the markdown writer; kept as
+# module-level constants so the test suite can pin them to their numeric
+# values and the report can render the formula without re-typing it.
+QUALITY_SCORE_WEIGHT_HIT_AT_1 = 0.30
+QUALITY_SCORE_WEIGHT_HIT_AT_5 = 0.25
+QUALITY_SCORE_WEIGHT_MRR = 0.25
+QUALITY_SCORE_WEIGHT_NDCG = 0.20
+
+
+def quality_score(
+    *,
+    hit_at_1: Optional[float],
+    hit_at_5: Optional[float],
+    mrr_at_10: Optional[float],
+    ndcg_at_10: Optional[float],
+) -> Optional[float]:
+    """Weighted retrieval-quality composite (Phase 1 helper).
+
+    ``0.30 * hit@1 + 0.25 * hit@5 + 0.25 * MRR@10 + 0.20 * NDCG@10``.
+    Returns ``None`` when any of the four inputs is ``None`` — the
+    composite is only meaningful over a complete row. The aggregator
+    in ``retrieval_eval`` uses this with the *mean* of each metric to
+    produce a single dataset-level score.
+
+    Important: this is a *comparison* helper, not an adoption rule. A
+    higher quality_score is suggestive but not sufficient evidence for
+    promoting a config; the conservative recommendation rule in
+    ``eval.harness.agent_loop_ab`` still gates adoption on per-metric
+    epsilon comparisons and regression / error gates.
+    """
+    inputs = (hit_at_1, hit_at_5, mrr_at_10, ndcg_at_10)
+    if any(v is None for v in inputs):
+        return None
+    total = (
+        QUALITY_SCORE_WEIGHT_HIT_AT_1 * float(hit_at_1)
+        + QUALITY_SCORE_WEIGHT_HIT_AT_5 * float(hit_at_5)
+        + QUALITY_SCORE_WEIGHT_MRR * float(mrr_at_10)
+        + QUALITY_SCORE_WEIGHT_NDCG * float(ndcg_at_10)
+    )
+    return round(total, 6)
+
+
+def efficiency_score(
+    quality: Optional[float],
+    p95_total_retrieval_ms: Optional[float],
+) -> Optional[float]:
+    """Quality per unit of latency cost: ``quality / log(1 + p95_ms)``.
+
+    Uses ``math.log`` (natural log) for the denominator. Returns
+    ``None`` when ``quality`` is ``None``, when ``p95_total_retrieval_ms``
+    is ``None``, or when the latency value is non-positive (the log
+    denominator would collapse to 0 / negative). The
+    ``log(1 + p95_ms)`` form keeps the score finite even at very fast
+    latencies (~1 ms) and decays gracefully as latency grows.
+    """
+    if quality is None:
+        return None
+    if p95_total_retrieval_ms is None:
+        return None
+    try:
+        p95 = float(p95_total_retrieval_ms)
+    except (TypeError, ValueError):
+        return None
+    if p95 <= 0.0:
+        return None
+    denom = math.log(1.0 + p95)
+    if denom <= 0.0:
+        return None
+    return round(float(quality) / denom, 6)
