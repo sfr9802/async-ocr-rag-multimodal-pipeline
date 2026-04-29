@@ -1,0 +1,71 @@
+{
+  "schema_version": "1.0",
+  "round_id": "round_03",
+  "study_id": "rag-wide-mmr-offline-v1",
+  "n_trials": 16,
+  "evaluate": "eval.tune_eval_offline:evaluate",
+  "direction": "maximize",
+  "objective_name": "mean_mrr_at_10",
+  "sampler": {
+    "type": "TPESampler",
+    "params": {
+      "n_startup_trials": 4,
+      "multivariate": true
+    },
+    "seed": 44
+  },
+  "pruner": {
+    "type": "NopPruner",
+    "params": {}
+  },
+  "search_space": {
+    "candidate_k":             { "type": "categorical", "choices": [100, 200] },
+    "final_top_k":             { "type": "categorical", "choices": [5, 8, 10] },
+    "rerank_in":               { "type": "categorical", "choices": [16] },
+    "use_mmr":                 { "type": "categorical", "choices": ["true"] },
+    "mmr_lambda":              { "type": "float",       "low": 0.55, "high": 0.75 },
+    "mmr_k":                   { "type": "categorical", "choices": [32, 48, 64, 80] },
+    "title_cap_rerank_input":  { "type": "categorical", "choices": [1, 2, 3] },
+    "title_cap_final":         { "type": "categorical", "choices": [1, 2, 3] }
+  },
+  "fixed_params": {
+    "dataset_subset": "anime_silver_200_first_50",
+    "embedding_model": "BAAI/bge-m3",
+    "reranker_model": "BAAI/bge-reranker-v2-m3"
+  },
+  "provenance": {
+    "kind": "llm_proposed",
+    "source_round_id": "round_02",
+    "source_bundle_hash": "sha256:8a74844907e728453050c38c9a6a691f822af4f08f00c9cbd256646a8bbe29e3",
+    "parent_config_hash": "sha256:9da994a93f57fa0bf6a99cd4e02158bbded9a5cd5522078615388d47d79ab387",
+    "generated_at": "2026-04-29T15:03:00Z",
+    "generated_by": {
+      "tool": "claude-code",
+      "model": "claude-opus-4-7",
+      "prompt_version": "wide-mmr-followup-v1",
+      "prompt_path": null
+    },
+    "reviewer": {
+      "kind": "human",
+      "id": "sfr9802",
+      "approved_at": null,
+      "comments": null
+    },
+    "rationale": "Round_02 produced a deterministic monotone signal on rerank_in: 10 trials at rerank_in=16 ALL scored mean_mrr_at_10=0.6717; 4 trials at rerank_in=24 ALL scored 0.6673; 2 trials at rerank_in=32 ALL scored 0.664. The bundle's param_importances put rerank_in at 0.9827 vs every other axis below 0.006 — rerank_in is dominating the signal so completely that no other axis is readable. Narrowing rerank_in to {16} is anti-pattern A11 evidence: bundle.statistics.boundary_hits and the trial values prove the {24, 32} choices are strictly worse, and the extreme determinism (every trial in each bucket has identical value to 4 decimal places) means we are not throwing away exploration room — we are removing a settled axis. Once fixed at 16, round_03 should expose whether mmr_lambda / title_cap_* / final_top_k / mmr_k carry any signal that was masked. mmr_lambda kept at [0.55, 0.75] because statistics.axis_coverage[mmr_lambda].note still reports both edges UNSAMPLED (sampled range 0.554-0.746 in round_02 trials); A10 forbids narrowing on UNSAMPLED edges. seed bumped 43→44 to avoid replaying round_02's exact param sequence after the rerank_in narrowing.",
+    "diff_summary": [
+      {
+        "field": "search_space.rerank_in",
+        "before": [16, 24, 32],
+        "after": [16],
+        "evidence": "param_importances.rerank_in=0.9827; deterministic buckets in bundle.trials: rerank_in=16 → mrr=0.6717 (10/10), rerank_in=24 → mrr=0.6673 (4/4), rerank_in=32 → mrr=0.664 (2/2)"
+      },
+      {
+        "field": "sampler.seed",
+        "before": 43,
+        "after": 44,
+        "evidence": "reseed after a search_space narrowing so TPE samples a fresh sequence"
+      }
+    ]
+  },
+  "notes": "rerank_in fixed at 16. With it out of the variance budget, round_03's importance ranking should reveal which other axis (likely final_top_k or one of the title_cap_* pair) carries the next signal. mmr_lambda kept wide because its edges are still UNSAMPLED."
+}

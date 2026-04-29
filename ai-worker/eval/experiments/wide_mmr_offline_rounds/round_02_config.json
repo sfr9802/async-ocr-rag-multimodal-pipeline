@@ -1,0 +1,77 @@
+{
+  "schema_version": "1.0",
+  "round_id": "round_02",
+  "study_id": "rag-wide-mmr-offline-v1",
+  "n_trials": 16,
+  "evaluate": "eval.tune_eval_offline:evaluate",
+  "direction": "maximize",
+  "objective_name": "mean_mrr_at_10",
+  "sampler": {
+    "type": "TPESampler",
+    "params": {
+      "n_startup_trials": 4,
+      "multivariate": true
+    },
+    "seed": 43
+  },
+  "pruner": {
+    "type": "NopPruner",
+    "params": {}
+  },
+  "search_space": {
+    "candidate_k":             { "type": "categorical", "choices": [100, 200] },
+    "final_top_k":             { "type": "categorical", "choices": [5, 8, 10] },
+    "rerank_in":               { "type": "categorical", "choices": [16, 24, 32] },
+    "use_mmr":                 { "type": "categorical", "choices": ["true"] },
+    "mmr_lambda":              { "type": "float",       "low": 0.55, "high": 0.75 },
+    "mmr_k":                   { "type": "categorical", "choices": [32, 48, 64, 80] },
+    "title_cap_rerank_input":  { "type": "categorical", "choices": [1, 2, 3] },
+    "title_cap_final":         { "type": "categorical", "choices": [1, 2, 3] }
+  },
+  "fixed_params": {
+    "dataset_subset": "anime_silver_200_first_50",
+    "embedding_model": "BAAI/bge-m3",
+    "reranker_model": "BAAI/bge-reranker-v2-m3"
+  },
+  "provenance": {
+    "kind": "llm_proposed",
+    "source_round_id": "round_01",
+    "source_bundle_hash": "sha256:040bcd3ab2e4ada7487448d894d1f7bb9cd08df1e56f423783484350d9519aaf",
+    "parent_config_hash": "sha256:f3f68f33314463099d638222c2ffbf0b126639ba9cb79d1a387abd223c97d6cf",
+    "generated_at": "2026-04-29T14:50:00Z",
+    "generated_by": {
+      "tool": "claude-code",
+      "model": "claude-opus-4-7",
+      "prompt_version": "wide-mmr-followup-v1",
+      "prompt_path": null
+    },
+    "reviewer": {
+      "kind": "human",
+      "id": "sfr9802",
+      "approved_at": null,
+      "comments": null
+    },
+    "rationale": "Round_01 hit primary-metric saturation: mean_hit_at_5 = 0.76 across all 12 COMPLETE trials (statistics.std_value = 1.1e-16). With zero objective variance, fANOVA importance defaulted to uniform 0.125 across every param (statistics shows no signal). The best-trial bundle's secondary section reveals that mean_mrr_at_10 (0.664) and mean_ndcg_at_10 (0.6882) DO vary across the trial set, and the wide-MMR-titlecap diagnostic at retrieval-wide-mmr-titlecap-20260429-1353 confirms MRR moved 0.6587→0.6699 across MMR variants on the full 200-row dataset. This round therefore swaps the objective to mean_mrr_at_10 — rank-sensitive and observed to vary on the same offline subset — without touching the search space. Search space stays identical because: (a) statistics.axis_coverage[mmr_lambda] flags both the 0.55 and 0.75 edges as UNSAMPLED in round_01's COMPLETE trials, so anti-pattern A10 forbids narrowing mmr_lambda; (b) every categorical was sampled at least once but with zero objective variance there is no evidence to drop any choice (anti-pattern A12). n_trials raised 12→16 to give TPE more data on the new metric; n_startup_trials kept at 4 since the search space is unchanged. Sampler seed bumped 42→43 so re-running round_02 doesn't replay round_01's exact param sequence, which is necessary because the metric change makes those trial values not directly comparable.",
+    "diff_summary": [
+      {
+        "field": "objective_name",
+        "before": "mean_hit_at_5",
+        "after": "mean_mrr_at_10",
+        "evidence": "statistics.std_value = 1.1e-16 over 12 complete trials; best_trial.user_attrs.secondary.mean_mrr_at_10 = 0.664 vs configs in trials 5/8/9 with secondary MRR ~0.65-0.67 → measurable variance"
+      },
+      {
+        "field": "n_trials",
+        "before": 12,
+        "after": 16,
+        "evidence": "param_importances all 0.125 in round_01 → TPE never escaped startup phase; bumping trials gives TPE 12 post-startup trials on the new metric"
+      },
+      {
+        "field": "sampler.seed",
+        "before": 42,
+        "after": 43,
+        "evidence": "reseed avoids replaying round_01's exact param sequence which is now invalid for the new objective"
+      }
+    ]
+  },
+  "notes": "Search space unchanged from round_01. mmr_lambda edges UNSAMPLED — A10 forbids narrowing. Categoricals all sampled but zero objective variance → A12 forbids dropping choices. The metric switch is the only optimization-affecting change."
+}

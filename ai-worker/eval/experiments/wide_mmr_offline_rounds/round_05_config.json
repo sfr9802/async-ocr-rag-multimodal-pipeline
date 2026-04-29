@@ -1,0 +1,77 @@
+{
+  "schema_version": "1.0",
+  "round_id": "round_05",
+  "study_id": "rag-wide-mmr-offline-v1",
+  "n_trials": 16,
+  "evaluate": "eval.tune_eval_offline:evaluate",
+  "direction": "maximize",
+  "objective_name": "mean_mrr_at_10",
+  "sampler": {
+    "type": "TPESampler",
+    "params": {
+      "n_startup_trials": 4,
+      "multivariate": true
+    },
+    "seed": 46
+  },
+  "pruner": {
+    "type": "NopPruner",
+    "params": {}
+  },
+  "search_space": {
+    "candidate_k":             { "type": "categorical", "choices": [100] },
+    "final_top_k":             { "type": "categorical", "choices": [5, 8, 10] },
+    "rerank_in":               { "type": "categorical", "choices": [16] },
+    "use_mmr":                 { "type": "categorical", "choices": ["true"] },
+    "mmr_lambda":              { "type": "float",       "low": 0.55, "high": 0.75 },
+    "mmr_k":                   { "type": "categorical", "choices": [32, 48, 64, 80] },
+    "title_cap_rerank_input":  { "type": "categorical", "choices": [1] },
+    "title_cap_final":         { "type": "categorical", "choices": [1, 2, 3] }
+  },
+  "fixed_params": {
+    "dataset_subset": "anime_silver_200_first_100",
+    "embedding_model": "BAAI/bge-m3",
+    "reranker_model": "BAAI/bge-reranker-v2-m3"
+  },
+  "provenance": {
+    "kind": "llm_proposed",
+    "source_round_id": "round_04",
+    "source_bundle_hash": "sha256:27dd300e724ec968eb2b8cc6fa52eee8a7f99ffa4079623fedc8b8c61dd649d6",
+    "parent_config_hash": "sha256:8ec726c480afd4da8c6893e9a539b074fe5c96c87cb3bf9a327ffa3c1d522f72",
+    "generated_at": "2026-04-29T15:30:00Z",
+    "generated_by": {
+      "tool": "claude-code",
+      "model": "claude-opus-4-7",
+      "prompt_version": "wide-mmr-followup-v1",
+      "prompt_path": null
+    },
+    "reviewer": {
+      "kind": "human",
+      "id": "sfr9802",
+      "approved_at": null,
+      "comments": null
+    },
+    "rationale": "Round_04 (100-row subset) restored objective variance (std=0.0025) and resolved the residual signal cleanly to a 2-axis interaction: (candidate_k=100, title_cap_rerank_input=1) ALWAYS scores 0.6745 (9/9 trials); every other combination of those two axes scored exactly 0.6695. Importance breakdown: title_cap_rerank_input=0.6389, candidate_k=0.2418, mmr_lambda=0.0986, mmr_k=0.0137, final_top_k=0.007, rest=0. Both winner axes are narrowed in round_05 to their winning value (anti-pattern A11 evidence — deterministic value buckets). Other axes are kept untouched because (a) their importance is low but the 16-trial subset cannot distinguish among them with cand_k+cap_rr varying, and (b) mmr_lambda edges remain UNSAMPLED in round_04 axis_coverage (A10 forbids narrowing). With cand_k+cap_rr fixed at the winner, round_05's importance ranking should reveal whether mmr_lambda / final_top_k / mmr_k / title_cap_final carry any residual signal at the 0.6745 ceiling, or whether the offline study is converged. The wide-MMR-titlecap full-200-row diagnostic context: this study is a sub-grid of the diagnostic at retrieval-wide-mmr-titlecap-20260429-1353, where on the 200-row set the same MMR+cap=2 cells had hit@5=0.74 and MRR=0.6699 — the (cand=100, cap=1) winner here is more aggressive than the diagnostic baseline (cap=2) and yields MRR=0.6745. Whether this 0.0046 MRR uplift transfers to the full 200 rows is the next-question for an out-of-loop confirmation run, not part of this round budget. seed bumped 45→46 to avoid replaying round_04's exact sequence under the narrower space.",
+    "diff_summary": [
+      {
+        "field": "search_space.candidate_k",
+        "before": [100, 200],
+        "after": [100],
+        "evidence": "round_04 trials by cand_k: cand_k=100 reached 0.6745 in 9/13 trials (rest at 0.6695); cand_k=200 stayed at 0.6695 in 3/3 trials. param_importance candidate_k=0.2418 (rank 2)."
+      },
+      {
+        "field": "search_space.title_cap_rerank_input",
+        "before": [1, 2, 3],
+        "after": [1],
+        "evidence": "round_04 trials by cap_rr: cap_rr=1 reached 0.6745 in 9/10 trials (the only 0.6695 case had cand_k=200); cap_rr=2 → 0.6695 in 2/2 trials; cap_rr=3 → 0.6695 in 4/4 trials. param_importance title_cap_rerank_input=0.6389 (rank 1)."
+      },
+      {
+        "field": "sampler.seed",
+        "before": 45,
+        "after": 46,
+        "evidence": "reseed after a search_space narrowing"
+      }
+    ]
+  },
+  "notes": "Final round of the 5-round budget. Both winner-axes narrowed to the unique winning value. mmr_lambda edges still UNSAMPLED in round_04 axis_coverage (A10 forbids narrowing); residual axes left wide to surface signal at the 0.6745 ceiling."
+}
