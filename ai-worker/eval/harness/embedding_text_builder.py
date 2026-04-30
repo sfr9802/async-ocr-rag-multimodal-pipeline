@@ -46,6 +46,11 @@ VARIANT_SECTION = "section"
 VARIANT_TITLE_SECTION = "title_section"
 VARIANT_KEYWORD = "keyword"
 VARIANT_ALL = "all"
+# Phase 7.0 — v4-aware retrieval-title variant. Pulls ``retrieval_title``
+# (Phase 6.3 schema field) when set; falls back to ``page_title``. Used
+# only by the v4 ``build_v4_embedding_text`` path; the legacy variants
+# above continue to operate on the v3 EmbeddingTextInput interface.
+VARIANT_RETRIEVAL_TITLE_SECTION = "retrieval_title_section"
 
 EMBEDDING_TEXT_VARIANTS: Tuple[str, ...] = (
     VARIANT_RAW,
@@ -54,6 +59,7 @@ EMBEDDING_TEXT_VARIANTS: Tuple[str, ...] = (
     VARIANT_TITLE_SECTION,
     VARIANT_KEYWORD,
     VARIANT_ALL,
+    VARIANT_RETRIEVAL_TITLE_SECTION,
 )
 
 # Default separator between prefix segments and the chunk body. Newline
@@ -99,11 +105,24 @@ def build_embedding_text(
     with a sentinel, so a sweep over (variant) on a dataset where some
     rows lack metadata still produces interpretable embeddings rather
     than poisoned ones.
+
+    The v4-only variant ``retrieval_title_section`` is rejected here —
+    it requires the v4 schema fields (``retrieval_title`` /
+    ``section_path`` / ``section_type``) carried by
+    :class:`V4EmbeddingTextInput`, and silently treating it as a
+    ``title_section`` would conflate variants in any sweep that mixes
+    them. Callers must route through :func:`build_v4_embedding_text`.
     """
     if variant not in EMBEDDING_TEXT_VARIANTS:
         raise ValueError(
             f"Unknown embedding-text variant {variant!r}; "
             f"expected one of {EMBEDDING_TEXT_VARIANTS}."
+        )
+    if variant == VARIANT_RETRIEVAL_TITLE_SECTION:
+        raise ValueError(
+            f"Variant {variant!r} requires the v4 schema "
+            "(retrieval_title / section_path / section_type); "
+            "use build_v4_embedding_text with V4EmbeddingTextInput."
         )
     text = (chunk.text or "").strip()
     if variant == VARIANT_RAW:
@@ -168,3 +187,149 @@ def _format_keywords(
 def is_known_variant(variant: str) -> bool:
     """Convenience predicate the sweep CLI uses for argument validation."""
     return variant in EMBEDDING_TEXT_VARIANTS
+
+
+# ---------------------------------------------------------------------------
+# Phase 7.0 — v4-aware embedding text builder.
+#
+# The Phase 6.3 ``rag_chunks.jsonl`` already ships an ``embedding_text``
+# field that uses a Korean-prefixed format ("제목: ... \n섹션: ... \n
+# 섹션타입: ... \n\n본문:\n..."). Phase 7.0 needs to compare that exact
+# format against an otherwise-identical variant that swaps ``page_title``
+# for ``retrieval_title``. We therefore reproduce the Phase 6.3 format
+# byte-for-byte here so an A/B run is meaningful (any divergence from
+# Phase 6.3's stored embedding_text would conflate "format change" with
+# "title change").
+# ---------------------------------------------------------------------------
+
+
+# Phase 6.3 produces section_path as a list of headings (e.g. ["음악",
+# "주제가", "OP"]). The stored embedding_text joins those with " > ", so
+# we mirror that exact joiner.
+V4_SECTION_PATH_JOINER = " > "
+
+# The four labels are part of the Phase 6.3 embedding_text contract.
+# Changing any of them silently invalidates every cached index whose
+# embed_text_sha256 was computed against the previous format, so they
+# live as constants the tests can pin.
+V4_TITLE_LABEL = "제목"
+V4_SECTION_LABEL = "섹션"
+V4_SECTION_TYPE_LABEL = "섹션타입"
+V4_BODY_LABEL = "본문"
+
+
+@dataclass(frozen=True)
+class V4EmbeddingTextInput:
+    """Per-chunk inputs to :func:`build_v4_embedding_text`.
+
+    Mirrors the Phase 6.3 ``rag_chunks.jsonl`` schema. ``page_title`` is
+    the stored chunk-level title (== PageV4.page_title); ``retrieval_title``
+    is the Phase 6.3-folded retrieval form ("{work_title} / {page_title}"
+    when generic, else == page_title). Both can be empty strings — the
+    formatter falls back to the other in that case so the output never
+    leaks a sentinel.
+
+    ``section_path`` is the heading list as it appears on the chunk;
+    we accept both list-of-strings and a single pre-joined string so a
+    caller passing already-collapsed metadata isn't forced to split it.
+    """
+
+    chunk_text: str
+    page_title: str = ""
+    retrieval_title: str = ""
+    section_path: Tuple[str, ...] = field(default_factory=tuple)
+    section_type: str = ""
+
+    @classmethod
+    def from_chunk_record(cls, record: dict) -> "V4EmbeddingTextInput":
+        """Construct from a Phase 6.3 ``rag_chunks.jsonl`` record dict."""
+        section_path = record.get("section_path") or ()
+        if isinstance(section_path, str):
+            # accept a pre-joined string and treat as a single-segment path
+            section_path = (section_path,)
+        else:
+            section_path = tuple(str(s) for s in section_path if s)
+        return cls(
+            chunk_text=str(record.get("chunk_text") or ""),
+            page_title=str(record.get("title") or ""),
+            retrieval_title=str(record.get("retrieval_title") or ""),
+            section_path=section_path,
+            section_type=str(record.get("section_type") or ""),
+        )
+
+
+def _resolve_v4_title(chunk: V4EmbeddingTextInput, *, variant: str) -> str:
+    """Pick the title segment per v4 variant.
+
+    For ``title_section``: always page_title (the Phase 6.3 baseline).
+    For ``retrieval_title_section``: prefer non-empty retrieval_title,
+    else fall back to page_title. The fallback matters because Phase 6.3
+    leaves ``retrieval_title`` equal to ``page_title`` for non-generic
+    pages — the variant should still produce a sensible string for
+    those rows rather than dropping the title segment entirely.
+    """
+    page_title = (chunk.page_title or "").strip()
+    if variant == VARIANT_TITLE_SECTION:
+        return page_title
+    if variant == VARIANT_RETRIEVAL_TITLE_SECTION:
+        retrieval_title = (chunk.retrieval_title or "").strip()
+        return retrieval_title or page_title
+    raise ValueError(
+        f"build_v4_embedding_text does not handle variant {variant!r}; "
+        f"expected one of "
+        f"({VARIANT_TITLE_SECTION!r}, {VARIANT_RETRIEVAL_TITLE_SECTION!r})."
+    )
+
+
+def build_v4_embedding_text(
+    chunk: V4EmbeddingTextInput,
+    *,
+    variant: str,
+) -> str:
+    """Compose the Phase 6.3-format embedding text under ``variant``.
+
+    Output format (matches what Phase 6.3 stores in ``rag_chunks.jsonl``
+    when all fields are present)::
+
+        제목: {title}
+        섹션: {section_path joined with ' > '}
+        섹션타입: {section_type}
+
+        본문:
+        {chunk_text}
+
+    Each label-line is dropped if its source is empty — same hygiene
+    as the v3 ``build_embedding_text``: missing metadata becomes a
+    silently absent line, not an empty "제목: " sentinel that would
+    confuse the embedder.
+    """
+    if variant not in (VARIANT_TITLE_SECTION, VARIANT_RETRIEVAL_TITLE_SECTION):
+        raise ValueError(
+            f"build_v4_embedding_text only supports "
+            f"{VARIANT_TITLE_SECTION!r} and "
+            f"{VARIANT_RETRIEVAL_TITLE_SECTION!r}; got {variant!r}."
+        )
+
+    title = _resolve_v4_title(chunk, variant=variant)
+    section_path = tuple(s for s in (chunk.section_path or ()) if s and s.strip())
+    section_str = V4_SECTION_PATH_JOINER.join(section_path)
+    section_type = (chunk.section_type or "").strip()
+    body = (chunk.chunk_text or "").strip()
+
+    header_lines: List[str] = []
+    if title:
+        header_lines.append(f"{V4_TITLE_LABEL}: {title}")
+    if section_str:
+        header_lines.append(f"{V4_SECTION_LABEL}: {section_str}")
+    if section_type:
+        header_lines.append(f"{V4_SECTION_TYPE_LABEL}: {section_type}")
+
+    parts: List[str] = []
+    if header_lines:
+        parts.append("\n".join(header_lines))
+    if body:
+        parts.append(f"{V4_BODY_LABEL}:\n{body}")
+    # The Phase 6.3 separator between header block and body block is a
+    # blank line ("\n\n"); when the header is empty (defence in depth)
+    # we just emit the body.
+    return "\n\n".join(parts) if parts else ""

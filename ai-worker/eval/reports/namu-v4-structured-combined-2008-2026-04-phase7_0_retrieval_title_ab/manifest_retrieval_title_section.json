@@ -1,0 +1,12 @@
+{
+  "schema": "v4-chunk-export-manifest.v1",
+  "variant": "retrieval_title_section",
+  "source_path": "D:\\port\\crawling\\namu-v4-structured-combined-2008-2026-04-phase6_3_title_alias_quality\\rag_chunks.jsonl",
+  "source_sha256": "c9c18da61956de6494ca314908841ae7f2df78f313094767c2624d6bcd73cb9a",
+  "output_path": "D:\\async-ocr-rag-multimodal-pipeline\\ai-worker\\eval\\reports\\namu-v4-structured-combined-2008-2026-04-phase7_0_retrieval_title_ab\\rag_chunks_retrieval_title_section.jsonl",
+  "output_sha256": "88e92cb0b0cbfd0818eb4e6beff914c6a4de50905e14fad0c5399d26db9216e6",
+  "total_chunks": 135602,
+  "changed_embedding_text_count": 44759,
+  "page_id_count": 4314,
+  "embed_text_sha256": "10acf88cb2911d3f78927f92771419a13b3f6878853e14bcf219e8b81810ef9f"
+}

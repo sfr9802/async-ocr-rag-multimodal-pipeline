@@ -1,0 +1,138 @@
+{
+  "baseline_variant": "title_section",
+  "candidate_variant": "retrieval_title_section",
+  "n_queries": 200,
+  "k_values": [
+    1,
+    3,
+    5,
+    10
+  ],
+  "baseline": {
+    "count": 200,
+    "hit_at_1": 0.595,
+    "hit_at_3": 0.71,
+    "hit_at_5": 0.74,
+    "hit_at_10": 0.795,
+    "mrr_at_10": 0.6629285714285714,
+    "ndcg_at_10": 0.6947767197837988,
+    "dup_rate": 0.68,
+    "same_title_collisions_avg": 5.16
+  },
+  "candidate": {
+    "count": 200,
+    "hit_at_1": 0.815,
+    "hit_at_3": 0.935,
+    "hit_at_5": 0.96,
+    "hit_at_10": 0.985,
+    "mrr_at_10": 0.881625,
+    "ndcg_at_10": 0.9073422386808754,
+    "dup_rate": 0.732,
+    "same_title_collisions_avg": 4.08
+  },
+  "status_counts": {
+    "improved": 74,
+    "regressed": 3,
+    "both_hit": 120,
+    "both_missed": 3,
+    "unchanged": 0
+  },
+  "by_bucket": {
+    "main_work": {
+      "count": 60,
+      "baseline": {
+        "count": 60,
+        "hit_at_1": 0.9666666666666667,
+        "hit_at_3": 1.0,
+        "hit_at_5": 1.0,
+        "hit_at_10": 1.0,
+        "mrr_at_10": 0.9833333333333333,
+        "ndcg_at_10": 0.9876976584523819,
+        "dup_rate": 0.7516666666666667,
+        "same_title_collisions_avg": 5.716666666666667
+      },
+      "candidate": {
+        "count": 60,
+        "hit_at_1": 0.9666666666666667,
+        "hit_at_3": 1.0,
+        "hit_at_5": 1.0,
+        "hit_at_10": 1.0,
+        "mrr_at_10": 0.9805555555555556,
+        "ndcg_at_10": 0.9855154958928576,
+        "dup_rate": 0.74,
+        "same_title_collisions_avg": 5.6
+      },
+      "status_counts": {
+        "improved": 1,
+        "regressed": 1,
+        "both_hit": 58,
+        "both_missed": 0,
+        "unchanged": 0
+      }
+    },
+    "subpage_generic": {
+      "count": 90,
+      "baseline": {
+        "count": 90,
+        "hit_at_1": 0.36666666666666664,
+        "hit_at_3": 0.5333333333333333,
+        "hit_at_5": 0.5888888888888889,
+        "hit_at_10": 0.6666666666666666,
+        "mrr_at_10": 0.4637169312169312,
+        "ndcg_at_10": 0.5124001865086623,
+        "dup_rate": 0.6333333333333333,
+        "same_title_collisions_avg": 5.366666666666666
+      },
+      "candidate": {
+        "count": 90,
+        "hit_at_1": 0.7666666666666667,
+        "hit_at_3": 0.9333333333333333,
+        "hit_at_5": 0.9666666666666667,
+        "hit_at_10": 0.9888888888888889,
+        "mrr_at_10": 0.8601851851851853,
+        "ndcg_at_10": 0.8926384510937404,
+        "dup_rate": 0.7377777777777779,
+        "same_title_collisions_avg": 3.4555555555555557
+      },
+      "status_counts": {
+        "improved": 53,
+        "regressed": 1,
+        "both_hit": 35,
+        "both_missed": 1,
+        "unchanged": 0
+      }
+    },
+    "subpage_named": {
+      "count": 50,
+      "baseline": {
+        "count": 50,
+        "hit_at_1": 0.56,
+        "hit_at_3": 0.68,
+        "hit_at_5": 0.7,
+        "hit_at_10": 0.78,
+        "mrr_at_10": 0.6370238095238094,
+        "ndcg_at_10": 0.6715493532767449,
+        "dup_rate": 0.6779999999999999,
+        "same_title_collisions_avg": 4.12
+      },
+      "candidate": {
+        "count": 50,
+        "hit_at_1": 0.72,
+        "hit_at_3": 0.86,
+        "hit_at_5": 0.9,
+        "hit_at_10": 0.96,
+        "mrr_at_10": 0.8015000000000001,
+        "ndcg_at_10": 0.8400011476833399,
+        "dup_rate": 0.7120000000000001,
+        "same_title_collisions_avg": 3.38
+      },
+      "status_counts": {
+        "improved": 20,
+        "regressed": 1,
+        "both_hit": 27,
+        "both_missed": 2,
+        "unchanged": 0
+      }
+    }
+  }
+}

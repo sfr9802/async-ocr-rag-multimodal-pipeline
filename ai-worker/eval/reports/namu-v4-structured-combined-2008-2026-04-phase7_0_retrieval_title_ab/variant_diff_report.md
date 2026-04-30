@@ -1,0 +1,622 @@
+# v4 variant diff — title_section → retrieval_title_section
+
+- baseline_path: `D:\async-ocr-rag-multimodal-pipeline\ai-worker\eval\reports\namu-v4-structured-combined-2008-2026-04-phase7_0_retrieval_title_ab\rag_chunks_title_section.jsonl`
+- candidate_path: `D:\async-ocr-rag-multimodal-pipeline\ai-worker\eval\reports\namu-v4-structured-combined-2008-2026-04-phase7_0_retrieval_title_ab\rag_chunks_retrieval_title_section.jsonl`
+- pages_v4_path: `D:\port\crawling\namu-v4-structured-combined-2008-2026-04-phase6_3_title_alias_quality\pages_v4.jsonl`
+- total_chunks: **135602**
+- changed_embedding_text_count: **44759 (33.01%)**
+- integrity_non_embedding_text_diffs: 0
+- missing_page_meta: 0
+
+## Changed by page_type
+
+| key | changed | total | ratio |
+|---|---:|---:|---:|
+| `character` | 20925 | 20925 | 100.0% |
+| `other` | 9550 | 9550 | 100.0% |
+| `plot` | 4071 | 4071 | 100.0% |
+| `review` | 3927 | 3927 | 100.0% |
+| `episode` | 3468 | 3468 | 100.0% |
+| `setting` | 2818 | 2818 | 100.0% |
+| `work` | 0 | 90843 | 0.0% |
+
+## Changed by section_type
+
+| key | changed | total | ratio |
+|---|---:|---:|---:|
+| `character` | 18112 | 31073 | 58.3% |
+| `other` | 5410 | 5410 | 100.0% |
+| `episode` | 4292 | 12861 | 33.4% |
+| `synopsis` | 4185 | 8082 | 51.8% |
+| `trivia` | 3896 | 19601 | 19.9% |
+| `evaluation` | 3295 | 13340 | 24.7% |
+| `setting` | 2492 | 4888 | 51.0% |
+| `music` | 1502 | 8731 | 17.2% |
+| `summary` | 886 | 28861 | 3.1% |
+| `production` | 498 | 2450 | 20.3% |
+| `worldview` | 133 | 242 | 55.0% |
+| `concept` | 58 | 63 | 92.1% |
+
+## Changed by title_source
+
+| key | changed | total | ratio |
+|---|---:|---:|---:|
+| `canonical_url` | 29215 | 29215 | 100.0% |
+| `seed` | 15544 | 106387 | 14.6% |
+
+## Changed by alias_source
+
+| key | changed | total | ratio |
+|---|---:|---:|---:|
+| `fallback` | 44759 | 135602 | 33.0% |
+
+## Top changed examples
+
+### 1. page_title=`등장인물` → retrieval_title=`가난뱅이 신이! / 등장인물`
+
+- chunk_id: `831cd96e074cf5f6`
+- page_id: `7ae51b89f2ecc891`
+- canonical_url: `https://namu.wiki/w/%EA%B0%80%EB%82%9C%EB%B1%85%EC%9D%B4%20%EC%8B%A0%EC%9D%B4%21/%EB%93%B1%EC%9E%A5%EC%9D%B8%EB%AC%BC`
+- section_path: `개요`
+- section_type=`summary`, page_type=`character`, title_source=`canonical_url`, alias_source=`fallback`
+
+**old embedding_text:**
+
+```
+제목: 등장인물
+섹션: 개요
+섹션타입: summary
+
+본문:
+만화
+가난뱅이 신이!
+의 등장인물 일람.
+등장인물들의 이름에 대개
+식물의 이름
+이 들어간다. 이런 식물들의 꽃말은 각 캐릭터들의 성격을 나타내거나 그 캐릭터의 상징이 되는 등, 나름 중요한 역할을 하고 있다. 정발판만 보는 사람들은 바로 알아채기 힘들지만, 보통의 캐릭터는 첫 출연한 단행본 내에 꽃말이 포함된 프로필이 실리는 덕에…
+```
+
+**new embedding_text:**
+
+```
+제목: 가난뱅이 신이! / 등장인물
+섹션: 개요
+섹션타입: summary
+
+본문:
+만화
+가난뱅이 신이!
+의 등장인물 일람.
+등장인물들의 이름에 대개
+식물의 이름
+이 들어간다. 이런 식물들의 꽃말은 각 캐릭터들의 성격을 나타내거나 그 캐릭터의 상징이 되는 등, 나름 중요한 역할을 하고 있다. 정발판만 보는 사람들은 바로 알아채기 힘들지만, 보통의 캐릭터는 첫 출연한 단행본 내에 꽃말이 포함된 …
+```
+
+### 2. page_title=`등장인물` → retrieval_title=`가난뱅이 신이! / 등장인물`
+
+- chunk_id: `a3da818278f18354`
+- page_id: `7ae51b89f2ecc891`
+- canonical_url: `https://namu.wiki/w/%EA%B0%80%EB%82%9C%EB%B1%85%EC%9D%B4%20%EC%8B%A0%EC%9D%B4%21/%EB%93%B1%EC%9E%A5%EC%9D%B8%EB%AC%BC`
+- section_path: `주요 인물 > 인간계 > 조연`
+- section_type=`character`, page_type=`character`, title_source=`canonical_url`, alias_source=`fallback`
+
+**old embedding_text:**
+
+```
+제목: 등장인물
+섹션: 주요 인물 > 인간계 > 조연
+섹션타입: character
+
+본문:
+쿠마가이
+- 모미지의 파트너 사역마
+보비
+- 변태 땡중
+다이몬 시노부
+- 로리콘 집사
+스와노 키쿠노신
+- 이치코의 집사
+이누가미 모모오
+- 변태 견신
+스와노 스미레 - 키쿠노신의 새 처. 귀농한 스와노가 현지에서 눈이 맞아 결혼한 인상 부드러운 중년의 여성. 근데 이 사람 역시 무도의 달인인지 처음에 …
+```
+
+**new embedding_text:**
+
+```
+제목: 가난뱅이 신이! / 등장인물
+섹션: 주요 인물 > 인간계 > 조연
+섹션타입: character
+
+본문:
+쿠마가이
+- 모미지의 파트너 사역마
+보비
+- 변태 땡중
+다이몬 시노부
+- 로리콘 집사
+스와노 키쿠노신
+- 이치코의 집사
+이누가미 모모오
+- 변태 견신
+스와노 스미레 - 키쿠노신의 새 처. 귀농한 스와노가 현지에서 눈이 맞아 결혼한 인상 부드러운 중년의 여성. 근데 이 사람 역시 무도…
+```
+
+### 3. page_title=`등장인물` → retrieval_title=`가난뱅이 신이! / 등장인물`
+
+- chunk_id: `2367596ce09756b9`
+- page_id: `7ae51b89f2ecc891`
+- canonical_url: `https://namu.wiki/w/%EA%B0%80%EB%82%9C%EB%B1%85%EC%9D%B4%20%EC%8B%A0%EC%9D%B4%21/%EB%93%B1%EC%9E%A5%EC%9D%B8%EB%AC%BC`
+- section_path: `주요 인물 > 신계`
+- section_type=`character`, page_type=`character`, title_source=`canonical_url`, alias_source=`fallback`
+
+**old embedding_text:**
+
+```
+제목: 등장인물
+섹션: 주요 인물 > 신계
+섹션타입: character
+
+본문:
+신계는 가난뱅이신계,복신계,역신계,사신계 이렇게 4개로 나뉘어 있고 각 신계의 수장은 그 위상과 힘만큼 몸집이 거대하다.
+```
+
+**new embedding_text:**
+
+```
+제목: 가난뱅이 신이! / 등장인물
+섹션: 주요 인물 > 신계
+섹션타입: character
+
+본문:
+신계는 가난뱅이신계,복신계,역신계,사신계 이렇게 4개로 나뉘어 있고 각 신계의 수장은 그 위상과 힘만큼 몸집이 거대하다.
+```
+
+### 4. page_title=`등장인물` → retrieval_title=`가난뱅이 신이! / 등장인물`
+
+- chunk_id: `57191266bdf36646`
+- page_id: `7ae51b89f2ecc891`
+- canonical_url: `https://namu.wiki/w/%EA%B0%80%EB%82%9C%EB%B1%85%EC%9D%B4%20%EC%8B%A0%EC%9D%B4%21/%EB%93%B1%EC%9E%A5%EC%9D%B8%EB%AC%BC`
+- section_path: `주요 인물 > 신계 > 가난뱅이신계`
+- section_type=`character`, page_type=`character`, title_source=`canonical_url`, alias_source=`fallback`
+
+**old embedding_text:**
+
+```
+제목: 등장인물
+섹션: 주요 인물 > 신계 > 가난뱅이신계
+섹션타입: character
+
+본문:
+야마부키
+- 작중 등장하는 말단
+가난뱅이신
+들을 통솔하는 현 수장. 자세한 건 항목 참조.
+이쵸우 - 야마부키 이전의 전대 수장. 평상시엔 노년의 모습을 하고 다니나, 힘을 쓸 때는 전성기 때의 모습으로 돌아갈 수 있다.
+오다마키 - 이쵸우의 과거 회상에 등장하는 신구 개발팀원이자 이쵸우의 보좌관…
+```
+
+**new embedding_text:**
+
+```
+제목: 가난뱅이 신이! / 등장인물
+섹션: 주요 인물 > 신계 > 가난뱅이신계
+섹션타입: character
+
+본문:
+야마부키
+- 작중 등장하는 말단
+가난뱅이신
+들을 통솔하는 현 수장. 자세한 건 항목 참조.
+이쵸우 - 야마부키 이전의 전대 수장. 평상시엔 노년의 모습을 하고 다니나, 힘을 쓸 때는 전성기 때의 모습으로 돌아갈 수 있다.
+오다마키 - 이쵸우의 과거 회상에 등장하는 신구 개발팀원…
+```
+
+### 5. page_title=`등장인물` → retrieval_title=`가난뱅이 신이! / 등장인물`
+
+- chunk_id: `d5dfbc7c34f4f007`
+- page_id: `7ae51b89f2ecc891`
+- canonical_url: `https://namu.wiki/w/%EA%B0%80%EB%82%9C%EB%B1%85%EC%9D%B4%20%EC%8B%A0%EC%9D%B4%21/%EB%93%B1%EC%9E%A5%EC%9D%B8%EB%AC%BC`
+- section_path: `주요 인물 > 신계 > 가난뱅이신계`
+- section_type=`character`, page_type=`character`, title_source=`canonical_url`, alias_source=`fallback`
+
+**old embedding_text:**
+
+```
+제목: 등장인물
+섹션: 주요 인물 > 신계 > 가난뱅이신계
+섹션타입: character
+
+본문:
+가 본디 그녀의 인형이었다는 것과 함께 그를 위해 일하면서도 내심 싫어한다는
+킬 번
+같은 설정도 있는데, 작가의 말에 따르면 미처 담아내지 못했으나 그냥 '훔친 것' 으로 생각해 달라는 의미심장한 말을 했다.
+하나비시 - 이쵸우의 과거 회상에 등장하는 태어날 때부터 부정적인 업이 초월적이라 재앙신…
+```
+
+**new embedding_text:**
+
+```
+제목: 가난뱅이 신이! / 등장인물
+섹션: 주요 인물 > 신계 > 가난뱅이신계
+섹션타입: character
+
+본문:
+가 본디 그녀의 인형이었다는 것과 함께 그를 위해 일하면서도 내심 싫어한다는
+킬 번
+같은 설정도 있는데, 작가의 말에 따르면 미처 담아내지 못했으나 그냥 '훔친 것' 으로 생각해 달라는 의미심장한 말을 했다.
+하나비시 - 이쵸우의 과거 회상에 등장하는 태어날 때부터 부정적인 업…
+```
+
+### 6. page_title=`등장인물` → retrieval_title=`가난뱅이 신이! / 등장인물`
+
+- chunk_id: `3fca6e06432008d9`
+- page_id: `7ae51b89f2ecc891`
+- canonical_url: `https://namu.wiki/w/%EA%B0%80%EB%82%9C%EB%B1%85%EC%9D%B4%20%EC%8B%A0%EC%9D%B4%21/%EB%93%B1%EC%9E%A5%EC%9D%B8%EB%AC%BC`
+- section_path: `주요 인물 > 신계 > 복신계`
+- section_type=`character`, page_type=`character`, title_source=`canonical_url`, alias_source=`fallback`
+
+**old embedding_text:**
+
+```
+제목: 등장인물
+섹션: 주요 인물 > 신계 > 복신계
+섹션타입: character
+
+본문:
+렌게
+복신계의 수장으로 복신답게 상당한 거유다. 야마부키와 절친한 사이이며 평소에는 야마부키처럼 온화하지만 화가 나면 인정사정 없는 듯. 마지막 부분에서 기둥에서 다른 수장들과 탈출한 후의 묘사로 보아 모티브는 구미호로 추정된다.
+```
+
+**new embedding_text:**
+
+```
+제목: 가난뱅이 신이! / 등장인물
+섹션: 주요 인물 > 신계 > 복신계
+섹션타입: character
+
+본문:
+렌게
+복신계의 수장으로 복신답게 상당한 거유다. 야마부키와 절친한 사이이며 평소에는 야마부키처럼 온화하지만 화가 나면 인정사정 없는 듯. 마지막 부분에서 기둥에서 다른 수장들과 탈출한 후의 묘사로 보아 모티브는 구미호로 추정된다.
+```
+
+### 7. page_title=`등장인물` → retrieval_title=`가난뱅이 신이! / 등장인물`
+
+- chunk_id: `c50b845402a40c4b`
+- page_id: `7ae51b89f2ecc891`
+- canonical_url: `https://namu.wiki/w/%EA%B0%80%EB%82%9C%EB%B1%85%EC%9D%B4%20%EC%8B%A0%EC%9D%B4%21/%EB%93%B1%EC%9E%A5%EC%9D%B8%EB%AC%BC`
+- section_path: `주요 인물 > 신계 > 역신계`
+- section_type=`character`, page_type=`character`, title_source=`canonical_url`, alias_source=`fallback`
+
+**old embedding_text:**
+
+```
+제목: 등장인물
+섹션: 주요 인물 > 신계 > 역신계
+섹션타입: character
+
+본문:
+카린
+질병을 관장하는 역신계의 수장으로 여의사 복장을 하고 있다. 이미지는 전형적인
+노처녀
+나이 많은
+OL
+. 남자 친구가 수시로 바뀌는 듯 한데, 문제는 이 처자의 기분에 따라 질병의 활동성이 달라지는 지라
+```
+
+**new embedding_text:**
+
+```
+제목: 가난뱅이 신이! / 등장인물
+섹션: 주요 인물 > 신계 > 역신계
+섹션타입: character
+
+본문:
+카린
+질병을 관장하는 역신계의 수장으로 여의사 복장을 하고 있다. 이미지는 전형적인
+노처녀
+나이 많은
+OL
+. 남자 친구가 수시로 바뀌는 듯 한데, 문제는 이 처자의 기분에 따라 질병의 활동성이 달라지는 지라
+```
+
+### 8. page_title=`등장인물` → retrieval_title=`가난뱅이 신이! / 등장인물`
+
+- chunk_id: `a9190b7095d5fb77`
+- page_id: `7ae51b89f2ecc891`
+- canonical_url: `https://namu.wiki/w/%EA%B0%80%EB%82%9C%EB%B1%85%EC%9D%B4%20%EC%8B%A0%EC%9D%B4%21/%EB%93%B1%EC%9E%A5%EC%9D%B8%EB%AC%BC`
+- section_path: `주요 인물 > 신계 > 사신계`
+- section_type=`character`, page_type=`character`, title_source=`canonical_url`, alias_source=`fallback`
+
+**old embedding_text:**
+
+```
+제목: 등장인물
+섹션: 주요 인물 > 신계 > 사신계
+섹션타입: character
+
+본문:
+이치고
+사신계의 수장으로 수녀 복장에 오른쪽 얼굴만 가면으로 가리고 있다. 그렇다.
+그 유명한 사신만화
+의
+주인공
+패러디 맞다.
+```
+
+**new embedding_text:**
+
+```
+제목: 가난뱅이 신이! / 등장인물
+섹션: 주요 인물 > 신계 > 사신계
+섹션타입: character
+
+본문:
+이치고
+사신계의 수장으로 수녀 복장에 오른쪽 얼굴만 가면으로 가리고 있다. 그렇다.
+그 유명한 사신만화
+의
+주인공
+패러디 맞다.
+```
+
+### 9. page_title=`등장인물` → retrieval_title=`가난뱅이 신이! / 등장인물`
+
+- chunk_id: `f5a042b69748f6cf`
+- page_id: `7ae51b89f2ecc891`
+- canonical_url: `https://namu.wiki/w/%EA%B0%80%EB%82%9C%EB%B1%85%EC%9D%B4%20%EC%8B%A0%EC%9D%B4%21/%EB%93%B1%EC%9E%A5%EC%9D%B8%EB%AC%BC`
+- section_path: `주요 인물 > 신계 > 사신계`
+- section_type=`character`, page_type=`character`, title_source=`canonical_url`, alias_source=`fallback`
+
+**old embedding_text:**
+
+```
+제목: 등장인물
+섹션: 주요 인물 > 신계 > 사신계
+섹션타입: character
+
+본문:
+이름을 듣고 아!했다면 정답.
+참고로 늘상 웃으며 얘기하는데 사신이라는 이미지도 있고, 말투 자체가 살벌해서 은근히 무서움이 느껴진다. 실제 대화에서도 살의가 느껴지는 대사를 할 때가 많다.
+```
+
+**new embedding_text:**
+
+```
+제목: 가난뱅이 신이! / 등장인물
+섹션: 주요 인물 > 신계 > 사신계
+섹션타입: character
+
+본문:
+이름을 듣고 아!했다면 정답.
+참고로 늘상 웃으며 얘기하는데 사신이라는 이미지도 있고, 말투 자체가 살벌해서 은근히 무서움이 느껴진다. 실제 대화에서도 살의가 느껴지는 대사를 할 때가 많다.
+```
+
+### 10. page_title=`등장인물` → retrieval_title=`가난뱅이 신이! / 등장인물`
+
+- chunk_id: `c4388dfe29ad9085`
+- page_id: `7ae51b89f2ecc891`
+- canonical_url: `https://namu.wiki/w/%EA%B0%80%EB%82%9C%EB%B1%85%EC%9D%B4%20%EC%8B%A0%EC%9D%B4%21/%EB%93%B1%EC%9E%A5%EC%9D%B8%EB%AC%BC`
+- section_path: `주요 인물 > 신계 > 사신계`
+- section_type=`character`, page_type=`character`, title_source=`canonical_url`, alias_source=`fallback`
+
+**old embedding_text:**
+
+```
+제목: 등장인물
+섹션: 주요 인물 > 신계 > 사신계
+섹션타입: character
+
+본문:
+여담으로 사신에다 얼굴에 반쪽 해골이 있고 이름이 이름인지라 아무래도 같은 출판사 다른 작품의
+누군가
+를 떠올리게 하는데, 결국 작가가
+그 누군가
+를 패러디 했음을 밝혔다.
+이치고 TS!?
+```
+
+**new embedding_text:**
+
+```
+제목: 가난뱅이 신이! / 등장인물
+섹션: 주요 인물 > 신계 > 사신계
+섹션타입: character
+
+본문:
+여담으로 사신에다 얼굴에 반쪽 해골이 있고 이름이 이름인지라 아무래도 같은 출판사 다른 작품의
+누군가
+를 떠올리게 하는데, 결국 작가가
+그 누군가
+를 패러디 했음을 밝혔다.
+이치고 TS!?
+```
+
+### 11. page_title=`등장인물` → retrieval_title=`가난뱅이 신이! / 등장인물`
+
+- chunk_id: `8d4d56fa53a9ff3f`
+- page_id: `7ae51b89f2ecc891`
+- canonical_url: `https://namu.wiki/w/%EA%B0%80%EB%82%9C%EB%B1%85%EC%9D%B4%20%EC%8B%A0%EC%9D%B4%21/%EB%93%B1%EC%9E%A5%EC%9D%B8%EB%AC%BC`
+- section_path: `주요 인물 > 신계 > 기타 신`
+- section_type=`trivia`, page_type=`character`, title_source=`canonical_url`, alias_source=`fallback`
+
+**old embedding_text:**
+
+```
+제목: 등장인물
+섹션: 주요 인물 > 신계 > 기타 신
+섹션타입: trivia
+
+본문:
+타마
+이부키 - CV :
+유사 코지
+머리가
+똥
+형상인(...) 모미지와 친분이 있는 변소의 신. 얼굴도 꽤 잘생겼고 약간 기벽이 있는 모미지에 비해 갓 태어난 생명을 돌봐주는 등
+```
+
+**new embedding_text:**
+
+```
+제목: 가난뱅이 신이! / 등장인물
+섹션: 주요 인물 > 신계 > 기타 신
+섹션타입: trivia
+
+본문:
+타마
+이부키 - CV :
+유사 코지
+머리가
+똥
+형상인(...) 모미지와 친분이 있는 변소의 신. 얼굴도 꽤 잘생겼고 약간 기벽이 있는 모미지에 비해 갓 태어난 생명을 돌봐주는 등
+```
+
+### 12. page_title=`등장인물` → retrieval_title=`가난뱅이 신이! / 등장인물`
+
+- chunk_id: `dacd80734712c3c6`
+- page_id: `7ae51b89f2ecc891`
+- canonical_url: `https://namu.wiki/w/%EA%B0%80%EB%82%9C%EB%B1%85%EC%9D%B4%20%EC%8B%A0%EC%9D%B4%21/%EB%93%B1%EC%9E%A5%EC%9D%B8%EB%AC%BC`
+- section_path: `주요 인물 > 신계 > 기타 신`
+- section_type=`trivia`, page_type=`character`, title_source=`canonical_url`, alias_source=`fallback`
+
+**old embedding_text:**
+
+```
+제목: 등장인물
+섹션: 주요 인물 > 신계 > 기타 신
+섹션타입: trivia
+
+본문:
+대인배이지만,
+머리 모습이 똥인지라
+처음 만나는 사람 모두 똥신으로 부르며, 질색하기에 늘 우울한 나날을 보낸다. 게다가 이치코와 타마가 화염 속에서 죽을 위기에 처하자 어린 타마를 구제하려고 다시 등장해 행복 에너지를 주입하려 했다가 실수로 과잉 주입한 바람에 마네키네코로 만들었으며, 이치코에게는 남의 …
+```
+
+**new embedding_text:**
+
+```
+제목: 가난뱅이 신이! / 등장인물
+섹션: 주요 인물 > 신계 > 기타 신
+섹션타입: trivia
+
+본문:
+대인배이지만,
+머리 모습이 똥인지라
+처음 만나는 사람 모두 똥신으로 부르며, 질색하기에 늘 우울한 나날을 보낸다. 게다가 이치코와 타마가 화염 속에서 죽을 위기에 처하자 어린 타마를 구제하려고 다시 등장해 행복 에너지를 주입하려 했다가 실수로 과잉 주입한 바람에 마네키네코로 만들었으며,…
+```
+
+### 13. page_title=`등장인물` → retrieval_title=`가난뱅이 신이! / 등장인물`
+
+- chunk_id: `6229570428942037`
+- page_id: `7ae51b89f2ecc891`
+- canonical_url: `https://namu.wiki/w/%EA%B0%80%EB%82%9C%EB%B1%85%EC%9D%B4%20%EC%8B%A0%EC%9D%B4%21/%EB%93%B1%EC%9E%A5%EC%9D%B8%EB%AC%BC`
+- section_path: `주요 인물 > 신계 > 기타 신`
+- section_type=`trivia`, page_type=`character`, title_source=`canonical_url`, alias_source=`fallback`
+
+**old embedding_text:**
+
+```
+제목: 등장인물
+섹션: 주요 인물 > 신계 > 기타 신
+섹션타입: trivia
+
+본문:
+헌데 애니메이션에선 암묵의 업계 룰에 따라
+머리가
+분홍색
+이 되지 않고
+똥색 그대로 칠해졌다.
+유즈(텟포 여우)
+부츠메츠 시의 한 신사에서 살고 있는 복신. 굶주림에 이성을 잃은
+보비
+가 신사를 점거한 양아치들을 쫓아냈기 때문에
+```
+
+**new embedding_text:**
+
+```
+제목: 가난뱅이 신이! / 등장인물
+섹션: 주요 인물 > 신계 > 기타 신
+섹션타입: trivia
+
+본문:
+헌데 애니메이션에선 암묵의 업계 룰에 따라
+머리가
+분홍색
+이 되지 않고
+똥색 그대로 칠해졌다.
+유즈(텟포 여우)
+부츠메츠 시의 한 신사에서 살고 있는 복신. 굶주림에 이성을 잃은
+보비
+가 신사를 점거한 양아치들을 쫓아냈기 때문에
+```
+
+### 14. page_title=`등장인물` → retrieval_title=`가난뱅이 신이! / 등장인물`
+
+- chunk_id: `69fcaef5f8e40d8b`
+- page_id: `7ae51b89f2ecc891`
+- canonical_url: `https://namu.wiki/w/%EA%B0%80%EB%82%9C%EB%B1%85%EC%9D%B4%20%EC%8B%A0%EC%9D%B4%21/%EB%93%B1%EC%9E%A5%EC%9D%B8%EB%AC%BC`
+- section_path: `주요 인물 > 신계 > 기타 신`
+- section_type=`trivia`, page_type=`character`, title_source=`canonical_url`, alias_source=`fallback`
+
+**old embedding_text:**
+
+```
+제목: 등장인물
+섹션: 주요 인물 > 신계 > 기타 신
+섹션타입: trivia
+
+본문:
+보비에게 소원을 빌 기회를 주어 그가 빈 '여성에게 인기만점' 소원을 이뤄준다. 하지만
+소원이 엉뚱하게 이루어져
+여자들에겐 보비의 몸이 알아서 거부하고, 인간 외의 암컷들에게 인기가 많아지는 결과가 되어... 결국 사당 안에서 고행한 끝에 즉신성불하여 자력으로 저주(?)를 풀고 성인군자가 된 뒤 그녀가 잃…
+```
+
+**new embedding_text:**
+
+```
+제목: 가난뱅이 신이! / 등장인물
+섹션: 주요 인물 > 신계 > 기타 신
+섹션타입: trivia
+
+본문:
+보비에게 소원을 빌 기회를 주어 그가 빈 '여성에게 인기만점' 소원을 이뤄준다. 하지만
+소원이 엉뚱하게 이루어져
+여자들에겐 보비의 몸이 알아서 거부하고, 인간 외의 암컷들에게 인기가 많아지는 결과가 되어... 결국 사당 안에서 고행한 끝에 즉신성불하여 자력으로 저주(?)를 풀고 성인군자…
+```
+
+### 15. page_title=`등장인물` → retrieval_title=`가난뱅이 신이! / 등장인물`
+
+- chunk_id: `abf13027ab8ea16f`
+- page_id: `7ae51b89f2ecc891`
+- canonical_url: `https://namu.wiki/w/%EA%B0%80%EB%82%9C%EB%B1%85%EC%9D%B4%20%EC%8B%A0%EC%9D%B4%21/%EB%93%B1%EC%9E%A5%EC%9D%B8%EB%AC%BC`
+- section_path: `기타 인물 > 인간계 > 학교`
+- section_type=`trivia`, page_type=`character`, title_source=`canonical_url`, alias_source=`fallback`
+
+**old embedding_text:**
+
+```
+제목: 등장인물
+섹션: 기타 인물 > 인간계 > 학교
+섹션타입: trivia
+
+본문:
+담임 선생님 - CV :
+고토 히로키
+말 그대로 담임 선생님. 뚱뚱한 중년남성. 학교에서 일어나는 에피소드에서는 주로 무시당하는 역할로 나온다. 처음에는 무시하지 말라며 화도 냈지만 그 상황마저 무시당하기 일쑤. 심지어 담임의 말을 안듣던 학생들이 케이타가 '잠을 잘 수 없잖아!'라며 화내자 '그렇지'라며 …
+```
+
+**new embedding_text:**
+
+```
+제목: 가난뱅이 신이! / 등장인물
+섹션: 기타 인물 > 인간계 > 학교
+섹션타입: trivia
+
+본문:
+담임 선생님 - CV :
+고토 히로키
+말 그대로 담임 선생님. 뚱뚱한 중년남성. 학교에서 일어나는 에피소드에서는 주로 무시당하는 역할로 나온다. 처음에는 무시하지 말라며 화도 냈지만 그 상황마저 무시당하기 일쑤. 심지어 담임의 말을 안듣던 학생들이 케이타가 '잠을 잘 수 없잖아!'라며 화…
+```
+

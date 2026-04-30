@@ -104,7 +104,32 @@ ai-worker/eval/reports/legacy-baseline-final/*
 !ai-worker/eval/reports/legacy-baseline-final/latency_breakdown.md
 !ai-worker/eval/reports/legacy-baseline-final/selected_config.json
 !ai-worker/eval/reports/legacy-baseline-final/baseline_manifest.json
+# Phase 7.0 retrieval-title A/B — commit the small decision artefacts
+# (final report, A/B summary, diff report, improved/regressed/per-query
+# JSONL, manifest digests, generated silver query set). The two
+# rag_chunks_<variant>.jsonl exports (~318 MB each) are
+# deterministically reproducible from the Phase 6.3 source via
+# eval.harness.v4_chunk_export and stay local.
+!ai-worker/eval/reports/namu-v4-structured-combined-2008-2026-04-phase7_0_retrieval_title_ab/
+ai-worker/eval/reports/namu-v4-structured-combined-2008-2026-04-phase7_0_retrieval_title_ab/*
+!ai-worker/eval/reports/namu-v4-structured-combined-2008-2026-04-phase7_0_retrieval_title_ab/PHASE7_0_FINAL_REPORT.md
+!ai-worker/eval/reports/namu-v4-structured-combined-2008-2026-04-phase7_0_retrieval_title_ab/ab_summary.json
+!ai-worker/eval/reports/namu-v4-structured-combined-2008-2026-04-phase7_0_retrieval_title_ab/ab_summary.md
+!ai-worker/eval/reports/namu-v4-structured-combined-2008-2026-04-phase7_0_retrieval_title_ab/manifest_title_section.json
+!ai-worker/eval/reports/namu-v4-structured-combined-2008-2026-04-phase7_0_retrieval_title_ab/manifest_retrieval_title_section.json
+!ai-worker/eval/reports/namu-v4-structured-combined-2008-2026-04-phase7_0_retrieval_title_ab/variant_diff_report.json
+!ai-worker/eval/reports/namu-v4-structured-combined-2008-2026-04-phase7_0_retrieval_title_ab/variant_diff_report.md
+!ai-worker/eval/reports/namu-v4-structured-combined-2008-2026-04-phase7_0_retrieval_title_ab/queries_v4_silver.jsonl
+!ai-worker/eval/reports/namu-v4-structured-combined-2008-2026-04-phase7_0_retrieval_title_ab/per_query_comparison.jsonl
+!ai-worker/eval/reports/namu-v4-structured-combined-2008-2026-04-phase7_0_retrieval_title_ab/improved_queries.jsonl
+!ai-worker/eval/reports/namu-v4-structured-combined-2008-2026-04-phase7_0_retrieval_title_ab/regressed_queries.jsonl
 ai-worker/eval/datasets/samples/
+
+# ---- Phase 7.0 dense FAISS indexes (local-only, ~1.3 GB total) ----
+# faiss.index + chunks.jsonl + variant_manifest.json are rebuilt from
+# the chunk exports via eval.harness.v4_index_builder.build_v4_variant_index.
+# Variant manifest digests are recorded in PHASE7_0_FINAL_REPORT.md.
+ai-worker/eval/indexes/
 
 # ---- Agent loop A/B harness run output ----
 # Each run writes raw_results.jsonl / summary.csv / comparison_summary.json
