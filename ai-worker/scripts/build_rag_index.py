@@ -192,6 +192,16 @@ def main() -> int:
         embedder=embedder,
         metadata_store=metadata,
         index=index,
+        # Phase 7.2: route the configured embedding-text variant
+        # through to the ingest path. Default settings value is
+        # ``retrieval_title_section`` (Phase 7.0 verdict). Operators
+        # roll back via ``AIPIPELINE_WORKER_RAG_EMBEDDING_TEXT_VARIANT=title_section``.
+        embedding_text_variant=settings.rag_embedding_text_variant,
+    )
+    log.info(
+        "Embedding-text variant: %s (set "
+        "AIPIPELINE_WORKER_RAG_EMBEDDING_TEXT_VARIANT to flip)",
+        settings.rag_embedding_text_variant,
     )
 
     started = time.time()

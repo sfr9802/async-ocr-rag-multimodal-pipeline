@@ -6,10 +6,23 @@ sections) and produces:
   1. Document and chunk rows in the PostgreSQL `ragmeta` schema.
   2. A FAISS index on disk in the configured `rag_index_dir`.
   3. An `index_builds` row recording the model + dimensions + counts.
+  4. An ``ingest_manifest.json`` sidecar (Phase 7.2) recording the
+     embedding-text variant + builder version + a checksum of every
+     embedded string so a downstream tool can verify what got
+     embedded matches what the offline eval / Phase 7.0 export
+     produced.
 
 Phase 2 runs ingestion as a one-shot CLI (`scripts/build_rag_index.py`),
 not as a long-lived service. The RagCapability's serving path loads the
 result at worker startup and does NOT re-read the dataset.
+
+Phase 7.2 promotes the canonical Phase 7.0 ``retrieval_title_section``
+embedding-text format (lives in
+``app.capabilities.rag.embedding_text_builder``) to the production
+default. The raw chunk text is *still* what gets stored in
+``ragmeta.rag_chunks.text`` — only the string handed to the embedder
+changes. Reranker and generation paths consume the raw text and are
+unaffected.
 """
 
 from __future__ import annotations
@@ -18,9 +31,9 @@ import hashlib
 import json
 import logging
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterable, List, Optional
+from typing import Dict, Iterable, List, Optional
 
 import numpy as np
 
@@ -31,6 +44,13 @@ from app.capabilities.rag.chunker import (
     greedy_chunk,
     window_by_chars,
 )
+from app.capabilities.rag.embedding_text_builder import (
+    DEFAULT_PRODUCTION_VARIANT,
+    EMBEDDING_TEXT_BUILDER_VERSION,
+    PRODUCTION_VARIANTS,
+    build_embedding_text_from_v3_chunk,
+    is_known_production_variant,
+)
 from app.capabilities.rag.embeddings import EmbeddingProvider
 from app.capabilities.rag.faiss_index import FaissIndex, IndexBuildInfo
 from app.capabilities.rag.metadata_store import ChunkRow, DocumentRow, RagMetadataStore
@@ -38,11 +58,144 @@ from app.capabilities.rag.metadata_store import ChunkRow, DocumentRow, RagMetada
 log = logging.getLogger(__name__)
 
 
+# Phase 7.2: ingest manifest sidecar that lives alongside build.json. We
+# keep it separate so adding a new field never invalidates a previously-
+# valid build.json, and so the FaissIndex storage layer can stay
+# variant-agnostic (it only knows about index_version / embedding_model
+# / dimension / chunk_count, which are still its source of truth).
+_INGEST_MANIFEST_FILE = "ingest_manifest.json"
+_EMBED_TEXT_SAMPLE_LIMIT = 5
+_EMBED_TEXT_PREVIEW_CHARS = 240
+
+
+@dataclass(frozen=True)
+class IngestManifest:
+    """Phase 7.2 — embedding-text provenance recorded next to build.json.
+
+    Carried fields:
+      - ``embedding_text_variant`` — variant id the builder was driven
+        with (``title_section`` / ``retrieval_title_section``). The
+        retriever can compare this against the configured runtime
+        variant and refuse to load on mismatch.
+      - ``embedding_text_builder_version`` — version stamp that maps to
+        ``EMBEDDING_TEXT_BUILDER_VERSION`` in the production builder.
+        Bumping that constant invalidates every cached index whose
+        manifest carries the old value.
+      - ``embed_text_sha256`` — SHA-256 over the concatenation of
+        every embedded string + ``\\n``. The Phase 7.0 eval export
+        emits the same digest by construction, so a parity check is
+        a one-line equality test.
+      - ``embed_text_samples`` — first 5 truncated strings, for human
+        eyeballing without loading the full chunks.jsonl.
+      - ``index_version`` / ``embedding_model`` / ``dimension`` /
+        ``max_seq_length`` / ``chunk_count`` / ``document_count`` /
+        ``corpus_path`` — duplicated from build.json + the ingest
+        invocation so the manifest is self-contained.
+    """
+
+    embedding_text_variant: str
+    embedding_text_builder_version: str
+    embedding_model: str
+    max_seq_length: Optional[int]
+    chunk_count: int
+    document_count: int
+    dimension: int
+    index_version: str
+    corpus_path: Optional[str]
+    embed_text_sha256: str
+    embed_text_samples: List[Dict[str, object]] = field(default_factory=list)
+
+
+def _digest_embed_texts(texts: Iterable[str]) -> str:
+    """SHA-256 the concatenation of texts joined by ``\\n``.
+
+    Same convention the Phase 7.0 eval export uses
+    (``v4_chunk_export.py``) so the two digests can be compared
+    directly. Joiner is hard-coded to ``\\n`` so a future change
+    cannot silently desync.
+    """
+    h = hashlib.sha256()
+    for t in texts:
+        h.update(t.encode("utf-8"))
+        h.update(b"\n")
+    return h.hexdigest()
+
+
+def _embed_text_samples(
+    texts: List[str], *, limit: int = _EMBED_TEXT_SAMPLE_LIMIT,
+    preview_chars: int = _EMBED_TEXT_PREVIEW_CHARS,
+) -> List[Dict[str, object]]:
+    """Return the first ``limit`` embedded strings, truncated for preview."""
+    samples: List[Dict[str, object]] = []
+    for i, t in enumerate(texts[:limit]):
+        preview = t if len(t) <= preview_chars else (
+            t[: max(0, preview_chars - 1)] + "…"
+        )
+        samples.append({
+            "row": i,
+            "char_count": len(t),
+            "preview": preview,
+        })
+    return samples
+
+
+def _resolve_variant(variant: Optional[str]) -> str:
+    """Validate + default a caller-supplied variant string."""
+    if variant is None:
+        return DEFAULT_PRODUCTION_VARIANT
+    if not is_known_production_variant(variant):
+        raise ValueError(
+            f"Unknown embedding_text_variant {variant!r}; "
+            f"expected one of {PRODUCTION_VARIANTS}."
+        )
+    return variant
+
+
+def load_ingest_manifest(index_dir: Path) -> Optional[IngestManifest]:
+    """Read ``ingest_manifest.json`` from ``index_dir`` if present.
+
+    Returns ``None`` when the sidecar is absent (index built before
+    Phase 7.2 or by a tool that doesn't emit the sidecar). Callers that
+    want to fail-hard on a missing sidecar can do so explicitly; this
+    function intentionally does not because the retriever's existing
+    embedding-model check already covers the load-time correctness
+    floor.
+    """
+    path = Path(index_dir) / _INGEST_MANIFEST_FILE
+    if not path.exists():
+        return None
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    return IngestManifest(
+        embedding_text_variant=str(payload.get("embedding_text_variant") or ""),
+        embedding_text_builder_version=str(
+            payload.get("embedding_text_builder_version") or "",
+        ),
+        embedding_model=str(payload.get("embedding_model") or ""),
+        max_seq_length=(
+            int(payload["max_seq_length"])
+            if payload.get("max_seq_length") is not None
+            else None
+        ),
+        chunk_count=int(payload.get("chunk_count") or 0),
+        document_count=int(payload.get("document_count") or 0),
+        dimension=int(payload.get("dimension") or 0),
+        index_version=str(payload.get("index_version") or ""),
+        corpus_path=(
+            str(payload["corpus_path"])
+            if payload.get("corpus_path") is not None
+            else None
+        ),
+        embed_text_sha256=str(payload.get("embed_text_sha256") or ""),
+        embed_text_samples=list(payload.get("embed_text_samples") or []),
+    )
+
+
 @dataclass(frozen=True)
 class IngestResult:
     document_count: int
     chunk_count: int
     info: IndexBuildInfo
+    manifest: Optional[IngestManifest] = None
 
 
 def _stable_chunk_id(doc_id: str, section: str, order: int, text: str) -> str:
@@ -120,10 +273,31 @@ class IngestService:
         embedder: EmbeddingProvider,
         metadata_store: RagMetadataStore,
         index: FaissIndex,
+        embedding_text_variant: Optional[str] = None,
     ) -> None:
+        """Construct the ingest service.
+
+        ``embedding_text_variant`` controls which canonical builder
+        variant the embedder sees. ``None`` resolves to
+        ``DEFAULT_PRODUCTION_VARIANT`` (Phase 7.2 default
+        ``retrieval_title_section``). Pass ``"title_section"`` to
+        roll back to the pre-Phase-7.0 baseline.
+        """
         self._embedder = embedder
         self._metadata = metadata_store
         self._index = index
+        self._embedding_text_variant = _resolve_variant(embedding_text_variant)
+        self._embedding_text_builder_version = EMBEDDING_TEXT_BUILDER_VERSION
+        log.info(
+            "IngestService configured: embedding_text_variant=%s "
+            "embedding_text_builder_version=%s",
+            self._embedding_text_variant,
+            self._embedding_text_builder_version,
+        )
+
+    @property
+    def embedding_text_variant(self) -> str:
+        return self._embedding_text_variant
 
     def ingest_jsonl(
         self,
@@ -136,7 +310,10 @@ class IngestService:
         if not jsonl_path.exists():
             raise FileNotFoundError(f"Dataset not found: {jsonl_path}")
 
-        log.info("Reading dataset: %s", jsonl_path)
+        log.info(
+            "Reading dataset: %s (variant=%s)",
+            jsonl_path, self._embedding_text_variant,
+        )
 
         docs: List[DocumentRow] = []
         chunks: List[ChunkRow] = []
@@ -151,6 +328,14 @@ class IngestService:
             if not doc_id:
                 continue
             title = str(raw.get("title") or raw.get("seed") or "")[:500]
+            # Phase 7.2: ``retrieval_title`` may or may not be carried
+            # at the doc level depending on the corpus generation.
+            # Fixtures (anime_sample.jsonl etc.) don't carry it; future
+            # v4-shaped fixtures may. The builder falls back to
+            # ``page_title`` when retrieval_title is empty so v3
+            # corpora produce the same byte-string under either
+            # variant.
+            doc_retrieval_title = str(raw.get("retrieval_title") or "")
             category_raw = raw.get("category")
             domain_raw = raw.get("domain")
             language_raw = raw.get("language")
@@ -176,6 +361,11 @@ class IngestService:
                 if not isinstance(section_raw, dict):
                     continue
                 section_chunks = _chunks_from_section(section_raw)
+                # Phase 7.2: ``section_type`` is part of the canonical
+                # v4 schema. v3 fixtures don't carry it; we plumb it
+                # through if the source row provides it (future-proofing
+                # for v4 corpora that ingest through this same path).
+                section_type = str(section_raw.get("section_type") or "")
                 for order, text in enumerate(section_chunks):
                     chunk_text = text.strip()
                     if not chunk_text:
@@ -191,7 +381,20 @@ class IngestService:
                         faiss_row_id=faiss_row_id,
                         index_version=index_version,
                     ))
-                    texts_to_embed.append(chunk_text)
+                    # Phase 7.2: build the canonical embedding text
+                    # via the production builder. The raw chunk text
+                    # is still what got stored in ChunkRow.text above —
+                    # reranker / generation paths consume that, so
+                    # they're untouched by the variant change.
+                    embed_text = build_embedding_text_from_v3_chunk(
+                        chunk_text=chunk_text,
+                        title=title,
+                        section_name=section_name,
+                        retrieval_title=doc_retrieval_title,
+                        section_type=section_type,
+                        variant=self._embedding_text_variant,
+                    )
+                    texts_to_embed.append(embed_text)
                     faiss_row_id += 1
 
         if not chunks:
@@ -224,11 +427,106 @@ class IngestService:
             faiss_index_path=str(self._index_dir_for_notes()),
             notes=notes,
         )
+
+        # Phase 7.2: write the ingest manifest sidecar so a downstream
+        # tool can verify the variant + format version + sha256 of
+        # what got embedded. The manifest is best-effort: if writing
+        # it fails (read-only mount, etc.) we log + continue —
+        # ragmeta + faiss.index are the source of truth and a missing
+        # sidecar should not abort an otherwise-successful ingest.
+        manifest = self._build_manifest(
+            texts_to_embed=texts_to_embed,
+            info=info,
+            document_count=len(docs),
+            corpus_path=str(jsonl_path),
+            max_seq_length=getattr(
+                self._embedder, "max_seq_length", None,
+            ),
+        )
+        try:
+            self._write_manifest(manifest)
+        except OSError as ex:
+            log.warning(
+                "Failed to write %s next to FAISS index (%s); "
+                "continuing without manifest sidecar.",
+                _INGEST_MANIFEST_FILE, ex,
+            )
+
         return IngestResult(
             document_count=len(docs),
             chunk_count=len(chunks),
             info=info,
+            manifest=manifest,
         )
+
+    def _build_manifest(
+        self,
+        *,
+        texts_to_embed: List[str],
+        info: IndexBuildInfo,
+        document_count: int,
+        corpus_path: Optional[str],
+        max_seq_length: Optional[int],
+    ) -> IngestManifest:
+        """Pack the per-build manifest dataclass.
+
+        Computes the embed-text sha256 + a small preview sample so the
+        sidecar carries everything needed to spot-check against the
+        Phase 7.0 eval export digests without re-loading the corpus.
+        """
+        return IngestManifest(
+            embedding_text_variant=self._embedding_text_variant,
+            embedding_text_builder_version=self._embedding_text_builder_version,
+            embedding_model=info.embedding_model,
+            max_seq_length=int(max_seq_length) if max_seq_length else None,
+            chunk_count=int(info.chunk_count),
+            document_count=int(document_count),
+            dimension=int(info.dimension),
+            index_version=info.index_version,
+            corpus_path=corpus_path,
+            embed_text_sha256=_digest_embed_texts(texts_to_embed),
+            embed_text_samples=_embed_text_samples(texts_to_embed),
+        )
+
+    def _write_manifest(self, manifest: IngestManifest) -> Path:
+        """Persist the manifest dataclass to ``ingest_manifest.json``.
+
+        Lives next to ``build.json`` under the FAISS index dir; the
+        retriever can pick it up at load time without any IO contract
+        change in :class:`FaissIndex` itself.
+        """
+        path = self._index_dir / _INGEST_MANIFEST_FILE
+        path.write_text(
+            json.dumps({
+                "embedding_text_variant": manifest.embedding_text_variant,
+                "embedding_text_builder_version":
+                    manifest.embedding_text_builder_version,
+                "embedding_model": manifest.embedding_model,
+                "max_seq_length": manifest.max_seq_length,
+                "chunk_count": manifest.chunk_count,
+                "document_count": manifest.document_count,
+                "dimension": manifest.dimension,
+                "index_version": manifest.index_version,
+                "corpus_path": manifest.corpus_path,
+                "embed_text_sha256": manifest.embed_text_sha256,
+                "embed_text_samples": manifest.embed_text_samples,
+            }, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        log.info(
+            "Wrote ingest manifest: %s (variant=%s sha256=%s…)",
+            path, manifest.embedding_text_variant,
+            manifest.embed_text_sha256[:16],
+        )
+        return path
+
+    @property
+    def _index_dir(self) -> Path:
+        # FaissIndex._dir is the canonical on-disk location for the
+        # index files; we read it directly here so the manifest lands
+        # next to build.json in lockstep without growing the public
+        # FaissIndex surface.
+        return self._index._dir  # noqa: SLF001
 
     def _index_dir_for_notes(self) -> str:
         # Avoid poking at FaissIndex internals — we only need a human

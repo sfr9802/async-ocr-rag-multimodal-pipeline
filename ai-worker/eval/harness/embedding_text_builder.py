@@ -1,41 +1,80 @@
 """Phase 2 — section-aware embedding-text composition for eval experiments.
 
 Pure helper for building the *string* fed to an embedder for a chunk.
-The production ingest path (``app.capabilities.rag.ingest``) embeds raw
-chunk text only; this module lets eval-side experiments build prefixed
-variants (``"<title>\\n<section>\\n<text>"`` etc.) without touching the
-production ingest / retriever code. Two consumers:
+Two variant families coexist here:
+
+  1. **v3 prefix variants** (eval-only) — ``raw`` / ``title`` /
+     ``section`` / ``title_section`` / ``keyword`` / ``all``. These
+     were the Phase 2 experimental knobs over the v3 corpus
+     (``anime_namu_v3_token_chunked``). Production never embedded
+     against them; they live in this module as legacy eval-side
+     experiments and are pinned by tests.
+
+  2. **v4 canonical variants** (production-aligned) — ``title_section``
+     and ``retrieval_title_section``. These now live in
+     ``app/capabilities/rag/embedding_text_builder`` (Phase 7.2) and
+     this module re-exports them so existing eval-side callers keep
+     working unchanged. The v4 builder is the *canonical* byte
+     producer; eval and production both call into it so an
+     ``embed_text_sha256`` computed offline matches the live ingest
+     byte-for-byte.
+
+Phase 7.2 split rationale:
+
+  - Centralising the v4 byte format prevents silent drift between
+    eval-side ``v4_chunk_export`` (where Phase 7.0's +22pt hit@1
+    gain was measured) and the production ingest path (which now
+    embeds against the same format).
+  - The eval-only v3 variants stay here because production has no
+    use for them and Phase 2's regression tests pin the exact byte
+    output. Moving them would force production to take on
+    experimental code.
+
+Two consumers of this module:
 
   1. ``BM25EvalRetriever`` — passes the same text it indexes through
      this builder so prefix variants are tokenized consistently.
-  2. ``DenseEvalReindex`` (later in this Phase) — re-embeds an existing
-     corpus with a prefix variant for an A/B against the dense baseline.
+  2. ``DenseEvalReindex`` — re-embeds an existing corpus with a prefix
+     variant for an A/B against the dense baseline.
 
-Variants kept deliberately small and explicit. Each variant is *additive*
-over the previous one so a downstream sweep can read the variant name
-and predict what the embedding text contains:
+Variants kept deliberately small and explicit. Each v3 variant is
+*additive* over the previous one so a downstream sweep can read the
+variant name and predict what the embedding text contains:
 
-  - ``raw``           — chunk.text only (matches production)
+  - ``raw``           — chunk.text only (matches production v3 ingest)
   - ``title``         — title prefix + chunk.text
   - ``section``       — section prefix + chunk.text
-  - ``title_section`` — title + section + chunk.text (most common)
+  - ``title_section`` — title + section + chunk.text (eval-side v3 form;
+                        and ALSO the v4-canonical title_section form
+                        when called via :func:`build_v4_embedding_text`)
   - ``keyword``       — keyword prefix + chunk.text (when keywords exist)
   - ``all``           — title + section + keyword + chunk.text
 
 When the requested prefix isn't available on the chunk (e.g. variant
-``title`` but ``title is None``), the builder silently falls back to
+``title`` but ``title is None``), the v3 builder silently falls back to
 the raw text — keeping the eval input runnable across mixed datasets.
-The resulting string is *exactly* what gets embedded / tokenized; the
-pipeline does no further mutation on it.
-
-This module has zero deps and no side effects so it composes safely
-with the ``run_retrieval_eval`` harness.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Iterable, List, Optional, Tuple
+
+# Phase 7.2: v4-canonical builder lives in production. We re-export the
+# names so existing eval-side imports
+# (``from eval.harness.embedding_text_builder import V4EmbeddingTextInput``)
+# keep working byte-for-byte unchanged.
+from app.capabilities.rag.embedding_text_builder import (
+    EMBEDDING_TEXT_BUILDER_VERSION,
+    V4_BODY_LABEL,
+    V4_SECTION_LABEL,
+    V4_SECTION_PATH_JOINER,
+    V4_SECTION_TYPE_LABEL,
+    V4_TITLE_LABEL,
+    V4EmbeddingTextInput,
+    build_v4_embedding_text,
+    is_known_production_variant,
+)
 
 
 # Public variant labels — surfaced as module-level constants so the
@@ -97,7 +136,7 @@ def build_embedding_text(
     keyword_limit: int = DEFAULT_KEYWORD_LIMIT,
     separator: str = PREFIX_SEPARATOR,
 ) -> str:
-    """Compose the embedding text for ``chunk`` per ``variant``.
+    """Compose the eval-only v3 prefix embedding text for ``chunk``.
 
     Returns the assembled string. Variants that ask for a prefix the
     chunk doesn't carry (e.g. ``title`` but ``chunk.title is None``)
@@ -190,146 +229,46 @@ def is_known_variant(variant: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Phase 7.0 — v4-aware embedding text builder.
+# Re-exported v4 symbols (canonical owner: production module).
 #
-# The Phase 6.3 ``rag_chunks.jsonl`` already ships an ``embedding_text``
-# field that uses a Korean-prefixed format ("제목: ... \n섹션: ... \n
-# 섹션타입: ... \n\n본문:\n..."). Phase 7.0 needs to compare that exact
-# format against an otherwise-identical variant that swaps ``page_title``
-# for ``retrieval_title``. We therefore reproduce the Phase 6.3 format
-# byte-for-byte here so an A/B run is meaningful (any divergence from
-# Phase 6.3's stored embedding_text would conflate "format change" with
-# "title change").
+# ``V4EmbeddingTextInput`` and ``build_v4_embedding_text`` now live in
+# ``app/capabilities/rag/embedding_text_builder``. They are re-exported
+# at this module's top by the import block above so:
+#
+#   from eval.harness.embedding_text_builder import V4EmbeddingTextInput
+#
+# continues to work after Phase 7.2's centralisation. The byte output is
+# identical to the pre-Phase 7.2 eval-only implementation — Phase 7.2's
+# parity tests pin that.
+#
+# Format constants (``V4_TITLE_LABEL`` etc.) are also re-exported so any
+# downstream test or audit tool that reads them off this module keeps
+# working.
 # ---------------------------------------------------------------------------
 
 
-# Phase 6.3 produces section_path as a list of headings (e.g. ["음악",
-# "주제가", "OP"]). The stored embedding_text joins those with " > ", so
-# we mirror that exact joiner.
-V4_SECTION_PATH_JOINER = " > "
-
-# The four labels are part of the Phase 6.3 embedding_text contract.
-# Changing any of them silently invalidates every cached index whose
-# embed_text_sha256 was computed against the previous format, so they
-# live as constants the tests can pin.
-V4_TITLE_LABEL = "제목"
-V4_SECTION_LABEL = "섹션"
-V4_SECTION_TYPE_LABEL = "섹션타입"
-V4_BODY_LABEL = "본문"
-
-
-@dataclass(frozen=True)
-class V4EmbeddingTextInput:
-    """Per-chunk inputs to :func:`build_v4_embedding_text`.
-
-    Mirrors the Phase 6.3 ``rag_chunks.jsonl`` schema. ``page_title`` is
-    the stored chunk-level title (== PageV4.page_title); ``retrieval_title``
-    is the Phase 6.3-folded retrieval form ("{work_title} / {page_title}"
-    when generic, else == page_title). Both can be empty strings — the
-    formatter falls back to the other in that case so the output never
-    leaks a sentinel.
-
-    ``section_path`` is the heading list as it appears on the chunk;
-    we accept both list-of-strings and a single pre-joined string so a
-    caller passing already-collapsed metadata isn't forced to split it.
-    """
-
-    chunk_text: str
-    page_title: str = ""
-    retrieval_title: str = ""
-    section_path: Tuple[str, ...] = field(default_factory=tuple)
-    section_type: str = ""
-
-    @classmethod
-    def from_chunk_record(cls, record: dict) -> "V4EmbeddingTextInput":
-        """Construct from a Phase 6.3 ``rag_chunks.jsonl`` record dict."""
-        section_path = record.get("section_path") or ()
-        if isinstance(section_path, str):
-            # accept a pre-joined string and treat as a single-segment path
-            section_path = (section_path,)
-        else:
-            section_path = tuple(str(s) for s in section_path if s)
-        return cls(
-            chunk_text=str(record.get("chunk_text") or ""),
-            page_title=str(record.get("title") or ""),
-            retrieval_title=str(record.get("retrieval_title") or ""),
-            section_path=section_path,
-            section_type=str(record.get("section_type") or ""),
-        )
-
-
-def _resolve_v4_title(chunk: V4EmbeddingTextInput, *, variant: str) -> str:
-    """Pick the title segment per v4 variant.
-
-    For ``title_section``: always page_title (the Phase 6.3 baseline).
-    For ``retrieval_title_section``: prefer non-empty retrieval_title,
-    else fall back to page_title. The fallback matters because Phase 6.3
-    leaves ``retrieval_title`` equal to ``page_title`` for non-generic
-    pages — the variant should still produce a sensible string for
-    those rows rather than dropping the title segment entirely.
-    """
-    page_title = (chunk.page_title or "").strip()
-    if variant == VARIANT_TITLE_SECTION:
-        return page_title
-    if variant == VARIANT_RETRIEVAL_TITLE_SECTION:
-        retrieval_title = (chunk.retrieval_title or "").strip()
-        return retrieval_title or page_title
-    raise ValueError(
-        f"build_v4_embedding_text does not handle variant {variant!r}; "
-        f"expected one of "
-        f"({VARIANT_TITLE_SECTION!r}, {VARIANT_RETRIEVAL_TITLE_SECTION!r})."
-    )
-
-
-def build_v4_embedding_text(
-    chunk: V4EmbeddingTextInput,
-    *,
-    variant: str,
-) -> str:
-    """Compose the Phase 6.3-format embedding text under ``variant``.
-
-    Output format (matches what Phase 6.3 stores in ``rag_chunks.jsonl``
-    when all fields are present)::
-
-        제목: {title}
-        섹션: {section_path joined with ' > '}
-        섹션타입: {section_type}
-
-        본문:
-        {chunk_text}
-
-    Each label-line is dropped if its source is empty — same hygiene
-    as the v3 ``build_embedding_text``: missing metadata becomes a
-    silently absent line, not an empty "제목: " sentinel that would
-    confuse the embedder.
-    """
-    if variant not in (VARIANT_TITLE_SECTION, VARIANT_RETRIEVAL_TITLE_SECTION):
-        raise ValueError(
-            f"build_v4_embedding_text only supports "
-            f"{VARIANT_TITLE_SECTION!r} and "
-            f"{VARIANT_RETRIEVAL_TITLE_SECTION!r}; got {variant!r}."
-        )
-
-    title = _resolve_v4_title(chunk, variant=variant)
-    section_path = tuple(s for s in (chunk.section_path or ()) if s and s.strip())
-    section_str = V4_SECTION_PATH_JOINER.join(section_path)
-    section_type = (chunk.section_type or "").strip()
-    body = (chunk.chunk_text or "").strip()
-
-    header_lines: List[str] = []
-    if title:
-        header_lines.append(f"{V4_TITLE_LABEL}: {title}")
-    if section_str:
-        header_lines.append(f"{V4_SECTION_LABEL}: {section_str}")
-    if section_type:
-        header_lines.append(f"{V4_SECTION_TYPE_LABEL}: {section_type}")
-
-    parts: List[str] = []
-    if header_lines:
-        parts.append("\n".join(header_lines))
-    if body:
-        parts.append(f"{V4_BODY_LABEL}:\n{body}")
-    # The Phase 6.3 separator between header block and body block is a
-    # blank line ("\n\n"); when the header is empty (defence in depth)
-    # we just emit the body.
-    return "\n\n".join(parts) if parts else ""
+__all__ = [
+    "DEFAULT_KEYWORD_LIMIT",
+    "EMBEDDING_TEXT_BUILDER_VERSION",
+    "EMBEDDING_TEXT_VARIANTS",
+    "EmbeddingTextInput",
+    "KEYWORD_JOINER",
+    "PREFIX_SEPARATOR",
+    "VARIANT_ALL",
+    "VARIANT_KEYWORD",
+    "VARIANT_RAW",
+    "VARIANT_RETRIEVAL_TITLE_SECTION",
+    "VARIANT_SECTION",
+    "VARIANT_TITLE",
+    "VARIANT_TITLE_SECTION",
+    "V4EmbeddingTextInput",
+    "V4_BODY_LABEL",
+    "V4_SECTION_LABEL",
+    "V4_SECTION_PATH_JOINER",
+    "V4_SECTION_TYPE_LABEL",
+    "V4_TITLE_LABEL",
+    "build_embedding_text",
+    "build_v4_embedding_text",
+    "is_known_production_variant",
+    "is_known_variant",
+]

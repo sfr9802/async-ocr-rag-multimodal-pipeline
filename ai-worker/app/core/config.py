@@ -174,6 +174,23 @@ class WorkerSettings(BaseSettings):
         default="../rag-data",
         description="Directory holding the FAISS index file and build metadata. Resolved relative to the worker's CWD.",
     )
+    rag_embedding_text_variant: str = Field(
+        default="retrieval_title_section",
+        description=(
+            "Phase 7.2 — which canonical embedding-text builder variant "
+            "the ingest path uses. Options: "
+            "'retrieval_title_section' (default, Phase 7.0 verdict: "
+            "+22pt hit@1 over title_section on the v4 silver set), "
+            "'title_section' (legacy / rollback). The variant lives in "
+            "``app.capabilities.rag.embedding_text_builder``; bumping "
+            "this value AFTER an index has been built requires a "
+            "rebuild AND a worker restart — the new variant produces "
+            "different vectors. The ingest path writes the variant to "
+            "``ingest_manifest.json`` next to ``build.json`` so a "
+            "downstream tool can verify which variant a given index "
+            "was built with."
+        ),
+    )
     rag_top_k: int = Field(
         default=5,
         description="Number of chunks to retrieve per query.",
