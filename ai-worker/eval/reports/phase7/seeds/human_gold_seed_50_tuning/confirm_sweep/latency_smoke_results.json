@@ -1,0 +1,379 @@
+{
+  "pool_size": 40,
+  "measured_at_pool_size_note": "candidate_gen_ms reflects the cached pool's elapsed_ms — the confirm sweep ran the live retriever at pool_size=40 (no MMR). For candidate_k less than the pool size the live retriever would do slightly less work, so candidate_gen_ms here is a small upper bound.",
+  "rerank_note": "Reranker stage NOT measured in this smoke check. The eval environment runs with the NoOp reranker — any timing produced here would be a fixture artefact, not a production-reranker number.",
+  "suite_note": "Smoke compares pre-promotion baseline (no MMR), the Phase 7.x first-pass best (candidate_k=30, MMR, λ=0.70), and the Phase 7.5 production-recommended (candidate_k=40, MMR, λ=0.70) on the same query set.",
+  "configs": [
+    {
+      "name": "baseline_top10",
+      "role": "baseline",
+      "top_k": 10,
+      "candidate_k": 10,
+      "use_mmr": false,
+      "mmr_lambda": 0.7,
+      "description": "pre-promotion baseline (use_mmr=false, top_k=10). Mirrors the shipping retrieval path."
+    },
+    {
+      "name": "previous_best_candk30_lambda070",
+      "role": "previous_best",
+      "top_k": 10,
+      "candidate_k": 30,
+      "use_mmr": true,
+      "mmr_lambda": 0.7,
+      "description": "Phase 7.x first-pass best (candidate_k=30, MMR on, λ=0.70). Intermediate fallback config."
+    },
+    {
+      "name": "recommended_candk40_lambda070",
+      "role": "production_recommended",
+      "top_k": 10,
+      "candidate_k": 40,
+      "use_mmr": true,
+      "mmr_lambda": 0.7,
+      "description": "Phase 7.5 production-recommended (candidate_k=40, MMR on, λ=0.70 from the plateau-aware policy)."
+    }
+  ],
+  "aggregates": [
+    {
+      "config_name": "baseline_top10",
+      "role": "baseline",
+      "set_name": "gold-50",
+      "n_queries": 50,
+      "candidate_gen_ms": {
+        "mean": 25.52128,
+        "p50": 21.2105,
+        "p90": 23.0649,
+        "p99": 123.50555999999966,
+        "min": 19.875,
+        "max": 207.666,
+        "n": 50.0
+      },
+      "mmr_post_ms": {
+        "mean": 0.007410399950458668,
+        "p50": 0.007320000440813601,
+        "p90": 0.007439999972120859,
+        "p99": 0.008666399735375306,
+        "min": 0.007259999256348237,
+        "max": 0.00897999998414889,
+        "n": 50.0
+      },
+      "total_ms": {
+        "mean": 25.52869039995046,
+        "p50": 21.217820000077015,
+        "p90": 23.072225999758906,
+        "p99": 123.51418719979307,
+        "min": 19.882320000440814,
+        "max": 207.67497999998415,
+        "n": 50.0
+      },
+      "notes": [
+        "candidate_gen_ms is the live FAISS+embed time the confirm sweep recorded at pool_size=40; upper-bound estimate for candidate_k<40.",
+        "mmr_post_ms timed live at reps=5 per query.",
+        "reranker timing NOT measured (NoOp in this env)."
+      ]
+    },
+    {
+      "config_name": "baseline_top10",
+      "role": "baseline",
+      "set_name": "silver-500",
+      "n_queries": 500,
+      "candidate_gen_ms": {
+        "mean": 21.035222,
+        "p50": 20.5165,
+        "p90": 22.637,
+        "p99": 30.80541999999999,
+        "min": 18.93,
+        "max": 37.538,
+        "n": 500.0
+      },
+      "mmr_post_ms": {
+        "mean": 0.007429039977432694,
+        "p50": 0.007339999865507707,
+        "p90": 0.007459999324055389,
+        "p99": 0.008446000239928248,
+        "min": 0.007159999222494662,
+        "max": 0.025060000189114362,
+        "n": 500.0
+      },
+      "total_ms": {
+        "mean": 21.042651039977436,
+        "p50": 20.523829999425566,
+        "p90": 22.64448200000089,
+        "p99": 30.81276039986127,
+        "min": 18.937299999560928,
+        "max": 37.54537999944249,
+        "n": 500.0
+      },
+      "notes": [
+        "candidate_gen_ms is the live FAISS+embed time the confirm sweep recorded at pool_size=40; upper-bound estimate for candidate_k<40.",
+        "mmr_post_ms timed live at reps=5 per query.",
+        "reranker timing NOT measured (NoOp in this env)."
+      ]
+    },
+    {
+      "config_name": "baseline_top10",
+      "role": "baseline",
+      "set_name": "combined-550",
+      "n_queries": 550,
+      "candidate_gen_ms": {
+        "mean": 21.44304545454545,
+        "p50": 20.606499999999997,
+        "p90": 22.7364,
+        "p99": 32.23485999999999,
+        "min": 18.93,
+        "max": 207.666,
+        "n": 550.0
+      },
+      "mmr_post_ms": {
+        "mean": 0.007327745431790721,
+        "p50": 0.0072700000600889325,
+        "p90": 0.007359999362961389,
+        "p99": 0.008171400004357563,
+        "min": 0.007159999222494662,
+        "max": 0.01649999976507388,
+        "n": 550.0
+      },
+      "total_ms": {
+        "mean": 21.450373199977243,
+        "p50": 20.61376999986556,
+        "p90": 22.74366600002963,
+        "p99": 32.24211020063691,
+        "min": 18.937219999679364,
+        "max": 207.6735800002378,
+        "n": 550.0
+      },
+      "notes": [
+        "candidate_gen_ms is the live FAISS+embed time the confirm sweep recorded at pool_size=40; upper-bound estimate for candidate_k<40.",
+        "mmr_post_ms timed live at reps=5 per query.",
+        "reranker timing NOT measured (NoOp in this env)."
+      ]
+    },
+    {
+      "config_name": "previous_best_candk30_lambda070",
+      "role": "previous_best",
+      "set_name": "gold-50",
+      "n_queries": 50,
+      "candidate_gen_ms": {
+        "mean": 25.52128,
+        "p50": 21.2105,
+        "p90": 23.0649,
+        "p99": 123.50555999999966,
+        "min": 19.875,
+        "max": 207.666,
+        "n": 50.0
+      },
+      "mmr_post_ms": {
+        "mean": 0.03427840003860183,
+        "p50": 0.03386000134923961,
+        "p90": 0.03518799931043759,
+        "p99": 0.04050440016726496,
+        "min": 0.0330599992594216,
+        "max": 0.04366000066511333,
+        "n": 50.0
+      },
+      "total_ms": {
+        "mean": 25.555558400038603,
+        "p50": 21.244579999750247,
+        "p90": 23.09815799974846,
+        "p99": 123.54102579948272,
+        "min": 19.908300000359304,
+        "max": 207.7032199996491,
+        "n": 50.0
+      },
+      "notes": [
+        "candidate_gen_ms is the live FAISS+embed time the confirm sweep recorded at pool_size=40; upper-bound estimate for candidate_k<40.",
+        "mmr_post_ms timed live at reps=5 per query.",
+        "reranker timing NOT measured (NoOp in this env)."
+      ]
+    },
+    {
+      "config_name": "previous_best_candk30_lambda070",
+      "role": "previous_best",
+      "set_name": "silver-500",
+      "n_queries": 500,
+      "candidate_gen_ms": {
+        "mean": 21.035222,
+        "p50": 20.5165,
+        "p90": 22.637,
+        "p99": 30.80541999999999,
+        "min": 18.93,
+        "max": 37.538,
+        "n": 500.0
+      },
+      "mmr_post_ms": {
+        "mean": 0.03405419999035075,
+        "p50": 0.033799999073380604,
+        "p90": 0.03456200043729041,
+        "p99": 0.03923199929704419,
+        "min": 0.03252000024076551,
+        "max": 0.08268000092357397,
+        "n": 500.0
+      },
+      "total_ms": {
+        "mean": 21.06927619999035,
+        "p50": 20.55167000041029,
+        "p90": 22.67113400030695,
+        "p99": 30.838894599549654,
+        "min": 18.96361999988556,
+        "max": 37.57208000047784,
+        "n": 500.0
+      },
+      "notes": [
+        "candidate_gen_ms is the live FAISS+embed time the confirm sweep recorded at pool_size=40; upper-bound estimate for candidate_k<40.",
+        "mmr_post_ms timed live at reps=5 per query.",
+        "reranker timing NOT measured (NoOp in this env)."
+      ]
+    },
+    {
+      "config_name": "previous_best_candk30_lambda070",
+      "role": "previous_best",
+      "set_name": "combined-550",
+      "n_queries": 550,
+      "candidate_gen_ms": {
+        "mean": 21.44304545454545,
+        "p50": 20.606499999999997,
+        "p90": 22.7364,
+        "p99": 32.23485999999999,
+        "min": 18.93,
+        "max": 207.666,
+        "n": 550.0
+      },
+      "mmr_post_ms": {
+        "mean": 0.033781054542156526,
+        "p50": 0.03364000003784895,
+        "p90": 0.03434199948969763,
+        "p99": 0.03820160005852811,
+        "min": 0.03215999968233518,
+        "max": 0.04889999981969595,
+        "n": 550.0
+      },
+      "total_ms": {
+        "mean": 21.47682650908761,
+        "p50": 20.64025999986019,
+        "p90": 22.77507400053423,
+        "p99": 32.267852199812715,
+        "min": 18.963540000003995,
+        "max": 207.70070000010566,
+        "n": 550.0
+      },
+      "notes": [
+        "candidate_gen_ms is the live FAISS+embed time the confirm sweep recorded at pool_size=40; upper-bound estimate for candidate_k<40.",
+        "mmr_post_ms timed live at reps=5 per query.",
+        "reranker timing NOT measured (NoOp in this env)."
+      ]
+    },
+    {
+      "config_name": "recommended_candk40_lambda070",
+      "role": "production_recommended",
+      "set_name": "gold-50",
+      "n_queries": 50,
+      "candidate_gen_ms": {
+        "mean": 25.52128,
+        "p50": 21.2105,
+        "p90": 23.0649,
+        "p99": 123.50555999999966,
+        "min": 19.875,
+        "max": 207.666,
+        "n": 50.0
+      },
+      "mmr_post_ms": {
+        "mean": 0.042723199920146726,
+        "p50": 0.04242999966663774,
+        "p90": 0.04372200033685658,
+        "p99": 0.04685799961589509,
+        "min": 0.04155999922659248,
+        "max": 0.048719999176682904,
+        "n": 50.0
+      },
+      "total_ms": {
+        "mean": 25.564003199920148,
+        "p50": 21.25326000036043,
+        "p90": 23.10680999963612,
+        "p99": 123.54934319997307,
+        "min": 19.916760000021895,
+        "max": 207.71092000007303,
+        "n": 50.0
+      },
+      "notes": [
+        "candidate_gen_ms is the live FAISS+embed time the confirm sweep recorded at pool_size=40; upper-bound estimate for candidate_k<40.",
+        "mmr_post_ms timed live at reps=5 per query.",
+        "reranker timing NOT measured (NoOp in this env)."
+      ]
+    },
+    {
+      "config_name": "recommended_candk40_lambda070",
+      "role": "production_recommended",
+      "set_name": "silver-500",
+      "n_queries": 500,
+      "candidate_gen_ms": {
+        "mean": 21.035222,
+        "p50": 20.5165,
+        "p90": 22.637,
+        "p99": 30.80541999999999,
+        "min": 18.93,
+        "max": 37.538,
+        "n": 500.0
+      },
+      "mmr_post_ms": {
+        "mean": 0.04302799999422859,
+        "p50": 0.04295999970054254,
+        "p90": 0.04391999973449856,
+        "p99": 0.04727039970020996,
+        "min": 0.04158000010647811,
+        "max": 0.049360000411979854,
+        "n": 500.0
+      },
+      "total_ms": {
+        "mean": 21.07824999999423,
+        "p50": 20.558899999802,
+        "p90": 22.679978001074517,
+        "p99": 30.847245799758944,
+        "min": 18.97315999976825,
+        "max": 37.58122000095271,
+        "n": 500.0
+      },
+      "notes": [
+        "candidate_gen_ms is the live FAISS+embed time the confirm sweep recorded at pool_size=40; upper-bound estimate for candidate_k<40.",
+        "mmr_post_ms timed live at reps=5 per query.",
+        "reranker timing NOT measured (NoOp in this env)."
+      ]
+    },
+    {
+      "config_name": "recommended_candk40_lambda070",
+      "role": "production_recommended",
+      "set_name": "combined-550",
+      "n_queries": 550,
+      "candidate_gen_ms": {
+        "mean": 21.44304545454545,
+        "p50": 20.606499999999997,
+        "p90": 22.7364,
+        "p99": 32.23485999999999,
+        "min": 18.93,
+        "max": 207.666,
+        "n": 550.0
+      },
+      "mmr_post_ms": {
+        "mean": 0.04325945456565188,
+        "p50": 0.04312999990361277,
+        "p90": 0.044039999920642,
+        "p99": 0.0489407993882196,
+        "min": 0.04151999964960851,
+        "max": 0.0664799998048693,
+        "n": 550.0
+      },
+      "total_ms": {
+        "mean": 21.486304909111105,
+        "p50": 20.648770000267305,
+        "p90": 22.77963800021666,
+        "p99": 32.277425000585446,
+        "min": 18.973599999480648,
+        "max": 207.70976000069896,
+        "n": 550.0
+      },
+      "notes": [
+        "candidate_gen_ms is the live FAISS+embed time the confirm sweep recorded at pool_size=40; upper-bound estimate for candidate_k<40.",
+        "mmr_post_ms timed live at reps=5 per query.",
+        "reranker timing NOT measured (NoOp in this env)."
+      ]
+    }
+  ]
+}

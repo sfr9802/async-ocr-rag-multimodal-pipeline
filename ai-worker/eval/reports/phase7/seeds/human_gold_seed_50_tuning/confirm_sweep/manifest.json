@@ -1,0 +1,64 @@
+{
+  "phase": "7.5_mmr_confirm_sweep",
+  "human_focus_disclaimer": "This evaluation is NOT a representative retrieval-quality benchmark. It is a human-weighted focus set drawn from queries_v4_llm_silver_500, designed to surface v4 subpage / section-level retrieval failures. primary_score improvements only mean 'we got better at the gold-50 subpage / named-subpage failures this set was curated to expose'.",
+  "promotion_target_clarification": "Promotion target: this evaluation tests retrieval CONFIG changes (candidate_k, use_mmr, mmr_lambda) on top of the production-default retrieval_title_section index. It does NOT test another embedding-text variant promotion. The rejected `cand_title_section_top10` candidate is the *previous* (Phase 7.0) embedding-text variant and is included only as a sanity check that retrieval_title_section is still the right index choice — its large regression on both gold and silver confirms that decision and is not part of this promotion proposal.",
+  "section_hit_caveat": "Section_hit@5 caveat: page-level retrieval is meaningfully better under MMR; section-level exact-match fell relative to baseline. Baseline section_hit@5 is tiny (≈4.5pp on a 22-row defined-only subset), which makes the metric brittle: any reordering of neighbouring chunks within the same page can flip section_hit without affecting answer quality. We therefore document the drop but do NOT treat it as a promotion blocker. Section-aware reranking or chunk-level generation audit is the right follow-up to validate this assumption.",
+  "baseline_name": "baseline_retrieval_title_section_top10",
+  "previous_best_name": "cand_top10_mmr_lambda07",
+  "candidate_ks": [
+    20,
+    30,
+    40
+  ],
+  "mmr_lambdas": [
+    0.6,
+    0.65,
+    0.7,
+    0.75,
+    0.8
+  ],
+  "pool_size": 40,
+  "live": true,
+  "promotion_recommended": true,
+  "promotion_reason": "confirmed_best=cand_candk40_mmr_lambda060, primary_score=0.813022 (+0.080353 vs baseline). Plateau: PLATEAU_OK. All hard guardrails (silver hit@5, silver subpage_named, gold subpage_named hold, gold main_work) passed.",
+  "confirmed_best": {
+    "name": "cand_candk40_mmr_lambda060",
+    "candidate_k": 40,
+    "mmr_lambda": 0.6,
+    "primary_score": 0.813022,
+    "weighted_hit_at_5": 0.9195088676671215,
+    "weighted_mrr_at_10": 0.7039888260897811,
+    "weighted_ndcg_at_10": 0.7642350543747017,
+    "silver_hit_at_5": 0.8357894736842105,
+    "main_work_weighted_hit_at_5": 0.6976744186046512,
+    "subpage_named_weighted_hit_at_5": 0.9371069182389937,
+    "subpage_generic_weighted_hit_at_5": 1.0,
+    "section_hit_at_5": 0.022727272727272728,
+    "deltas": {
+      "primary_score": 0.08035300000000001,
+      "weighted_hit_at_5": 0.13369713506139158,
+      "weighted_mrr_at_10": 0.03425583057233805,
+      "weighted_ndcg_at_10": 0.040997225934997994,
+      "strict_hit_at_5": 0.1333333333333333,
+      "silver_hit_at_5": 0.054736842105263195,
+      "main_work_weighted_hit_at_5": 0.046511627906976716,
+      "subpage_named_weighted_hit_at_5": 0.2264150943396226,
+      "subpage_generic_weighted_hit_at_5": 0.0699300699300699,
+      "section_hit_at_5": -0.022727272727272728
+    },
+    "warnings": [
+      {
+        "code": "SECTION_RETRIEVAL_WARNING",
+        "metric": "section_hit_at_5",
+        "bucket": null,
+        "baseline": 0.045454545454545456,
+        "candidate": 0.022727272727272728,
+        "delta": -0.022727272727272728,
+        "threshold": 0.5,
+        "message": "gold section_hit@5 fell from 0.0455 to 0.0227 (<= 50% of baseline). Documented as a caveat — page_hit improved, section-level exact match regressed on a tiny base. Not a promotion blocker; needs section-aware reranking or chunk-level audit to validate."
+      }
+    ],
+    "accepted": true,
+    "rejection_reason": ""
+  }
+}

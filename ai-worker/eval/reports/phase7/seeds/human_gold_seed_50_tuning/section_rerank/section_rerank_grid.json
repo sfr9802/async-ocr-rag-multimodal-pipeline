@@ -1,0 +1,88 @@
+{
+  "phase": "7.6_section_aware_rerank",
+  "grid_size": 7,
+  "grid": [
+    {
+      "name": "baseline_phase7_5_recommended",
+      "strategy": "baseline_no_section_rerank",
+      "deployable": true,
+      "base_candidate_k": 40,
+      "base_mmr_lambda": 0.7,
+      "base_top_k": 10,
+      "section_bonus": 0.0,
+      "page_first_inner_top_k": 5,
+      "description": "Phase 7.5 production-recommended: candidate_k=40, MMR λ=0.70. No section-aware rerank. New baseline for Phase 7.6."
+    },
+    {
+      "name": "section_bonus_005",
+      "strategy": "section_bonus",
+      "deployable": false,
+      "base_candidate_k": 40,
+      "base_mmr_lambda": 0.7,
+      "base_top_k": 10,
+      "section_bonus": 0.05,
+      "page_first_inner_top_k": 5,
+      "description": "Add a +0.05 bonus to candidates whose section_path matches the gold expected_section_path (prefix or substring). DIAGNOSTIC ONLY — needs oracle access, not production-deployable."
+    },
+    {
+      "name": "section_bonus_010",
+      "strategy": "section_bonus",
+      "deployable": false,
+      "base_candidate_k": 40,
+      "base_mmr_lambda": 0.7,
+      "base_top_k": 10,
+      "section_bonus": 0.1,
+      "page_first_inner_top_k": 5,
+      "description": "Add a +0.10 bonus to candidates whose section_path matches the gold expected_section_path (prefix or substring). DIAGNOSTIC ONLY — needs oracle access, not production-deployable."
+    },
+    {
+      "name": "section_bonus_015",
+      "strategy": "section_bonus",
+      "deployable": false,
+      "base_candidate_k": 40,
+      "base_mmr_lambda": 0.7,
+      "base_top_k": 10,
+      "section_bonus": 0.15,
+      "page_first_inner_top_k": 5,
+      "description": "Add a +0.15 bonus to candidates whose section_path matches the gold expected_section_path (prefix or substring). DIAGNOSTIC ONLY — needs oracle access, not production-deployable."
+    },
+    {
+      "name": "supporting_chunk_proximity",
+      "strategy": "supporting_chunk_proximity",
+      "deployable": false,
+      "base_candidate_k": 40,
+      "base_mmr_lambda": 0.7,
+      "base_top_k": 10,
+      "section_bonus": 0.0,
+      "page_first_inner_top_k": 5,
+      "description": "Boost candidates that share the gold row's human_supporting_chunk_id page AND a small section-path edit distance. DIAGNOSTIC ONLY — needs oracle supporting-chunk annotation."
+    },
+    {
+      "name": "page_first_section_rerank_overlap",
+      "strategy": "page_first_section_rerank",
+      "deployable": true,
+      "base_candidate_k": 40,
+      "base_mmr_lambda": 0.7,
+      "base_top_k": 10,
+      "section_bonus": 0.0,
+      "page_first_inner_top_k": 5,
+      "description": "Two-pass rerank: page-level diversification then section-name token overlap with the query inside each retained page. PRODUCTION-DEPLOYABLE."
+    },
+    {
+      "name": "same_page_chunk_rerank",
+      "strategy": "same_page_chunk_rerank",
+      "deployable": true,
+      "base_candidate_k": 40,
+      "base_mmr_lambda": 0.7,
+      "base_top_k": 10,
+      "section_bonus": 0.0,
+      "page_first_inner_top_k": 5,
+      "description": "Within each page in the Phase 7.5 top-k, swap the represented chunk for the page's best section-name overlap chunk. PRODUCTION-DEPLOYABLE."
+    }
+  ],
+  "guardrail_thresholds": {
+    "primary_score_drop_max_vs_phase_7_5": 0.02,
+    "silver_hit_at_5_drop_max_vs_phase_7_5": 0.03,
+    "subpage_named_drop_max_vs_phase_7_5": 0.05
+  }
+}

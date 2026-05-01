@@ -1,0 +1,190 @@
+{
+  "n_total": 500,
+  "n_scored": 475,
+  "hit_at_1": 0.5536842105263158,
+  "hit_at_3": 0.7347368421052631,
+  "hit_at_5": 0.7810526315789473,
+  "hit_at_10": 0.8336842105263158,
+  "mrr_at_10": 0.6543575605680869,
+  "by_bucket": {
+    "main_work": {
+      "n_total": 150.0,
+      "n_scored": 150.0,
+      "hit_at_1": 0.43333333333333335,
+      "hit_at_3": 0.6,
+      "hit_at_5": 0.6466666666666666,
+      "hit_at_10": 0.7066666666666667,
+      "mrr_at_10": 0.5243756613756614
+    },
+    "not_in_corpus": {
+      "n_total": 25.0,
+      "n_scored": 0.0,
+      "hit_at_1": 0.0,
+      "hit_at_3": 0.0,
+      "hit_at_5": 0.0,
+      "hit_at_10": 0.0,
+      "mrr_at_10": 0.0
+    },
+    "subpage_generic": {
+      "n_total": 225.0,
+      "n_scored": 225.0,
+      "hit_at_1": 0.6044444444444445,
+      "hit_at_3": 0.7822222222222223,
+      "hit_at_5": 0.84,
+      "hit_at_10": 0.8755555555555555,
+      "mrr_at_10": 0.7072962962962963
+    },
+    "subpage_named": {
+      "n_total": 100.0,
+      "n_scored": 100.0,
+      "hit_at_1": 0.62,
+      "hit_at_3": 0.83,
+      "hit_at_5": 0.85,
+      "hit_at_10": 0.93,
+      "mrr_at_10": 0.7302182539682539
+    }
+  },
+  "by_query_type": {
+    "alias_variant": {
+      "n_total": 45.0,
+      "n_scored": 45.0,
+      "hit_at_1": 0.5777777777777777,
+      "hit_at_3": 0.7555555555555555,
+      "hit_at_5": 0.8,
+      "hit_at_10": 0.8222222222222222,
+      "mrr_at_10": 0.6694444444444444
+    },
+    "ambiguous": {
+      "n_total": 50.0,
+      "n_scored": 50.0,
+      "hit_at_1": 0.16,
+      "hit_at_3": 0.26,
+      "hit_at_5": 0.32,
+      "hit_at_10": 0.44,
+      "mrr_at_10": 0.22862698412698415
+    },
+    "direct_title": {
+      "n_total": 60.0,
+      "n_scored": 60.0,
+      "hit_at_1": 0.7333333333333333,
+      "hit_at_3": 0.9333333333333333,
+      "hit_at_5": 0.9666666666666667,
+      "hit_at_10": 0.9833333333333333,
+      "mrr_at_10": 0.8388888888888889
+    },
+    "indirect_entity": {
+      "n_total": 85.0,
+      "n_scored": 85.0,
+      "hit_at_1": 0.5529411764705883,
+      "hit_at_3": 0.7176470588235294,
+      "hit_at_5": 0.7647058823529411,
+      "hit_at_10": 0.8352941176470589,
+      "mrr_at_10": 0.6515172735760971
+    },
+    "paraphrase_semantic": {
+      "n_total": 125.0,
+      "n_scored": 125.0,
+      "hit_at_1": 0.512,
+      "hit_at_3": 0.712,
+      "hit_at_5": 0.752,
+      "hit_at_10": 0.808,
+      "mrr_at_10": 0.6196539682539682
+    },
+    "section_intent": {
+      "n_total": 110.0,
+      "n_scored": 110.0,
+      "hit_at_1": 0.6727272727272727,
+      "hit_at_3": 0.8727272727272727,
+      "hit_at_5": 0.9272727272727272,
+      "hit_at_10": 0.9636363636363636,
+      "mrr_at_10": 0.7826767676767677
+    },
+    "unanswerable_or_not_in_corpus": {
+      "n_total": 25.0,
+      "n_scored": 0.0,
+      "hit_at_1": 0.0,
+      "hit_at_3": 0.0,
+      "hit_at_5": 0.0,
+      "hit_at_10": 0.0,
+      "mrr_at_10": 0.0
+    }
+  },
+  "by_leakage_risk": {
+    "high": {
+      "n_total": 153.0,
+      "n_scored": 153.0,
+      "hit_at_1": 0.738562091503268,
+      "hit_at_3": 0.8954248366013072,
+      "hit_at_5": 0.9281045751633987,
+      "hit_at_10": 0.9673202614379085,
+      "mrr_at_10": 0.8266054569976139
+    },
+    "low": {
+      "n_total": 233.0,
+      "n_scored": 233.0,
+      "hit_at_1": 0.4291845493562232,
+      "hit_at_3": 0.6223175965665236,
+      "hit_at_5": 0.6781115879828327,
+      "hit_at_10": 0.7339055793991416,
+      "mrr_at_10": 0.5377954901560051
+    },
+    "medium": {
+      "n_total": 89.0,
+      "n_scored": 89.0,
+      "hit_at_1": 0.5617977528089888,
+      "hit_at_3": 0.7528089887640449,
+      "hit_at_5": 0.797752808988764,
+      "hit_at_10": 0.8651685393258427,
+      "mrr_at_10": 0.6634028892455859
+    },
+    "not_applicable": {
+      "n_total": 25.0,
+      "n_scored": 0.0,
+      "hit_at_1": 0.0,
+      "hit_at_3": 0.0,
+      "hit_at_5": 0.0,
+      "hit_at_10": 0.0,
+      "mrr_at_10": 0.0
+    }
+  },
+  "by_overlap_risk": {
+    "high": {
+      "n_total": 230.0,
+      "n_scored": 230.0,
+      "hit_at_1": 0.7,
+      "hit_at_3": 0.8695652173913043,
+      "hit_at_5": 0.908695652173913,
+      "hit_at_10": 0.9478260869565217,
+      "mrr_at_10": 0.7942374051069703
+    },
+    "low": {
+      "n_total": 148.0,
+      "n_scored": 148.0,
+      "hit_at_1": 0.2702702702702703,
+      "hit_at_3": 0.4797297297297297,
+      "hit_at_5": 0.5472972972972973,
+      "hit_at_10": 0.6216216216216216,
+      "mrr_at_10": 0.3888942513942514
+    },
+    "medium": {
+      "n_total": 97.0,
+      "n_scored": 97.0,
+      "hit_at_1": 0.6391752577319587,
+      "hit_at_3": 0.8041237113402062,
+      "hit_at_5": 0.8350515463917526,
+      "hit_at_10": 0.8865979381443299,
+      "mrr_at_10": 0.7277205040091638
+    },
+    "not_applicable": {
+      "n_total": 25.0,
+      "n_scored": 0.0,
+      "hit_at_1": 0.0,
+      "hit_at_3": 0.0,
+      "hit_at_5": 0.0,
+      "hit_at_10": 0.0,
+      "mrr_at_10": 0.0
+    }
+  },
+  "human_focus_disclaimer": "This evaluation is NOT a representative retrieval-quality benchmark. It is a human-weighted focus set drawn from queries_v4_llm_silver_500, designed to surface v4 subpage / section-level retrieval failures. primary_score improvements only mean 'we got better at the gold-50 subpage / named-subpage failures this set was curated to expose'.",
+  "note": "Silver-500 is LLM-generated. Treat these metrics as a regression sanity check, NOT the primary tuning objective."
+}

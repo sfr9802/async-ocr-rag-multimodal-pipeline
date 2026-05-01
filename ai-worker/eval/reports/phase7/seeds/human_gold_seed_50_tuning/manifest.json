@@ -1,0 +1,114 @@
+{
+  "phase": "7.x_human_gold_seed_50_tuning",
+  "human_focus_disclaimer": "This evaluation is NOT a representative retrieval-quality benchmark. It is a human-weighted focus set drawn from queries_v4_llm_silver_500, designed to surface v4 subpage / section-level retrieval failures. primary_score improvements only mean 'we got better at the gold-50 subpage / named-subpage failures this set was curated to expose'.",
+  "gold_path": "eval\\reports\\phase7\\seeds\\llm_silver_focus_50\\phase7_human_gold_seed_50.csv",
+  "silver_path": "eval\\reports\\phase7\\seeds\\llm_silver_500\\queries_v4_llm_silver_500.jsonl",
+  "report_dir": "eval\\reports\\phase7\\seeds\\human_gold_seed_50_tuning",
+  "index_root": null,
+  "embedding_model": "BAAI/bge-m3",
+  "max_seq_length": 512,
+  "live": false,
+  "variants": [
+    {
+      "name": "baseline_retrieval_title_section_top10",
+      "cache_dir_relative": "namu-v4-2008-2026-04-retrieval-title-section-mseq512",
+      "rag_chunks_path_relative": "eval/reports/phase7/silver500/retrieval/rag_chunks_retrieval_title_section.jsonl",
+      "top_k": 10,
+      "candidate_k": null,
+      "use_mmr": false,
+      "mmr_lambda": 0.7,
+      "description": "Production default — retrieval_title_section + top_k=10."
+    },
+    {
+      "name": "cand_top10_candk30",
+      "cache_dir_relative": "namu-v4-2008-2026-04-retrieval-title-section-mseq512",
+      "rag_chunks_path_relative": "eval/reports/phase7/silver500/retrieval/rag_chunks_retrieval_title_section.jsonl",
+      "top_k": 10,
+      "candidate_k": 30,
+      "use_mmr": false,
+      "mmr_lambda": 0.7,
+      "description": "Wide candidate pool (30) feeding the same top_k=10."
+    },
+    {
+      "name": "cand_top10_mmr_lambda07",
+      "cache_dir_relative": "namu-v4-2008-2026-04-retrieval-title-section-mseq512",
+      "rag_chunks_path_relative": "eval/reports/phase7/silver500/retrieval/rag_chunks_retrieval_title_section.jsonl",
+      "top_k": 10,
+      "candidate_k": 30,
+      "use_mmr": true,
+      "mmr_lambda": 0.7,
+      "description": "Wide candidate pool + MMR(λ=0.7) diversification."
+    },
+    {
+      "name": "cand_title_section_top10",
+      "cache_dir_relative": "namu-v4-2008-2026-04-title-section-mseq512",
+      "rag_chunks_path_relative": "eval/reports/phase7/silver500/retrieval/rag_chunks_title_section.jsonl",
+      "top_k": 10,
+      "candidate_k": null,
+      "use_mmr": false,
+      "mmr_lambda": 0.7,
+      "description": "title_section variant (Phase 7.0 baseline before retrieval_title promotion) — sanity check that the promotion still wins on human-weighted gold."
+    }
+  ],
+  "best_variant": "cand_top10_mmr_lambda07",
+  "best_reason": "primary_score=0.794832 (+0.062163 vs baseline) with no blocking guardrail.",
+  "primary_score_baseline": 0.732669,
+  "deltas": {
+    "cand_top10_candk30": {
+      "primary_score": 0.0,
+      "strict_hit_at_5": 0.0,
+      "weighted_hit_at_5": 0.0,
+      "weighted_mrr_at_10": 0.0,
+      "silver_hit_at_5": 0.0
+    },
+    "cand_top10_mmr_lambda07": {
+      "primary_score": 0.06216299999999997,
+      "strict_hit_at_5": 0.09999999999999998,
+      "weighted_hit_at_5": 0.106412005457026,
+      "weighted_mrr_at_10": 0.025160787370882787,
+      "silver_hit_at_5": 0.052631578947368474
+    },
+    "cand_title_section_top10": {
+      "primary_score": -0.16723500000000002,
+      "strict_hit_at_5": -0.13333333333333341,
+      "weighted_hit_at_5": -0.18008185538881316,
+      "weighted_mrr_at_10": -0.15551224582602485,
+      "silver_hit_at_5": -0.17052631578947364
+    }
+  },
+  "guardrails": {
+    "cand_top10_candk30": [],
+    "cand_top10_mmr_lambda07": [],
+    "cand_title_section_top10": [
+      {
+        "code": "SILVER_REGRESSION_WARNING",
+        "metric": "hit_at_5",
+        "bucket": null,
+        "baseline": 0.7810526315789473,
+        "candidate": 0.6105263157894737,
+        "delta": -0.17052631578947364,
+        "threshold": 0.03,
+        "message": "silver hit@5 dropped 17.05pp (>= 3.0pp threshold) — gold primary_score gain may not generalize."
+      },
+      {
+        "code": "BUCKET_REGRESSION_WARNING",
+        "metric": "hit_at_5",
+        "bucket": "subpage_named",
+        "baseline": 0.85,
+        "candidate": 0.78,
+        "delta": -0.06999999999999995,
+        "threshold": 0.05,
+        "message": "silver bucket='subpage_named' hit@5 dropped 7.00pp (>= 5.0pp threshold) — the named-subpage retrieval that the gold-50 set was curated to fix is regressing on the broad silver set; do NOT promote without a deeper audit."
+      }
+    ]
+  },
+  "validation_issues_gold": [
+    {
+      "query_id": "v4-llm-silver-109",
+      "field_name": "eval_weight",
+      "severity": "warning",
+      "message": "AMBIGUOUS_PROBE with non-zero weight — weight is ignored for primary objective; row stays in the top-k audit."
+    }
+  ],
+  "validation_issues_silver": []
+}

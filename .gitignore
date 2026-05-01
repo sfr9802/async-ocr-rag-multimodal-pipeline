@@ -131,6 +131,48 @@ ai-worker/eval/reports/phase7/7.0_retrieval_title_ab/*
 !ai-worker/eval/reports/phase7/7.0_retrieval_title_ab/per_query_comparison.jsonl
 !ai-worker/eval/reports/phase7/7.0_retrieval_title_ab/improved_queries.jsonl
 !ai-worker/eval/reports/phase7/7.0_retrieval_title_ab/regressed_queries.jsonl
+# Phase 7.6 — section-aware reranking plan (no experiment artefacts yet,
+# just the plan doc)
+!ai-worker/eval/reports/phase7/phase7_6_section_aware_reranking_plan.md
+# Phase 7.5 — human gold seed 50 tuning + MMR confirm sweep + production
+# promotion + latency smoke + Phase 7.6 section-rerank scaffold. Decision
+# artefacts only (small JSON / MD / digests) — the bulk
+# retrieval_*.jsonl exports and candidate_pool_*.jsonl files are
+# deterministically reproducible from the cached FAISS index via
+# scripts/run_phase7_mmr_confirm_sweep.py, so we keep them local.
+!ai-worker/eval/reports/phase7/seeds/
+ai-worker/eval/reports/phase7/seeds/*
+!ai-worker/eval/reports/phase7/seeds/human_gold_seed_50_tuning/
+ai-worker/eval/reports/phase7/seeds/human_gold_seed_50_tuning/*
+!ai-worker/eval/reports/phase7/seeds/human_gold_seed_50_tuning/best_config.env
+!ai-worker/eval/reports/phase7/seeds/human_gold_seed_50_tuning/best_config.json
+!ai-worker/eval/reports/phase7/seeds/human_gold_seed_50_tuning/baseline_gold_summary.json
+!ai-worker/eval/reports/phase7/seeds/human_gold_seed_50_tuning/baseline_silver_summary.json
+!ai-worker/eval/reports/phase7/seeds/human_gold_seed_50_tuning/candidate_results.jsonl
+!ai-worker/eval/reports/phase7/seeds/human_gold_seed_50_tuning/comparison_report.md
+!ai-worker/eval/reports/phase7/seeds/human_gold_seed_50_tuning/comparison_summary.json
+!ai-worker/eval/reports/phase7/seeds/human_gold_seed_50_tuning/failure_audit_gold.jsonl
+!ai-worker/eval/reports/phase7/seeds/human_gold_seed_50_tuning/failure_audit_gold.md
+!ai-worker/eval/reports/phase7/seeds/human_gold_seed_50_tuning/failure_audit_silver.jsonl
+!ai-worker/eval/reports/phase7/seeds/human_gold_seed_50_tuning/failure_audit_silver.md
+!ai-worker/eval/reports/phase7/seeds/human_gold_seed_50_tuning/manifest.json
+!ai-worker/eval/reports/phase7/seeds/human_gold_seed_50_tuning/confirm_sweep/
+ai-worker/eval/reports/phase7/seeds/human_gold_seed_50_tuning/confirm_sweep/*
+!ai-worker/eval/reports/phase7/seeds/human_gold_seed_50_tuning/confirm_sweep/best_config.confirmed.env
+!ai-worker/eval/reports/phase7/seeds/human_gold_seed_50_tuning/confirm_sweep/best_config.confirmed.json
+!ai-worker/eval/reports/phase7/seeds/human_gold_seed_50_tuning/confirm_sweep/best_config.production_recommended.env
+!ai-worker/eval/reports/phase7/seeds/human_gold_seed_50_tuning/confirm_sweep/best_config.production_recommended.json
+!ai-worker/eval/reports/phase7/seeds/human_gold_seed_50_tuning/confirm_sweep/confirm_sweep_report.md
+!ai-worker/eval/reports/phase7/seeds/human_gold_seed_50_tuning/confirm_sweep/confirm_sweep_results.jsonl
+!ai-worker/eval/reports/phase7/seeds/human_gold_seed_50_tuning/confirm_sweep/confirm_sweep_summary.json
+!ai-worker/eval/reports/phase7/seeds/human_gold_seed_50_tuning/confirm_sweep/manifest.json
+!ai-worker/eval/reports/phase7/seeds/human_gold_seed_50_tuning/confirm_sweep/latency_smoke_report.md
+!ai-worker/eval/reports/phase7/seeds/human_gold_seed_50_tuning/confirm_sweep/latency_smoke_results.json
+!ai-worker/eval/reports/phase7/seeds/human_gold_seed_50_tuning/confirm_sweep/promotion_pr_summary.md
+!ai-worker/eval/reports/phase7/seeds/human_gold_seed_50_tuning/section_rerank/
+ai-worker/eval/reports/phase7/seeds/human_gold_seed_50_tuning/section_rerank/*
+!ai-worker/eval/reports/phase7/seeds/human_gold_seed_50_tuning/section_rerank/section_rerank_grid.json
+!ai-worker/eval/reports/phase7/seeds/human_gold_seed_50_tuning/section_rerank/section_rerank_grid.md
 ai-worker/eval/datasets/samples/
 
 # ---- Phase 7.0 dense FAISS indexes (local-only, ~1.3 GB total) ----
