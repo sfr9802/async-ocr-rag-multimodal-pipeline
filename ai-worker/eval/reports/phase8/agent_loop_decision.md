@@ -23,7 +23,7 @@ LLM backend is unavailable.
 | Critic | `RuleCritic` (offline heuristic — LLM backend unavailable) |
 | Rewriter | `NoOpQueryRewriter` (registry default when backend is `noop`) |
 | Budget | `max_iter=3`, `max_total_ms=15000`, `min_confidence_to_stop=0.75` |
-| Report | `eval/reports/agent-loop-decision.json` + `.csv` |
+| Report | `eval/reports/phase8/agent_loop_decision.json` + `.csv` (this file's siblings) |
 
 Run command:
 
@@ -36,8 +36,8 @@ python -m eval.run_eval rag \
   --offline-corpus fixtures/kr_sample.jsonl \
   --agent-mode compare \
   --top-k 5 \
-  --out-json eval/reports/agent-loop-decision.json \
-  --out-csv  eval/reports/agent-loop-decision.csv
+  --out-json eval/reports/phase8/agent_loop_decision.json \
+  --out-csv  eval/reports/phase8/agent_loop_decision.csv
 ```
 
 ## Results

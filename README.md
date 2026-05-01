@@ -385,7 +385,7 @@ Phase 6.3에서 만든 v4 namu 코퍼스 (`namu-v4-structured-combined-2008-2026
 
 improved : regressed = **74 : 3**.  
 효과는 `subpage_generic` (등장인물 / 평가 / 음악 등 generic page_title) 버킷에 집중되며 (+40pt hit@1), `main_work` 버킷은 설계상 무영향(±0pt)으로 확인되었습니다.  
-상세는 `ai-worker/eval/reports/.../phase7_0_retrieval_title_ab/PHASE7_0_FINAL_REPORT.md`에 있습니다.
+상세는 `ai-worker/eval/reports/phase7/7.0_retrieval_title_ab/PHASE7_0_FINAL_REPORT.md`에 있습니다.
 
 #### Phase 7.2 — production ingest 승격
 
@@ -438,7 +438,7 @@ phase별 절차는 아래 토글을 펼쳐 확인합니다.
 python -m eval.run_eval rag \
     --dataset eval/datasets/rag_sample_kr.jsonl \
     --offline-corpus fixtures/kr_sample.jsonl \
-    --out-json eval/reports/baseline-phase0.json
+    --out-json eval/reports/phase0/baseline.json
 ```
 
 </details>
@@ -454,7 +454,7 @@ python -m eval.run_eval retrieval \
     --extra-hit-k 10 \
     --extra-hit-k 20 \
     --extra-hit-k 50 \
-    --out-dir eval/reports/phase2a-reranker/candidate-recall-b2
+    --out-dir eval/reports/phase2/2a_reranker/candidate-recall-b2
 ```
 
 </details>
@@ -471,7 +471,7 @@ for N in 20 50; do
       --final-top-k 10 \
       --reranker-model BAAI/bge-reranker-v2-m3 \
       --reranker-batch-size 16 \
-      --out-dir eval/reports/retrieval-silver200-combined-token-aware-v1-rerank-top$N
+      --out-dir eval/reports/_archive/silver200/token-aware-v1-rerank-top$N
 done
 ```
 
@@ -486,7 +486,7 @@ done
 python -m scripts.run_phase7_0_retrieval_title_ab \
     --src-chunks <Phase 6.3 rag_chunks.jsonl> \
     --pages-v4   <Phase 6.3 pages_v4.jsonl> \
-    --report-dir eval/reports/namu-v4-structured-combined-2008-2026-04-phase7_0_retrieval_title_ab \
+    --report-dir eval/reports/phase7/7.0_retrieval_title_ab \
     --target-queries 200
 ```
 
@@ -498,17 +498,17 @@ python -m scripts.run_phase7_0_retrieval_title_ab \
 ```bash
 # Phase 7.3 — confidence labelling on top of Phase 7.0 outputs
 python -m scripts.run_phase7_3_confidence_eval \
-    --per-query      eval/reports/.../phase7_0_retrieval_title_ab/per_query_comparison.jsonl \
-    --chunks         eval/reports/.../phase7_0_retrieval_title_ab/rag_chunks_retrieval_title_section.jsonl \
-    --silver-queries eval/reports/.../phase7_0_retrieval_title_ab/queries_v4_silver.jsonl \
-    --report-dir     eval/reports/.../phase7_3_confidence_eval \
+    --per-query      eval/reports/phase7/7.0_retrieval_title_ab/per_query_comparison.jsonl \
+    --chunks         eval/reports/phase7/7.0_retrieval_title_ab/rag_chunks_retrieval_title_section.jsonl \
+    --silver-queries eval/reports/phase7/7.0_retrieval_title_ab/queries_v4_silver.jsonl \
+    --report-dir     eval/reports/phase7/7.3_confidence_eval \
     --side candidate
 
 # Phase 7.4 — controlled recovery loop (oracle vs production-like)
 python -m scripts.run_phase7_4_controlled_recovery \
-    --per-query        eval/reports/.../phase7_3_confidence_eval/per_query_confidence.jsonl \
-    --chunks-jsonl     eval/reports/.../phase7_0_retrieval_title_ab/rag_chunks_retrieval_title_section.jsonl \
-    --report-dir       eval/reports/.../phase7_4_controlled_recovery \
+    --per-query        eval/reports/phase7/7.3_confidence_eval/per_query_confidence.jsonl \
+    --chunks-jsonl     eval/reports/phase7/7.0_retrieval_title_ab/rag_chunks_retrieval_title_section.jsonl \
+    --report-dir       eval/reports/phase7/7.4_controlled_recovery \
     --rewrite-mode both \
     --strict-label-leakage
 ```

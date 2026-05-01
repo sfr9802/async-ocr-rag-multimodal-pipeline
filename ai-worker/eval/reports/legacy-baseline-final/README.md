@@ -1,6 +1,6 @@
 # Legacy retrieval baseline (locked)
 
-This directory holds the **locked legacy retrieval / rerank baseline** that LangGraph A/B testing measures against. It is consolidated from the ``phase2a-latency-sweep`` run referenced by ``sourceSweepDir`` in ``baseline_manifest.json`` (``eval/reports/phase2a-latency``). The sweep was executed against the same commit recorded in ``baseline_manifest.json -> commitHash`` and the same dataset / corpus / model the A/B test will use, so re-running the consolidation step against the same sweep dir is byte-stable (modulo the ``manifestGeneratedAt`` timestamp).
+This directory holds the **locked legacy retrieval / rerank baseline** that LangGraph A/B testing measures against. It is consolidated from the ``phase2a-latency-sweep`` run referenced by ``sourceSweepDir`` in ``baseline_manifest.json`` (``eval/reports/phase2/2a_latency``). The sweep was executed against the same commit recorded in ``baseline_manifest.json -> commitHash`` and the same dataset / corpus / model the A/B test will use, so re-running the consolidation step against the same sweep dir is byte-stable (modulo the ``manifestGeneratedAt`` timestamp).
 
 ## Why this exists
 
@@ -16,9 +16,9 @@ The LangGraph backend (``AgentLoopGraph``) is the experimental alternative to th
 | `latency_breakdown.md` | rendered version of `latency_breakdown.json`. |
 | `selected_config.json` | canonical config — retriever + reranker + agent-loop knobs — for the A/B legacy arm. Includes the exact CLI to reproduce. |
 | `baseline_manifest.json` | provenance + metrics + latency manifest. The single doc the A/B harness should read to anchor its legacy reference. |
-| `../phase2a-latency/` | upstream `phase2a-latency-sweep` output this baseline was consolidated from. Do not delete — the manifest's `sourceSweepDir` field points back to it. |
+| `../phase2/2a_latency/` | upstream `phase2a-latency-sweep` output this baseline was consolidated from. Do not delete — the manifest's `sourceSweepDir` field points back to it. |
 
-`baseline_manifest.json -> sourceSweepDir = "eval/reports/phase2a-latency"`. `evaluatedAt` records when that sweep ran (`2026-04-28T22:33:42`); `manifestGeneratedAt` records when this directory was assembled.
+`baseline_manifest.json -> sourceSweepDir = "eval/reports/phase2/2a_latency"`. `evaluatedAt` records when that sweep ran (`2026-04-28T22:33:42`); `manifestGeneratedAt` records when this directory was assembled.
 
 ## Tier selection
 
@@ -38,7 +38,7 @@ Three tiers were considered (Pareto frontier of ``mean_hit_at_1`` ↑ vs ``reran
 python -m eval.run_eval phase2a-latency-sweep \
     --dataset eval/eval_queries/anime_silver_200.jsonl \
     --corpus eval/corpora/anime_namu_v3_token_chunked/corpus.combined.token-aware-v1.jsonl \
-    --out-dir eval/reports/phase2a-latency \
+    --out-dir eval/reports/phase2/2a_latency \
     --final-top-k 10 \
     --dense-top-n 5 --dense-top-n 10 --dense-top-n 15 \
     --dense-top-n 20 --dense-top-n 30 --dense-top-n 50 \
@@ -50,7 +50,7 @@ python -m eval.run_eval phase2a-latency-sweep \
 
 # 2. Re-build the consolidated baseline files.
 python -m scripts.build_legacy_baseline_final \
-    --sweep-dir eval/reports/phase2a-latency \
+    --sweep-dir eval/reports/phase2/2a_latency \
     --out-dir eval/reports/legacy-baseline-final \
     --selected-tier balanced
 ```
@@ -88,4 +88,4 @@ Outputs land in `eval/agent_loop_ab/<run-name>/` (`raw_results.jsonl`, `summary.
 1. **Do not edit the LangGraph backend** to make A/B numbers look better. The legacy reference must stay frozen.
 2. **`agent_loop_backend` default stays `legacy`**. The graph backend is opt-in only.
 3. **No Redis / DB / callback / Spring repo / infra mutations** from this directory's tooling. Everything here is post-processing.
-4. **Re-runs go through the upstream sweep dir** (``eval/reports/phase2a-latency``) and then through `build_legacy_baseline_final.py`. Don't hand-edit `metrics.*` or `baseline_manifest.json` — re-run the script.
+4. **Re-runs go through the upstream sweep dir** (``eval/reports/phase2/2a_latency``) and then through `build_legacy_baseline_final.py`. Don't hand-edit `metrics.*` or `baseline_manifest.json` — re-run the script.

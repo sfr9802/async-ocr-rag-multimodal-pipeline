@@ -271,25 +271,25 @@ silver vs. gold 의미, 결정적 generator 의 stratification, gold-set
 ```bash
 # 발행하지 않은 retrieval 실행에 doc/keyword cross-tab 추가
 python -m eval.run_eval retrieval-miss-analysis \
-    --report-dir eval/reports/retrieval-silver200-baseline \
+    --report-dir eval/reports/_archive/silver200/baseline \
     --top-k 10
 
 # 두 개의 retrieval 실행을 나란히 비교 (deterministic vs opus).
 # .md 에 Caveat 블록 + slice 별 retriever_config 자동 발행.
 python -m eval.run_eval retrieval-compare \
-    --deterministic-report eval/reports/retrieval-silver200-baseline/retrieval_eval_report.json \
-    --opus-report          eval/reports/retrieval-silver200-opus-baseline/retrieval_eval_report.json \
+    --deterministic-report eval/reports/_archive/silver200/baseline/retrieval_eval_report.json \
+    --opus-report          eval/reports/_archive/silver200/opus-baseline/retrieval_eval_report.json \
     --deterministic-max-seq-length 8192 \
     --opus-max-seq-length 1024 \
-    --out-json eval/reports/retrieval-baseline-comparison.json \
-    --out-md   eval/reports/retrieval-baseline-comparison.md
+    --out-json eval/reports/phase2/baseline_comparison.json \
+    --out-md   eval/reports/phase2/baseline_comparison.md
 
 # 같은 비교지만 deterministic 측에 hyperparameter-tuned 변형 포함.
 # 튜닝된 slice (와 그 진단) 는 자체 headline-metrics 표에 렌더링되어
 # baseline 숫자와 행을 공유하지 않음.
 python -m eval.run_eval retrieval-compare \
     --deterministic-report eval/reports/retrieval-silver200-tuned/retrieval_eval_report.json \
-    --opus-report          eval/reports/retrieval-silver200-opus-baseline/retrieval_eval_report.json \
+    --opus-report          eval/reports/_archive/silver200/opus-baseline/retrieval_eval_report.json \
     --deterministic-kind tuned \
     --opus-kind baseline \
     --out-json eval/reports/retrieval-tuned-vs-baseline.json \
@@ -300,12 +300,12 @@ python -m eval.run_eval retrieval-compare \
 python -m eval.run_eval analyze-corpus-lengths \
     --corpus eval/corpora/anime_namu_v3/corpus.jsonl \
     --tokenizer BAAI/bge-m3 \
-    --out-json eval/reports/corpus-length-analysis.json \
-    --out-md   eval/reports/corpus-length-analysis.md
+    --out-json eval/reports/phase1/length_analysis.json \
+    --out-md   eval/reports/phase1/length_analysis.md
 ```
 
 전체 Phase 0 trade-off 로그는
-[`reports/phase0-baseline-tradeoffs.md`](reports/phase0-baseline-tradeoffs.md)
+[`reports/phase0/tradeoffs.md`](reports/phase0/tradeoffs.md)
 에 있음.
 
 ### Phase 2A — cross-encoder reranker (`retrieval-rerank`)
@@ -323,7 +323,7 @@ python -m eval.run_eval retrieval \
     --dataset eval/eval_queries/anime_silver_200.jsonl \
     --top-k 50 \
     --extra-hit-k 10 --extra-hit-k 20 --extra-hit-k 50 \
-    --out-dir eval/reports/phase2a-reranker/candidate-recall-b2
+    --out-dir eval/reports/phase2/2a_reranker/candidate-recall-b2
 
 # 2. dense top-20 → cross-encoder rerank → top-10
 python -m eval.run_eval retrieval-rerank \
@@ -333,7 +333,7 @@ python -m eval.run_eval retrieval-rerank \
     --final-top-k 10 \
     --reranker-model BAAI/bge-reranker-v2-m3 \
     --reranker-batch-size 16 \
-    --out-dir eval/reports/retrieval-silver200-combined-token-aware-v1-rerank-top20
+    --out-dir eval/reports/_archive/silver200/token-aware-v1-rerank-top20
 
 # 3. dense top-50 → cross-encoder rerank → top-10
 python -m eval.run_eval retrieval-rerank \
@@ -343,23 +343,23 @@ python -m eval.run_eval retrieval-rerank \
     --final-top-k 10 \
     --reranker-model BAAI/bge-reranker-v2-m3 \
     --reranker-batch-size 16 \
-    --out-dir eval/reports/retrieval-silver200-combined-token-aware-v1-rerank-top50
+    --out-dir eval/reports/_archive/silver200/token-aware-v1-rerank-top50
 
 # 4. 5-slice 비교 (B1 dense / B2 dense / candidate-recall / rerank top20 / rerank top50)
 python -m eval.run_eval phase2a-reranker-comparison \
-    --slice "B1 dense (combined-old):eval/reports/retrieval-silver200-combined-old-chunker/retrieval_eval_report.json" \
-    --slice "B2 dense (token-aware-v1):eval/reports/retrieval-silver200-combined-token-aware-v1/retrieval_eval_report.json" \
-    --slice "B2 dense top50 (candidate-recall):eval/reports/phase2a-reranker/candidate-recall-b2/retrieval_eval_report.json" \
-    --slice "B2 rerank top20:eval/reports/retrieval-silver200-combined-token-aware-v1-rerank-top20/retrieval_eval_report.json" \
-    --slice "B2 rerank top50:eval/reports/retrieval-silver200-combined-token-aware-v1-rerank-top50/retrieval_eval_report.json" \
-    --out-json eval/reports/phase2a-reranker/reranker-comparison.json \
-    --out-md   eval/reports/phase2a-reranker/reranker-comparison.md
+    --slice "B1 dense (combined-old):eval/reports/_archive/silver200/combined-old-chunker/retrieval_eval_report.json" \
+    --slice "B2 dense (token-aware-v1):eval/reports/_archive/silver200/token-aware-v1/retrieval_eval_report.json" \
+    --slice "B2 dense top50 (candidate-recall):eval/reports/phase2/2a_reranker/candidate-recall-b2/retrieval_eval_report.json" \
+    --slice "B2 rerank top20:eval/reports/_archive/silver200/token-aware-v1-rerank-top20/retrieval_eval_report.json" \
+    --slice "B2 rerank top50:eval/reports/_archive/silver200/token-aware-v1-rerank-top50/retrieval_eval_report.json" \
+    --out-json eval/reports/phase2/2a_reranker/reranker-comparison.json \
+    --out-md   eval/reports/phase2/2a_reranker/reranker-comparison.md
 
 # 5. Failure analysis (dense top-10 vs rerank top-20 cross-tab)
 python -m eval.run_eval phase2a-reranker-failure-analysis \
-    --dense-report-dir  eval/reports/retrieval-silver200-combined-token-aware-v1 \
-    --rerank-report-dir eval/reports/retrieval-silver200-combined-token-aware-v1-rerank-top20 \
-    --out-dir eval/reports/phase2a-reranker \
+    --dense-report-dir  eval/reports/_archive/silver200/token-aware-v1 \
+    --rerank-report-dir eval/reports/_archive/silver200/token-aware-v1-rerank-top20 \
+    --out-dir eval/reports/phase2/2a_reranker \
     --k-preview 5 --sample-cap 10
 ```
 
@@ -403,7 +403,7 @@ hit@50=0.8000. reranker 는 candidate set 안의 순서만 바꿀 수 있으므�
 python -m eval.run_eval phase2a-latency-sweep \
     --dataset eval/eval_queries/anime_silver_200.jsonl \
     --corpus  eval/corpora/anime_namu_v3_token_chunked/corpus.combined.token-aware-v1.jsonl \
-    --out-dir eval/reports/phase2a-latency \
+    --out-dir eval/reports/phase2/2a_latency \
     --final-top-k 10 \
     --dense-top-n 5  --dense-top-n 10 --dense-top-n 15 \
     --dense-top-n 20 --dense-top-n 30 --dense-top-n 50 \
@@ -413,7 +413,7 @@ python -m eval.run_eval phase2a-latency-sweep \
     --latency rerank_p95_ms
 ```
 
-산출물 (`eval/reports/phase2a-latency/`):
+산출물 (`eval/reports/phase2/2a_latency/`):
 
 - `rerank-top{N}/retrieval_eval_report.{json,md}` — 각 config 의 표준
   retrieval-rerank 산출물 (rerank_breakdown_ms 포함).
@@ -435,26 +435,26 @@ Post-processing 만 다시 돌리고 싶으면 분리 모드 사용:
 ```bash
 # 단일 retrieval-rerank report 의 latency breakdown.
 python -m eval.run_eval phase2a-latency-breakdown \
-    --report eval/reports/phase2a-latency/rerank-top20/retrieval_eval_report.json \
-    --out-json eval/reports/phase2a-latency/reranker-latency-breakdown.json \
-    --out-md   eval/reports/phase2a-latency/reranker-latency-breakdown.md
+    --report eval/reports/phase2/2a_latency/rerank-top20/retrieval_eval_report.json \
+    --out-json eval/reports/phase2/2a_latency/reranker-latency-breakdown.json \
+    --out-md   eval/reports/phase2/2a_latency/reranker-latency-breakdown.md
 
 # N 개 retrieval-rerank report → topN sweep.
 python -m eval.run_eval phase2a-topn-sweep \
-    --slice "top10:eval/reports/phase2a-latency/rerank-top10/retrieval_eval_report.json" \
-    --slice "top20:eval/reports/phase2a-latency/rerank-top20/retrieval_eval_report.json" \
-    --slice "top50:eval/reports/phase2a-latency/rerank-top50/retrieval_eval_report.json" \
-    --candidate-recall-report eval/reports/phase2a-latency/candidate-recall/retrieval_eval_report.json \
-    --out-json eval/reports/phase2a-latency/topn-sweep.json \
-    --out-md   eval/reports/phase2a-latency/topn-sweep.md
+    --slice "top10:eval/reports/phase2/2a_latency/rerank-top10/retrieval_eval_report.json" \
+    --slice "top20:eval/reports/phase2/2a_latency/rerank-top20/retrieval_eval_report.json" \
+    --slice "top50:eval/reports/phase2/2a_latency/rerank-top50/retrieval_eval_report.json" \
+    --candidate-recall-report eval/reports/phase2/2a_latency/candidate-recall/retrieval_eval_report.json \
+    --out-json eval/reports/phase2/2a_latency/topn-sweep.json \
+    --out-md   eval/reports/phase2/2a_latency/topn-sweep.md
 
 # topn-sweep.json → Pareto frontier + recommended modes.
 python -m eval.run_eval phase2a-recommended-modes \
-    --sweep-json   eval/reports/phase2a-latency/topn-sweep.json \
-    --out-md       eval/reports/phase2a-latency/recommended-modes.md \
-    --out-modes-json eval/reports/phase2a-latency/recommended-modes.json \
-    --out-frontier-json eval/reports/phase2a-latency/accuracy-latency-frontier.json \
-    --out-frontier-md   eval/reports/phase2a-latency/accuracy-latency-frontier.md
+    --sweep-json   eval/reports/phase2/2a_latency/topn-sweep.json \
+    --out-md       eval/reports/phase2/2a_latency/recommended-modes.md \
+    --out-modes-json eval/reports/phase2/2a_latency/recommended-modes.json \
+    --out-frontier-json eval/reports/phase2/2a_latency/accuracy-latency-frontier.json \
+    --out-frontier-md   eval/reports/phase2/2a_latency/accuracy-latency-frontier.md
 ```
 
 **Stage breakdown 측정 메모**

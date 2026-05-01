@@ -4,7 +4,7 @@
   "slices": [
     {
       "label": "B1 dense (combined-old)",
-      "report_path": "eval\\reports\\retrieval-silver200-combined-old-chunker\\retrieval_eval_report.json",
+      "report_path": "eval\\reports\\_archive\\silver200\\combined-old-chunker\\retrieval_eval_report.json",
       "corpus_path": "eval\\corpora\\anime_namu_v3_preprocessed\\corpus.prefix-v1.inline-edit-v1.jsonl",
       "reranker_name": "noop",
       "embedding_model": "BAAI/bge-m3",
@@ -33,7 +33,7 @@
     },
     {
       "label": "B2 dense (token-aware-v1)",
-      "report_path": "eval\\reports\\retrieval-silver200-combined-token-aware-v1\\retrieval_eval_report.json",
+      "report_path": "eval\\reports\\_archive\\silver200\\token-aware-v1\\retrieval_eval_report.json",
       "corpus_path": "eval\\corpora\\anime_namu_v3_token_chunked\\corpus.combined.token-aware-v1.jsonl",
       "reranker_name": "noop",
       "embedding_model": "BAAI/bge-m3",
@@ -62,7 +62,7 @@
     },
     {
       "label": "B2 dense top50 (candidate-recall)",
-      "report_path": "eval\\reports\\phase2a-reranker\\candidate-recall-b2\\retrieval_eval_report.json",
+      "report_path": "eval\\reports\\phase2\\2a_reranker\\candidate-recall-b2\\retrieval_eval_report.json",
       "corpus_path": "eval\\corpora\\anime_namu_v3_token_chunked\\corpus.combined.token-aware-v1.jsonl",
       "reranker_name": "noop",
       "embedding_model": "BAAI/bge-m3",
@@ -95,7 +95,7 @@
     },
     {
       "label": "B2 rerank top20",
-      "report_path": "eval\\reports\\retrieval-silver200-combined-token-aware-v1-rerank-top20\\retrieval_eval_report.json",
+      "report_path": "eval\\reports\\_archive\\silver200\\token-aware-v1-rerank-top20\\retrieval_eval_report.json",
       "corpus_path": "eval\\corpora\\anime_namu_v3_token_chunked\\corpus.combined.token-aware-v1.jsonl",
       "reranker_name": "cross-encoder:BAAI/bge-reranker-v2-m3",
       "embedding_model": "BAAI/bge-m3",
@@ -124,7 +124,7 @@
     },
     {
       "label": "B2 rerank top50",
-      "report_path": "eval\\reports\\retrieval-silver200-combined-token-aware-v1-rerank-top50\\retrieval_eval_report.json",
+      "report_path": "eval\\reports\\_archive\\silver200\\token-aware-v1-rerank-top50\\retrieval_eval_report.json",
       "corpus_path": "eval\\corpora\\anime_namu_v3_token_chunked\\corpus.combined.token-aware-v1.jsonl",
       "reranker_name": "cross-encoder:BAAI/bge-reranker-v2-m3",
       "embedding_model": "BAAI/bge-m3",

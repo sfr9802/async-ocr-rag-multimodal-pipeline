@@ -36,7 +36,7 @@
   "querySetPath": "eval/eval_queries/anime_silver_200.jsonl",
   "corpusPath": "eval/corpora/anime_namu_v3_token_chunked/corpus.combined.token-aware-v1.jsonl",
   "evalCommand": {
-    "step1_runSweep": "python -m eval.run_eval phase2a-latency-sweep --dataset eval/eval_queries/anime_silver_200.jsonl --corpus eval/corpora/anime_namu_v3_token_chunked/corpus.combined.token-aware-v1.jsonl --out-dir eval/reports/phase2a-latency --final-top-k 10 --dense-top-n 5 --dense-top-n 10 --dense-top-n 15 --dense-top-n 20 --dense-top-n 30 --dense-top-n 50 --breakdown-anchor-dense-top-n 10 --candidate-recall-extra-hit-k 10 --candidate-recall-extra-hit-k 20 --candidate-recall-extra-hit-k 50 --metric mean_hit_at_1 --latency rerank_p95_ms",
-    "step2_consolidate": "python -m scripts.build_legacy_baseline_final --sweep-dir eval/reports/phase2a-latency --out-dir eval/reports/legacy-baseline-final --selected-tier balanced"
+    "step1_runSweep": "python -m eval.run_eval phase2a-latency-sweep --dataset eval/eval_queries/anime_silver_200.jsonl --corpus eval/corpora/anime_namu_v3_token_chunked/corpus.combined.token-aware-v1.jsonl --out-dir eval/reports/phase2/2a_latency --final-top-k 10 --dense-top-n 5 --dense-top-n 10 --dense-top-n 15 --dense-top-n 20 --dense-top-n 30 --dense-top-n 50 --breakdown-anchor-dense-top-n 10 --candidate-recall-extra-hit-k 10 --candidate-recall-extra-hit-k 20 --candidate-recall-extra-hit-k 50 --metric mean_hit_at_1 --latency rerank_p95_ms",
+    "step2_consolidate": "python -m scripts.build_legacy_baseline_final --sweep-dir eval/reports/phase2/2a_latency --out-dir eval/reports/legacy-baseline-final --selected-tier balanced"
   }
 }

@@ -72,25 +72,31 @@ ai-worker/tests/_drafts/
 # baseline reports are the one exception — they anchor the README
 # benchmark table and later phases diff against them.
 ai-worker/eval/reports/*
-!ai-worker/eval/reports/baseline-phase0.json
-!ai-worker/eval/reports/baseline-phase0-anime.json
+!ai-worker/eval/reports/phase0/
+ai-worker/eval/reports/phase0/*
+!ai-worker/eval/reports/phase0/baseline.json
+!ai-worker/eval/reports/phase0/baseline-anime.json
 # Phase 8 agent-loop decision: the markdown + backing JSON are the
 # record of the measured A/B, not a run-to-run report.
-!ai-worker/eval/reports/agent-loop-decision.md
-!ai-worker/eval/reports/agent-loop-decision.json
+!ai-worker/eval/reports/phase8/
+ai-worker/eval/reports/phase8/*
+!ai-worker/eval/reports/phase8/agent_loop_decision.md
+!ai-worker/eval/reports/phase8/agent_loop_decision.json
 # Phase 2A reranker summary artifacts — small, deterministic, anchor
 # the README benchmark table. We commit the flat candidate-recall /
 # comparison / failure-analysis files; the per-run retrieval dirs
 # (top_k_dump.jsonl, miss_analysis, duplicate_analysis) stay local
 # because they're large and reproducible from corpus + dataset.
-!ai-worker/eval/reports/phase2a-reranker/
-ai-worker/eval/reports/phase2a-reranker/*
-!ai-worker/eval/reports/phase2a-reranker/candidate-recall-b2.json
-!ai-worker/eval/reports/phase2a-reranker/candidate-recall-b2.md
-!ai-worker/eval/reports/phase2a-reranker/reranker-comparison.json
-!ai-worker/eval/reports/phase2a-reranker/reranker-comparison.md
-!ai-worker/eval/reports/phase2a-reranker/reranker-failure-analysis.json
-!ai-worker/eval/reports/phase2a-reranker/reranker-failure-analysis.md
+!ai-worker/eval/reports/phase2/
+ai-worker/eval/reports/phase2/*
+!ai-worker/eval/reports/phase2/2a_reranker/
+ai-worker/eval/reports/phase2/2a_reranker/*
+!ai-worker/eval/reports/phase2/2a_reranker/candidate-recall-b2.json
+!ai-worker/eval/reports/phase2/2a_reranker/candidate-recall-b2.md
+!ai-worker/eval/reports/phase2/2a_reranker/reranker-comparison.json
+!ai-worker/eval/reports/phase2/2a_reranker/reranker-comparison.md
+!ai-worker/eval/reports/phase2/2a_reranker/reranker-failure-analysis.json
+!ai-worker/eval/reports/phase2/2a_reranker/reranker-failure-analysis.md
 # Locked legacy retrieval baseline — the A/B reference for LangGraph
 # adoption. Files are deterministic post-process output of
 # scripts/build_legacy_baseline_final.py (no top_k_dump or per-row
@@ -110,19 +116,21 @@ ai-worker/eval/reports/legacy-baseline-final/*
 # rag_chunks_<variant>.jsonl exports (~318 MB each) are
 # deterministically reproducible from the Phase 6.3 source via
 # eval.harness.v4_chunk_export and stay local.
-!ai-worker/eval/reports/namu-v4-structured-combined-2008-2026-04-phase7_0_retrieval_title_ab/
-ai-worker/eval/reports/namu-v4-structured-combined-2008-2026-04-phase7_0_retrieval_title_ab/*
-!ai-worker/eval/reports/namu-v4-structured-combined-2008-2026-04-phase7_0_retrieval_title_ab/PHASE7_0_FINAL_REPORT.md
-!ai-worker/eval/reports/namu-v4-structured-combined-2008-2026-04-phase7_0_retrieval_title_ab/ab_summary.json
-!ai-worker/eval/reports/namu-v4-structured-combined-2008-2026-04-phase7_0_retrieval_title_ab/ab_summary.md
-!ai-worker/eval/reports/namu-v4-structured-combined-2008-2026-04-phase7_0_retrieval_title_ab/manifest_title_section.json
-!ai-worker/eval/reports/namu-v4-structured-combined-2008-2026-04-phase7_0_retrieval_title_ab/manifest_retrieval_title_section.json
-!ai-worker/eval/reports/namu-v4-structured-combined-2008-2026-04-phase7_0_retrieval_title_ab/variant_diff_report.json
-!ai-worker/eval/reports/namu-v4-structured-combined-2008-2026-04-phase7_0_retrieval_title_ab/variant_diff_report.md
-!ai-worker/eval/reports/namu-v4-structured-combined-2008-2026-04-phase7_0_retrieval_title_ab/queries_v4_silver.jsonl
-!ai-worker/eval/reports/namu-v4-structured-combined-2008-2026-04-phase7_0_retrieval_title_ab/per_query_comparison.jsonl
-!ai-worker/eval/reports/namu-v4-structured-combined-2008-2026-04-phase7_0_retrieval_title_ab/improved_queries.jsonl
-!ai-worker/eval/reports/namu-v4-structured-combined-2008-2026-04-phase7_0_retrieval_title_ab/regressed_queries.jsonl
+!ai-worker/eval/reports/phase7/
+ai-worker/eval/reports/phase7/*
+!ai-worker/eval/reports/phase7/7.0_retrieval_title_ab/
+ai-worker/eval/reports/phase7/7.0_retrieval_title_ab/*
+!ai-worker/eval/reports/phase7/7.0_retrieval_title_ab/PHASE7_0_FINAL_REPORT.md
+!ai-worker/eval/reports/phase7/7.0_retrieval_title_ab/ab_summary.json
+!ai-worker/eval/reports/phase7/7.0_retrieval_title_ab/ab_summary.md
+!ai-worker/eval/reports/phase7/7.0_retrieval_title_ab/manifest_title_section.json
+!ai-worker/eval/reports/phase7/7.0_retrieval_title_ab/manifest_retrieval_title_section.json
+!ai-worker/eval/reports/phase7/7.0_retrieval_title_ab/variant_diff_report.json
+!ai-worker/eval/reports/phase7/7.0_retrieval_title_ab/variant_diff_report.md
+!ai-worker/eval/reports/phase7/7.0_retrieval_title_ab/queries_v4_silver.jsonl
+!ai-worker/eval/reports/phase7/7.0_retrieval_title_ab/per_query_comparison.jsonl
+!ai-worker/eval/reports/phase7/7.0_retrieval_title_ab/improved_queries.jsonl
+!ai-worker/eval/reports/phase7/7.0_retrieval_title_ab/regressed_queries.jsonl
 ai-worker/eval/datasets/samples/
 
 # ---- Phase 7.0 dense FAISS indexes (local-only, ~1.3 GB total) ----
@@ -219,5 +227,5 @@ ai-worker/eval/experiments/run_output/
 **/_local/
 **/_drafts/
 # Phase 0 baseline tradeoffs / decisions doc — local-only by policy.
-ai-worker/eval/reports/phase0-baseline-tradeoffs.md
+ai-worker/eval/reports/phase0/tradeoffs.md
 

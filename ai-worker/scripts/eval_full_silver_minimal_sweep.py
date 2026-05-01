@@ -26,9 +26,9 @@ The script does NOT change production code. It only:
     cell and persist the consolidated sweep report + Pareto adapter.
 
 Outputs land under
-``eval/reports/retrieval-full-silver-minimal-<TIMESTAMP>/``. The run never
-overwrites the legacy historical baseline at
-``eval/reports/legacy-baseline-final/`` or the phase2a-latency artifacts.
+``eval/reports/_archive/confirm-runs/retrieval-full-silver-minimal-<TIMESTAMP>/``.
+The run never overwrites the legacy historical baseline at
+``eval/reports/legacy-baseline-final/`` or the phase2/2a_latency artifacts.
 
 Run::
 
@@ -59,7 +59,7 @@ _DEFAULT_DATASET = Path("eval/eval_queries/anime_silver_200.jsonl")
 _DEFAULT_CORPUS = Path(
     "eval/corpora/anime_namu_v3_token_chunked/corpus.combined.token-aware-v1.jsonl"
 )
-_DEFAULT_REPORTS_ROOT = Path("eval/reports")
+_DEFAULT_REPORTS_ROOT = Path("eval/reports/_archive/confirm-runs")
 _DEFAULT_CACHE_ROOT = Path("eval/_cache/dense_index")
 _PER_BACKEND_TOP_K = 50
 _K_RRF = 60

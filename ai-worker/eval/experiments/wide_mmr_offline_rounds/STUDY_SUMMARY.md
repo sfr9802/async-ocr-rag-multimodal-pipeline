@@ -1,7 +1,7 @@
 # Study `rag-wide-mmr-offline-v1` — 5-round summary
 
 5 round의 Optuna round-refinement 결과 종합. wide-MMR-titlecap diagnostic sweep
-(`eval/reports/retrieval-wide-mmr-titlecap-20260429-1353/`)에서 도출된 narrow
+(`eval/reports/_archive/confirm-runs/wide-mmr-titlecap-20260429-1353/`)에서 도출된 narrow
 search space를 갖고 출발해, retrieval pipeline의 가장 effective한 hyperparam
 조합을 찾는 것을 목표로 했음.
 

@@ -142,7 +142,7 @@ are all green — no regression.
 # 1. Export both variant chunk files (in-process, ~10s)
 python -c "from eval.harness.v4_chunk_export import export_v4_chunks, V4_EXPORT_VARIANTS
 src='D:/port/crawling/.../rag_chunks.jsonl'
-out='eval/reports/.../phase7_0_retrieval_title_ab'
+out='eval/reports/phase7/7.0_retrieval_title_ab'
 for v in V4_EXPORT_VARIANTS:
     export_v4_chunks(src, f'{out}/rag_chunks_{v}.jsonl', variant=v)"
 

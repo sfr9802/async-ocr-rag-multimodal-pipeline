@@ -16,7 +16,7 @@ the diff between the two verdict eras stays auditable.
 Run::
 
     python -m scripts.rerender_variant_verdict \\
-        --report-dir eval/reports/retrieval-embedding-text-variant-confirm-20260429-1940
+        --report-dir eval/reports/_archive/confirm-runs/embedding-text-variant-20260429-1940
 """
 
 from __future__ import annotations

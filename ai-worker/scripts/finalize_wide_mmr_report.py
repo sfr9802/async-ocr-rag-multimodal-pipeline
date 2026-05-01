@@ -17,7 +17,7 @@ the final report dir for self-containment).
 Usage::
 
     python -m scripts.finalize_wide_mmr_report \\
-        --report-dir eval/reports/retrieval-wide-mmr-titlecap-<TS>
+        --report-dir eval/reports/_archive/confirm-runs/retrieval-wide-mmr-titlecap-<TS>
 """
 
 from __future__ import annotations

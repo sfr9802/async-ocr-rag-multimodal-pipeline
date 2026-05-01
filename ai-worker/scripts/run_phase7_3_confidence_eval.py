@@ -8,16 +8,16 @@ production code is touched — this is a pure post-hoc analysis pass.
 Usage::
 
     python -m scripts.run_phase7_3_confidence_eval \\
-        --per-query eval/reports/.../per_query_comparison.jsonl \\
-        --chunks eval/reports/.../rag_chunks_retrieval_title_section.jsonl \\
-        --silver-queries eval/reports/.../queries_v4_silver.jsonl \\
-        --report-dir eval/reports/...-phase7_3_confidence_eval/
+        --per-query eval/reports/phase7/7.0_retrieval_title_ab/per_query_comparison.jsonl \\
+        --chunks eval/reports/phase7/7.0_retrieval_title_ab/rag_chunks_retrieval_title_section.jsonl \\
+        --silver-queries eval/reports/phase7/7.0_retrieval_title_ab/queries_v4_silver.jsonl \\
+        --report-dir eval/reports/phase7/7.3_confidence_eval/
 
 Optionally include the Phase 7.1 reranker output to additionally surface
 ``rerank_demoted_gold`` and merge rerank scores::
 
     python -m scripts.run_phase7_3_confidence_eval ... \\
-        --rerank-per-query eval/reports/.../per_query_comparison.jsonl \\
+        --rerank-per-query eval/reports/phase7/7.1_reranker_ab/per_query_comparison.jsonl \\
         --side candidate
 
 The classifier's thresholds are exposed as flags but default to the

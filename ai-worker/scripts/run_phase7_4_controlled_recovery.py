@@ -10,11 +10,11 @@ touched.
 Usage::
 
     python -m scripts.run_phase7_4_controlled_recovery \\
-        --confidence-jsonl eval/reports/.../per_query_confidence.jsonl \\
-        --per-query        eval/reports/.../per_query_comparison.jsonl \\
-        --chunks           eval/reports/.../rag_chunks_retrieval_title_section.jsonl \\
-        --silver-queries   eval/reports/.../queries_v4_silver.jsonl \\
-        --report-dir       eval/reports/.../phase7_4_controlled_recovery/ \\
+        --confidence-jsonl eval/reports/phase7/7.3_confidence_eval/per_query_confidence.jsonl \\
+        --per-query        eval/reports/phase7/7.0_retrieval_title_ab/per_query_comparison.jsonl \\
+        --chunks           eval/reports/phase7/7.0_retrieval_title_ab/rag_chunks_retrieval_title_section.jsonl \\
+        --silver-queries   eval/reports/phase7/7.0_retrieval_title_ab/queries_v4_silver.jsonl \\
+        --report-dir       eval/reports/phase7/7.4_controlled_recovery/ \\
         --rewrite-mode     both
 
 The harness is deterministic: all retrieval is post-hoc against the

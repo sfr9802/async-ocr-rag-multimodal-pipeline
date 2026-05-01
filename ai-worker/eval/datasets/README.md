@@ -55,14 +55,14 @@ harness 가 소비하는 eval 데이터셋입니다. 두 축으로 깔끔하게 
 
 ```
 python -m scripts.build_rag_index --fixture all
-python -m eval.run_eval rag --dataset eval/datasets/rag_sample.jsonl         --out-json eval/reports/phase9-baseline/rag_sample.json --no-csv
-python -m eval.run_eval rag --dataset eval/datasets/rag_sample_kr.jsonl      --out-json eval/reports/phase9-baseline/rag_sample_kr.json --no-csv
-python -m eval.run_eval rag --dataset eval/datasets/rag_anime_extended_kr.jsonl --out-json eval/reports/phase9-baseline/rag_anime_extended_kr.json --no-csv
-python -m eval.run_eval rag --dataset eval/datasets/rag_enterprise_kr.jsonl  --out-json eval/reports/phase9-baseline/rag_enterprise_kr.json --no-csv
+python -m eval.run_eval rag --dataset eval/datasets/rag_sample.jsonl         --out-json eval/reports/phase9/baseline/rag_sample.json --no-csv
+python -m eval.run_eval rag --dataset eval/datasets/rag_sample_kr.jsonl      --out-json eval/reports/phase9/baseline/rag_sample_kr.json --no-csv
+python -m eval.run_eval rag --dataset eval/datasets/rag_anime_extended_kr.jsonl --out-json eval/reports/phase9/baseline/rag_anime_extended_kr.json --no-csv
+python -m eval.run_eval rag --dataset eval/datasets/rag_enterprise_kr.jsonl  --out-json eval/reports/phase9/baseline/rag_enterprise_kr.json --no-csv
 python -m eval.run_eval rag --dataset eval/datasets/rag_cross_domain_kr.jsonl --cross-domain \
-    --out-json eval/reports/phase9-baseline/rag_cross_domain_kr.json --no-csv
+    --out-json eval/reports/phase9/baseline/rag_cross_domain_kr.json --no-csv
 ```
 
-`eval/reports/phase9-baseline/` 아래 리포트는 Phase 10 (Optuna) 이
+`eval/reports/phase9/baseline/` 아래 리포트는 Phase 10 (Optuna) 이
 명확한 비교점을 가지도록 커밋. CUDA 사용 가능 시 bge-m3 모델은 GPU
 가속; CPU 빌드는 ~3-4배 더 오래 걸리지만 byte 단위 동일한 출력 생성.

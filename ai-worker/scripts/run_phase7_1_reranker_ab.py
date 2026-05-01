@@ -34,8 +34,8 @@ Usage::
 
     python -m scripts.run_phase7_1_reranker_ab \\
         --variant-cache eval/indexes/namu-v4-2008-2026-04-retrieval-title-section-mseq512 \\
-        --queries eval/reports/.../queries_v4_silver.jsonl \\
-        --report-dir eval/reports/...-phase7_1_reranker_ab/ \\
+        --queries eval/reports/phase7/7.0_retrieval_title_ab/queries_v4_silver.jsonl \\
+        --report-dir eval/reports/phase7/7.1_reranker_ab/ \\
         --candidate-k 40 --final-k 10 \\
         --score-mode reranker_only
 

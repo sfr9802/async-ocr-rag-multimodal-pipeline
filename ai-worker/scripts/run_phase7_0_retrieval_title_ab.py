@@ -24,7 +24,7 @@ Usage::
     python -m scripts.run_phase7_0_retrieval_title_ab \\
         --rag-chunks PATH/rag_chunks.jsonl \\
         --pages-v4 PATH/pages_v4.jsonl \\
-        --report-dir eval/reports/namu-v4-...-phase7_0_retrieval_title_ab \\
+        --report-dir eval/reports/phase7/7.0_retrieval_title_ab \\
         --index-root eval/indexes \\
         --embedding-model BAAI/bge-m3 \\
         --top-k 10 --target-queries 200 --seed 42

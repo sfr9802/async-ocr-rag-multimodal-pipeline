@@ -1,6 +1,6 @@
 {
   "schema": "phase2a-latency-breakdown.v1",
-  "report_path": "eval\\reports\\phase2a-latency\\rerank-top10\\retrieval_eval_report.json",
+  "report_path": "eval\\reports\\phase2\\2a_latency\\rerank-top10\\retrieval_eval_report.json",
   "label": "top10",
   "corpus_path": "eval\\corpora\\anime_namu_v3_token_chunked\\corpus.combined.token-aware-v1.jsonl",
   "reranker_name": "cross-encoder:BAAI/bge-reranker-v2-m3",

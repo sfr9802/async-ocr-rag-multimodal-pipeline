@@ -26,8 +26,8 @@ Eval-only / report-only. Production code (``app/``) is **not** modified.
 The existing FAISS ``title_section`` cache is reused as-is — this run
 does NOT regenerate any embedding.
 
-Outputs (under ``eval/reports/retrieval-rerank-input-cap-policy-
-confirm-<TIMESTAMP>/``):
+Outputs (under ``eval/reports/_archive/confirm-runs/retrieval-
+rerank-input-cap-policy-confirm-<TIMESTAMP>/``):
 
   - ``summary.csv``               — flat headline metrics per policy
   - ``summary.json``              — full RetrievalEvalSummary per policy
@@ -63,7 +63,7 @@ _DEFAULT_DATASET = Path("eval/eval_queries/anime_silver_200.jsonl")
 _DEFAULT_CORPUS = Path(
     "eval/corpora/anime_namu_v3_token_chunked/corpus.combined.token-aware-v1.jsonl"
 )
-_DEFAULT_REPORTS_ROOT = Path("eval/reports")
+_DEFAULT_REPORTS_ROOT = Path("eval/reports/_archive/confirm-runs")
 _DEFAULT_QUERY_TYPE_DRAFT = Path(
     "eval/eval_queries/anime_silver_200.query_type_draft.jsonl"
 )

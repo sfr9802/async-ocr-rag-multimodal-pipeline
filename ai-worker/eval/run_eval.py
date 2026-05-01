@@ -640,7 +640,7 @@ def _build_parser() -> argparse.ArgumentParser:
     rc.add_argument(
         "--deterministic-report", required=True, type=Path,
         help="Path to retrieval_eval_report.json from the deterministic run "
-             "(e.g. eval/reports/retrieval-silver200-baseline/"
+             "(e.g. eval/reports/_archive/silver200/baseline/"
              "retrieval_eval_report.json).",
     )
     rc.add_argument(
@@ -692,11 +692,11 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     rc.add_argument(
         "--out-json", type=Path, required=True,
-        help="Output path for retrieval-baseline-comparison.json.",
+        help="Output path for the baseline comparison json (typically phase2/baseline_comparison.json).",
     )
     rc.add_argument(
         "--out-md", type=Path, required=True,
-        help="Output path for retrieval-baseline-comparison.md.",
+        help="Output path for the baseline comparison md (typically phase2/baseline_comparison.md).",
     )
 
     # --- retrieval-miss-analysis ---
@@ -753,15 +753,15 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     al.add_argument(
         "--out-json", type=Path,
-        default=Path("eval/reports/corpus-length-analysis.json"),
+        default=Path("eval/reports/phase1/length_analysis.json"),
         help="Output path for the JSON report (default: "
-             "eval/reports/corpus-length-analysis.json).",
+             "eval/reports/phase1/length_analysis.json).",
     )
     al.add_argument(
         "--out-md", type=Path,
-        default=Path("eval/reports/corpus-length-analysis.md"),
+        default=Path("eval/reports/phase1/length_analysis.md"),
         help="Output path for the markdown report (default: "
-             "eval/reports/corpus-length-analysis.md).",
+             "eval/reports/phase1/length_analysis.md).",
     )
 
     # --- audit-corpus-noise ---
@@ -769,7 +769,7 @@ def _build_parser() -> argparse.ArgumentParser:
     # Phase 1A entrypoint. Reads a corpus through the production
     # chunker, tokenizes everything, and writes both a long-chunk audit
     # and a raw-vs-cleaned length comparison to
-    # eval/reports/phase1-corpus-audit/. Does not modify the corpus.
+    # eval/reports/phase1/1a_corpus_audit/. Does not modify the corpus.
     an = subs.add_parser(
         "audit-corpus-noise",
         help="Phase 1A long-chunk audit + raw-vs-cleaned length "
@@ -800,9 +800,9 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     an.add_argument(
         "--out-dir", type=Path,
-        default=Path("eval/reports/phase1-corpus-audit"),
+        default=Path("eval/reports/phase1/1a_corpus_audit"),
         help="Directory to write audit + length-comparison reports "
-             "(default: eval/reports/phase1-corpus-audit).",
+             "(default: eval/reports/phase1/1a_corpus_audit).",
     )
 
     # --- clean-corpus-dry-run ---
@@ -836,9 +836,9 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     cd.add_argument(
         "--out-dir", type=Path,
-        default=Path("eval/reports/phase1-corpus-audit"),
+        default=Path("eval/reports/phase1/1a_corpus_audit"),
         help="Directory to write the cleaner-effect summary "
-             "(default: eval/reports/phase1-corpus-audit).",
+             "(default: eval/reports/phase1/1a_corpus_audit).",
     )
 
     # --- preprocess-corpus-dry-run ---
@@ -846,7 +846,7 @@ def _build_parser() -> argparse.ArgumentParser:
     # Phase 1B entrypoint #1. Streams a corpus.jsonl through the
     # ingest-side preprocessor (page-prefix and/or inline-edit-marker
     # strip) without writing a preprocessed corpus to disk. Emits a
-    # summary + sample diffs into eval/reports/phase1b-preprocess/.
+    # summary + sample diffs into eval/reports/phase1/1b_preprocess/.
     pp = subs.add_parser(
         "preprocess-corpus-dry-run",
         help="Phase 1B preprocessor dry-run: streams the corpus through "
@@ -872,9 +872,9 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     pp.add_argument(
         "--out-dir", type=Path,
-        default=Path("eval/reports/phase1b-preprocess"),
+        default=Path("eval/reports/phase1/1b_preprocess"),
         help="Directory for the dry-run summary + sample diffs "
-             "(default: eval/reports/phase1b-preprocess).",
+             "(default: eval/reports/phase1/1b_preprocess).",
     )
 
     # --- emit-preprocessed-corpus ---
@@ -979,9 +979,9 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     dc.add_argument(
         "--out-dir", type=Path,
-        default=Path("eval/reports/phase1c-token-chunker"),
+        default=Path("eval/reports/phase1/1c_token_chunker"),
         help="Directory to write diagnosis reports "
-             "(default: eval/reports/phase1c-token-chunker).",
+             "(default: eval/reports/phase1/1c_token_chunker).",
     )
 
     # --- emit-token-aware-chunks ---
@@ -1087,10 +1087,10 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     ccl.add_argument(
         "--out-dir", type=Path,
-        default=Path("eval/reports/phase1c-token-chunker"),
+        default=Path("eval/reports/phase1/1c_token_chunker"),
         help="Directory to write per-corpus length JSONs + the "
              "comparison report "
-             "(default: eval/reports/phase1c-token-chunker).",
+             "(default: eval/reports/phase1/1c_token_chunker).",
     )
 
     # --- retrieval-candidate-boost ---
@@ -3490,7 +3490,7 @@ def _default_compare_caveats(
             "are truncated more aggressively in the lower-cap slice, "
             "which slightly favors the higher-cap slice on queries "
             "whose gold content lives past the cap. See "
-            "`eval/reports/corpus-length-analysis.md` for the measured "
+            "`eval/reports/phase1/length_analysis.md` for the measured "
             "fraction of chunks above each cap."
         )
     return caveats
@@ -3642,7 +3642,7 @@ def _run_analyze_corpus_lengths_cli(args: argparse.Namespace) -> int:
 # is worth shipping. The dry-run emits the cleaner-effect summary alone
 # and is intended for quick iteration on cleaner pattern changes. Phase 0
 # baselines under eval/reports/ are never overwritten — these commands
-# write into eval/reports/phase1-corpus-audit/.
+# write into eval/reports/phase1/1a_corpus_audit/.
 # ---------------------------------------------------------------------------
 
 
@@ -3802,7 +3802,7 @@ def _run_clean_corpus_dry_run_cli(args: argparse.Namespace) -> int:
 #
 # preprocess-corpus-dry-run:  streams the corpus through the prefix /
 #   inline-edit transforms and writes a summary + sample diffs to
-#   eval/reports/phase1b-preprocess/. No corpus artifact is produced.
+#   eval/reports/phase1/1b_preprocess/. No corpus artifact is produced.
 #
 # emit-preprocessed-corpus:   same pass, but writes a
 #   corpus.<variant>.jsonl + manifest.json into the configured
@@ -4556,7 +4556,7 @@ def _run_compare_chunker_lengths_cli(args: argparse.Namespace) -> int:
 
 def _default_phase2b_dir(suffix: str) -> Path:
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    return Path(f"eval/reports/phase2b-{suffix}-{timestamp}")
+    return Path(f"eval/reports/phase2/2b_candidate_boost-{suffix}-{timestamp}")
 
 
 def _build_boost_config(args: argparse.Namespace) -> BoostConfig:

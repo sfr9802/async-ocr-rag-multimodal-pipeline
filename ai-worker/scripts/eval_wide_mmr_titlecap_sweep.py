@@ -21,7 +21,7 @@ The sweep does NOT touch production. It mutates the production
 the minimal sweep uses) and runs an eval-only MMR / title-cap
 selector before / after the cross-encoder.
 
-Outputs land under ``eval/reports/retrieval-wide-mmr-titlecap-<TS>/``.
+Outputs land under ``eval/reports/_archive/confirm-runs/retrieval-wide-mmr-titlecap-<TS>/``.
 
 Cells targeted by the spec (run all 9 by default; use ``--cells
 core6`` to drop the four lambda variants):
@@ -63,7 +63,7 @@ _DEFAULT_DATASET = Path("eval/eval_queries/anime_silver_200.jsonl")
 _DEFAULT_CORPUS = Path(
     "eval/corpora/anime_namu_v3_token_chunked/corpus.combined.token-aware-v1.jsonl"
 )
-_DEFAULT_REPORTS_ROOT = Path("eval/reports")
+_DEFAULT_REPORTS_ROOT = Path("eval/reports/_archive/confirm-runs")
 _DEFAULT_CACHE_ROOT = Path("eval/_cache/dense_index")
 _BASELINE_LABEL = "dense_baseline_k50_top5"
 

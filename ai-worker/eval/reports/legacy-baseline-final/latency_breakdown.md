@@ -3,7 +3,7 @@
 Stage-level latency profile for one retrieval-rerank run. Pure post-processing — never re-runs retrieval. CUDA synchronize is applied around the cross-encoder forward pass when the run was on a GPU; CPU-only runs see approximate forward times since async semantics don't apply.
 
 - label: `top10`
-- report: `eval\reports\phase2a-latency\rerank-top10\retrieval_eval_report.json`
+- report: `eval\reports\phase2\2a_latency\rerank-top10\retrieval_eval_report.json`
 - corpus: `eval\corpora\anime_namu_v3_token_chunked\corpus.combined.token-aware-v1.jsonl`
 - reranker_name: cross-encoder:BAAI/bge-reranker-v2-m3
 - reranker_model: `BAAI/bge-reranker-v2-m3`

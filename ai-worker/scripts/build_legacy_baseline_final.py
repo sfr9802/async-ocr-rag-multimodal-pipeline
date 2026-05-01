@@ -33,7 +33,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 
-_DEFAULT_SWEEP_DIR = Path("eval/reports/phase2a-latency")
+_DEFAULT_SWEEP_DIR = Path("eval/reports/phase2/2a_latency")
 _DEFAULT_OUT_DIR = Path("eval/reports/legacy-baseline-final")
 _SELECTED_TIER = "balanced"
 
@@ -327,7 +327,7 @@ def build(sweep_dir: Path, out_dir: Path, selected: str = _SELECTED_TIER) -> Non
                 "python -m eval.run_eval phase2a-latency-sweep "
                 f"--dataset {(selected_meta.get('dataset') or '').replace(chr(92), '/')} "
                 f"--corpus {(selected_meta.get('corpus_path') or '').replace(chr(92), '/')} "
-                "--out-dir eval/reports/phase2a-latency "
+                "--out-dir eval/reports/phase2/2a_latency "
                 f"--final-top-k {selected_entry.final_top_k} "
                 "--dense-top-n 5 --dense-top-n 10 --dense-top-n 15 "
                 "--dense-top-n 20 --dense-top-n 30 --dense-top-n 50 "
@@ -340,7 +340,7 @@ def build(sweep_dir: Path, out_dir: Path, selected: str = _SELECTED_TIER) -> Non
             ),
             "step2_consolidate": (
                 "python -m scripts.build_legacy_baseline_final "
-                "--sweep-dir eval/reports/phase2a-latency "
+                "--sweep-dir eval/reports/phase2/2a_latency "
                 "--out-dir eval/reports/legacy-baseline-final "
                 f"--selected-tier {selected_entry.tier}"
             ),
@@ -565,7 +565,7 @@ def build(sweep_dir: Path, out_dir: Path, selected: str = _SELECTED_TIER) -> Non
     readme_lines.append("python -m eval.run_eval phase2a-latency-sweep \\")
     readme_lines.append("    --dataset eval/eval_queries/anime_silver_200.jsonl \\")
     readme_lines.append("    --corpus eval/corpora/anime_namu_v3_token_chunked/corpus.combined.token-aware-v1.jsonl \\")
-    readme_lines.append("    --out-dir eval/reports/phase2a-latency \\")
+    readme_lines.append("    --out-dir eval/reports/phase2/2a_latency \\")
     readme_lines.append("    --final-top-k 10 \\")
     readme_lines.append("    --dense-top-n 5 --dense-top-n 10 --dense-top-n 15 \\")
     readme_lines.append("    --dense-top-n 20 --dense-top-n 30 --dense-top-n 50 \\")
@@ -577,7 +577,7 @@ def build(sweep_dir: Path, out_dir: Path, selected: str = _SELECTED_TIER) -> Non
     readme_lines.append("")
     readme_lines.append("# 2. Re-build the consolidated baseline files.")
     readme_lines.append("python -m scripts.build_legacy_baseline_final \\")
-    readme_lines.append("    --sweep-dir eval/reports/phase2a-latency \\")
+    readme_lines.append("    --sweep-dir eval/reports/phase2/2a_latency \\")
     readme_lines.append("    --out-dir eval/reports/legacy-baseline-final \\")
     readme_lines.append("    --selected-tier balanced")
     readme_lines.append("```")

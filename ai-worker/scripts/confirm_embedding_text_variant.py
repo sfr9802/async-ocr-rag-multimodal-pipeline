@@ -21,8 +21,8 @@ phase1_best_cap2_top8 per variant when ``--include-phase1`` is set.
 
 Eval-only / report-only. Production code (``app/``) is **not modified**.
 
-Outputs (under ``eval/reports/retrieval-embedding-text-variant-
-confirm-<TIMESTAMP>/``):
+Outputs (under ``eval/reports/_archive/confirm-runs/retrieval-
+embedding-text-variant-confirm-<TIMESTAMP>/``):
 
   - ``summary.csv``           — flat headline metrics per (variant, cell)
   - ``summary.json``          — full ``RetrievalEvalSummary`` per pair
@@ -60,7 +60,7 @@ _DEFAULT_DATASET = Path("eval/eval_queries/anime_silver_200.jsonl")
 _DEFAULT_CORPUS = Path(
     "eval/corpora/anime_namu_v3_token_chunked/corpus.combined.token-aware-v1.jsonl"
 )
-_DEFAULT_REPORTS_ROOT = Path("eval/reports")
+_DEFAULT_REPORTS_ROOT = Path("eval/reports/_archive/confirm-runs")
 _DEFAULT_QUERY_TYPE_DRAFT = Path(
     "eval/eval_queries/anime_silver_200.query_type_draft.jsonl"
 )

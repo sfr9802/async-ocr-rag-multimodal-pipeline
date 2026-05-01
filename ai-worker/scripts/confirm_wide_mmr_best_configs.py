@@ -16,7 +16,7 @@ This script answers it. It is **eval-only / report-only**:
   - No production code (``app/``) is mutated.
   - Existing Phase 1 / minimal-sweep / round-bundle artefacts are not
     overwritten — outputs land under
-    ``eval/reports/retrieval-wide-mmr-confirm-<TIMESTAMP>/``.
+    ``eval/reports/_archive/confirm-runs/retrieval-wide-mmr-confirm-<TIMESTAMP>/``.
   - All retrieval goes through ``WideRetrievalEvalAdapter`` over the
     cached FAISS index (no PostgreSQL dependency).
 
@@ -67,7 +67,7 @@ _DEFAULT_DATASET = Path("eval/eval_queries/anime_silver_200.jsonl")
 _DEFAULT_CORPUS = Path(
     "eval/corpora/anime_namu_v3_token_chunked/corpus.combined.token-aware-v1.jsonl"
 )
-_DEFAULT_REPORTS_ROOT = Path("eval/reports")
+_DEFAULT_REPORTS_ROOT = Path("eval/reports/_archive/confirm-runs")
 _DEFAULT_QUERY_TYPE_DRAFT = Path(
     "eval/eval_queries/anime_silver_200.query_type_draft.jsonl"
 )
