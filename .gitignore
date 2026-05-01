@@ -134,6 +134,7 @@ ai-worker/eval/reports/phase7/7.0_retrieval_title_ab/*
 # Phase 7.6 — section-aware reranking plan (no experiment artefacts yet,
 # just the plan doc)
 !ai-worker/eval/reports/phase7/phase7_6_section_aware_reranking_plan.md
+!ai-worker/eval/reports/phase7/PHASE7_WRAP_UP.md
 # Phase 7.5 — human gold seed 50 tuning + MMR confirm sweep + production
 # promotion + latency smoke + Phase 7.6 section-rerank scaffold. Decision
 # artefacts only (small JSON / MD / digests) — the bulk
