@@ -164,8 +164,46 @@ Watch (on the first day of canary):
      level generation audit. The promoted config is fine for *page-
      level* retrieval; section-level grounding is the open question.
 
+## Test results
+
+  * Phase 7 신규/수정 테스트 **141 pass**:
+    - `tests/test_phase7_human_gold_tune.py`
+    - `tests/test_phase7_mmr_confirm_sweep.py`
+    - `tests/test_phase7_latency_smoke.py`
+    - `tests/test_phase7_section_aware_rerank.py`
+    - `tests/test_finalize_phase7_5_production_recommendation.py`
+  * 전체 ai-worker test suite **1818 pass** (회귀 없음; 운영 회귀
+    검증은 CI 책임).
+  * `best_config.production_recommended.{env,json}` +
+    `confirm_sweep_report.md`의 `## Production recommendation` splice는
+    `scripts/finalize_phase7_5_production_recommendation.py` 재실행 시
+    byte-identical (idempotent).
+
+## Follow-up: Phase 7.6 section-aware reranking
+
+  * 이번 PR은 page-level retrieval 개선만 대상으로 한다. section_hit@5
+    회귀(0.0455 → 0.0227, defined-only 22행 기준)는 caveat로
+    문서화했고 promotion blocker가 **아니다**.
+  * Phase 7.6은 그 회귀가 brittle small-base metric의 artefact인지,
+    아니면 실제 grounding 손실인지 가르기 위한 **별도 실험**이다.
+    이번 PR이 Phase 7.6 결과에 의존하는 부분은 없다.
+  * 이번 PR과 함께 land한 Phase 7.6 산출물은 *scaffold만*:
+    plan + candidate grid + harness module + CLI + 단위 테스트.
+    실제 sweep 실행 / production-recommended 산출은 후속 PR이다.
+  * Phase 7.6 CLI(`scripts/run_phase7_section_aware_rerank.py`)는
+    `--score`가 미구현이다. 호출 시 명확한 에러 메시지와 함께
+    exit code 2를 반환하고 grid spec 파일만 작성한다.
+  * Pointers:
+    - Plan: `eval/reports/phase7/phase7_6_section_aware_reranking_plan.md`
+    - Grid scaffold:
+      `eval/reports/phase7/seeds/human_gold_seed_50_tuning/section_rerank/section_rerank_grid.{json,md}`
+    - Harness scaffold: `eval/harness/phase7_section_aware_rerank.py`
+    - CLI: `scripts/run_phase7_section_aware_rerank.py`
+
 ## Pointers
 
+  * Phase 7 wrap-up 요약:
+    `eval/reports/phase7/PHASE7_WRAP_UP.md`
   * Confirm sweep report:
     `eval/reports/phase7/seeds/human_gold_seed_50_tuning/confirm_sweep/confirm_sweep_report.md`
   * Production-recommended config:
