@@ -83,6 +83,11 @@ from typing import (
     Tuple,
 )
 
+from eval.harness.eval_terminology import (
+    apply_silver_terminology,
+    silver_disclaimer_block,
+)
+
 log = logging.getLogger(__name__)
 
 
@@ -1221,7 +1226,7 @@ def aggregate_verdicts(
             "reasons": {r: int(b_reason.get(r, 0)) for r in FAILURE_REASONS},
         }
 
-    return {
+    out: Dict[str, Any] = {
         "config": asdict(config),
         "n_queries": n,
         "labels": {
@@ -1238,6 +1243,10 @@ def aggregate_verdicts(
         "recommended_actions": list(RECOMMENDED_ACTIONS),
         "failure_reasons": list(FAILURE_REASONS),
     }
+    # Silver-set disclaimer + terminology aliases. Lives at the top of
+    # the JSON dump so a reader sees them before any metric block.
+    out.update(silver_disclaimer_block())
+    return out
 
 
 def split_verdicts_by_label(
@@ -1459,7 +1468,7 @@ def render_summary_md(result: ConfidenceEvalResult) -> str:
 
     cb_wrong = find_confident_but_wrong(result.verdicts)
     lc_correct = find_low_confidence_but_correct(result.verdicts)
-    lines.append("## Calibration cross-tabs")
+    lines.append("## Calibration cross-tabs (silver-set)")
     lines.append("")
     lines.append(
         f"- confident_but_wrong (CONFIDENT label, gold not in top-k): "
@@ -1493,4 +1502,7 @@ def render_summary_md(result: ConfidenceEvalResult) -> str:
             )
         lines.append("")
 
-    return "\n".join(lines) + "\n"
+    body = "\n".join(lines) + "\n"
+    # Inject the silver-set disclaimer + rewrite misleading
+    # "gold/wrong/correct" phrases to the silver-aware names.
+    return apply_silver_terminology(body)
