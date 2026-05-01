@@ -373,6 +373,8 @@ def _get_shared_retriever_bundle(settings: WorkerSettings):
         settings.rag_embedding_model,
         settings.rag_embedding_prefix_query,
         settings.rag_embedding_prefix_passage,
+        settings.rag_embedding_text_variant,
+        settings.rag_embedding_max_seq_length,
         settings.rag_index_dir,
         settings.rag_top_k,
         settings.rag_db_dsn,
@@ -402,11 +404,14 @@ def _get_shared_retriever_bundle(settings: WorkerSettings):
     metadata = RagMetadataStore(settings.rag_db_dsn)
     metadata.ping()
 
+    embedding_max_seq_length = resolve_max_seq_length(
+        settings.rag_embedding_max_seq_length,
+    )
     embedder = SentenceTransformerEmbedder(
         model_name=settings.rag_embedding_model,
         query_prefix=settings.rag_embedding_prefix_query,
         passage_prefix=settings.rag_embedding_prefix_passage,
-        max_seq_length=resolve_max_seq_length(settings.rag_embedding_max_seq_length),
+        max_seq_length=embedding_max_seq_length,
         batch_size=int(settings.rag_embedding_batch_size),
         cuda_alloc_conf=settings.rag_embedding_cuda_alloc_conf or None,
     )
@@ -424,6 +429,8 @@ def _get_shared_retriever_bundle(settings: WorkerSettings):
         mmr_lambda=settings.rag_mmr_lambda,
         query_parser=query_parser,
         multi_query_rrf_k=settings.rag_multi_query_rrf_k,
+        embedding_text_variant=settings.rag_embedding_text_variant,
+        embedding_max_seq_length=embedding_max_seq_length,
     )
     # ensure_ready() is the strict gate: on any model/dim mismatch
     # between the runtime embedder and the on-disk build.json it

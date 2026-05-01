@@ -22,6 +22,11 @@ from typing import Iterable, List
 import numpy as np
 import pytest
 
+from app.capabilities.rag.embedding_text_builder import (
+    EMBEDDING_TEXT_BUILDER_VERSION,
+    VARIANT_RETRIEVAL_TITLE_SECTION,
+    VARIANT_TITLE_SECTION,
+)
 from app.capabilities.rag.embeddings import EmbeddingProvider, HashingEmbedder
 from app.capabilities.rag.faiss_index import FaissIndex
 from app.capabilities.rag.metadata_store import ChunkLookupResult
@@ -95,6 +100,42 @@ def _build_index_on_disk(
     # Return a fresh FaissIndex pointing at the same dir so the caller
     # exercises the load() path instead of reusing the in-memory handle.
     return FaissIndex(tmp_path / "idx")
+
+
+def _write_manifest(
+    tmp_path: Path,
+    *,
+    variant: str = VARIANT_RETRIEVAL_TITLE_SECTION,
+    model: str = "hashing-embedder-dim64",
+    dim: int = 64,
+    chunks: int = 2,
+    max_seq_length: int | None = None,
+) -> None:
+    (tmp_path / "idx" / "ingest_manifest.json").write_text(
+        """{
+          "embedding_text_variant": "%s",
+          "embedding_text_builder_version": "%s",
+          "embedding_model": "%s",
+          "max_seq_length": %s,
+          "chunk_count": %d,
+          "document_count": 1,
+          "dimension": %d,
+          "index_version": "test-v1",
+          "corpus_path": "fixture.jsonl",
+          "embed_text_sha256": "%s",
+          "embed_text_samples": []
+        }"""
+        % (
+            variant,
+            EMBEDDING_TEXT_BUILDER_VERSION,
+            model,
+            "null" if max_seq_length is None else str(max_seq_length),
+            chunks,
+            dim,
+            "0" * 64,
+        ),
+        encoding="utf-8",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -252,4 +293,62 @@ def test_ensure_ready_accepts_matching_model_and_dim(tmp_path):
     )
 
     # Must not raise.
+    retriever.ensure_ready()
+
+
+# ---------------------------------------------------------------------------
+# 5. Serving path validates ingest_manifest when configured by registry.
+# ---------------------------------------------------------------------------
+
+
+def test_ensure_ready_rejects_missing_manifest_when_variant_expected(tmp_path):
+    index = _build_index_on_disk(
+        tmp_path, recorded_model_name="hashing-embedder-dim64", dim=64
+    )
+    retriever = Retriever(
+        embedder=HashingEmbedder(dim=64),
+        index=index,
+        metadata=_FakeMetadataStore("test-v1"),
+        top_k=3,
+        embedding_text_variant=VARIANT_RETRIEVAL_TITLE_SECTION,
+    )
+
+    with pytest.raises(RuntimeError, match="Ingest manifest missing"):
+        retriever.ensure_ready()
+
+
+def test_ensure_ready_rejects_manifest_variant_mismatch(tmp_path):
+    index = _build_index_on_disk(
+        tmp_path, recorded_model_name="hashing-embedder-dim64", dim=64
+    )
+    _write_manifest(tmp_path, variant=VARIANT_TITLE_SECTION)
+    retriever = Retriever(
+        embedder=HashingEmbedder(dim=64),
+        index=index,
+        metadata=_FakeMetadataStore("test-v1"),
+        top_k=3,
+        embedding_text_variant=VARIANT_RETRIEVAL_TITLE_SECTION,
+    )
+
+    with pytest.raises(RuntimeError) as exc_info:
+        retriever.ensure_ready()
+
+    assert "Ingest manifest mismatch" in str(exc_info.value)
+    assert "variant" in str(exc_info.value)
+
+
+def test_ensure_ready_accepts_matching_manifest(tmp_path):
+    index = _build_index_on_disk(
+        tmp_path, recorded_model_name="hashing-embedder-dim64", dim=64
+    )
+    _write_manifest(tmp_path, max_seq_length=1024)
+    retriever = Retriever(
+        embedder=HashingEmbedder(dim=64),
+        index=index,
+        metadata=_FakeMetadataStore("test-v1"),
+        top_k=3,
+        embedding_text_variant=VARIANT_RETRIEVAL_TITLE_SECTION,
+        embedding_max_seq_length=1024,
+    )
+
     retriever.ensure_ready()

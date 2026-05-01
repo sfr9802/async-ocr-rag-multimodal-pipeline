@@ -14,9 +14,12 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import shutil
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Iterable, List, Optional, Tuple
 
 import faiss  # type: ignore
 import numpy as np
@@ -52,6 +55,88 @@ class FaissIndex:
         index_version: str,
         embedding_model: str,
     ) -> IndexBuildInfo:
+        info, index = self._write_build(
+            self._dir,
+            vectors,
+            index_version=index_version,
+            embedding_model=embedding_model,
+        )
+        self._index = index
+        self._info = info
+        log.info(
+            "FAISS index built at %s (vectors=%d, dim=%d, version=%s)",
+            self._dir, info.chunk_count, info.dimension, index_version,
+        )
+        return info
+
+    def build_staged(
+        self,
+        vectors: np.ndarray,
+        *,
+        index_version: str,
+        embedding_model: str,
+    ) -> tuple[IndexBuildInfo, Path]:
+        """Write a complete index build to a staging directory.
+
+        Call ``promote_staged`` only after the metadata store has accepted
+        the same build. Until then, the serving path continues to see the
+        previous final index files.
+        """
+        stage_dir = self._new_stage_dir(index_version)
+        info, _index = self._write_build(
+            stage_dir,
+            vectors,
+            index_version=index_version,
+            embedding_model=embedding_model,
+        )
+        log.info(
+            "FAISS index staged at %s (vectors=%d, dim=%d, version=%s)",
+            stage_dir, info.chunk_count, info.dimension, index_version,
+        )
+        return info, stage_dir
+
+    def promote_staged(
+        self,
+        stage_dir: Path,
+        info: IndexBuildInfo,
+        *,
+        extra_files: Iterable[str] = (),
+    ) -> None:
+        """Atomically replace final index sidecar files from ``stage_dir``."""
+        stage_dir = Path(stage_dir)
+        self._dir.mkdir(parents=True, exist_ok=True)
+        filenames = (_INDEX_FILE, _META_FILE, *extra_files)
+        for filename in filenames:
+            source = stage_dir / filename
+            if not source.exists():
+                raise FileNotFoundError(f"Staged index file missing: {source}")
+        for filename in filenames:
+            source = stage_dir / filename
+            os.replace(source, self._dir / filename)
+
+        self._index = faiss.read_index(str(self._dir / _INDEX_FILE))
+        self._info = info
+        self.discard_staged(stage_dir)
+        log.info(
+            "FAISS staged index promoted to %s (version=%s)",
+            self._dir, info.index_version,
+        )
+
+    def discard_staged(self, stage_dir: Path) -> None:
+        shutil.rmtree(stage_dir, ignore_errors=True)
+
+    @property
+    def index_dir(self) -> Path:
+        return self._dir
+
+    def _write_build(
+        self,
+        target_dir: Path,
+        vectors: np.ndarray,
+        *,
+        index_version: str,
+        embedding_model: str,
+    ) -> tuple[IndexBuildInfo, faiss.Index]:
         if vectors.ndim != 2:
             raise ValueError("vectors must be a 2-D array")
         if vectors.dtype != np.float32:
@@ -62,8 +147,8 @@ class FaissIndex:
         if n > 0:
             index.add(vectors)
 
-        self._dir.mkdir(parents=True, exist_ok=True)
-        faiss.write_index(index, str(self._dir / _INDEX_FILE))
+        target_dir.mkdir(parents=True, exist_ok=True)
+        faiss.write_index(index, str(target_dir / _INDEX_FILE))
 
         info = IndexBuildInfo(
             index_version=index_version,
@@ -71,7 +156,7 @@ class FaissIndex:
             dimension=d,
             chunk_count=n,
         )
-        (self._dir / _META_FILE).write_text(
+        (target_dir / _META_FILE).write_text(
             json.dumps(
                 {
                     "index_version": info.index_version,
@@ -83,13 +168,15 @@ class FaissIndex:
             ),
             encoding="utf-8",
         )
-        self._index = index
-        self._info = info
-        log.info(
-            "FAISS index built at %s (vectors=%d, dim=%d, version=%s)",
-            self._dir, n, d, index_version,
-        )
-        return info
+        return info, index
+
+    def _new_stage_dir(self, index_version: str) -> Path:
+        safe_version = "".join(
+            ch if ch.isalnum() or ch in ("-", "_") else "-"
+            for ch in index_version
+        )[:80] or "index"
+        suffix = uuid.uuid4().hex[:12]
+        return self._dir.parent / f"{self._dir.name}.staging-{safe_version}-{suffix}"
 
     # ---- load ------------------------------------------------------
 

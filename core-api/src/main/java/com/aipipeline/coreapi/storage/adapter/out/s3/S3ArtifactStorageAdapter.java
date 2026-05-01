@@ -11,6 +11,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.HeadBucketRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
@@ -129,6 +130,16 @@ public class S3ArtifactStorageAdapter implements ArtifactStoragePort {
                 .key(parsed.key)
                 .build();
         return s3.getObject(get);
+    }
+
+    @Override
+    public void delete(String storageUri) {
+        var parsed = parseUri(storageUri);
+        s3.deleteObject(DeleteObjectRequest.builder()
+                .bucket(parsed.bucket)
+                .key(parsed.key)
+                .build());
+        log.debug("Deleted S3 artifact: {}", storageUri);
     }
 
     @Override

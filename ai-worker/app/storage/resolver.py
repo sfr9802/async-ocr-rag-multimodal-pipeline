@@ -58,7 +58,9 @@ class StorageResolver:
     def _resolve_local(self, uri: str) -> Path:
         key = uri[len(LOCAL_SCHEME):]
         path = (self._local_root / key).resolve()
-        if not str(path).startswith(str(self._local_root)):
+        try:
+            path.relative_to(self._local_root)
+        except ValueError:
             raise ValueError(f"local URI escapes root: {uri}")
         if not path.exists():
             raise FileNotFoundError(f"Artifact missing on shared disk: {path}")

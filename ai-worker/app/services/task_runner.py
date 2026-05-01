@@ -16,6 +16,7 @@ between jobs.
 from __future__ import annotations
 
 import logging
+import time
 import traceback
 import uuid
 from typing import Optional
@@ -39,6 +40,13 @@ from app.queue.messages import QueueMessage
 from app.storage.resolver import StorageResolver
 
 log = logging.getLogger(__name__)
+
+_CALLBACK_MAX_ATTEMPTS = 3
+_CALLBACK_RETRY_BASE_SECONDS = 1.0
+
+
+class CallbackDeliveryError(RuntimeError):
+    """Raised when core-api callback delivery failed after retries."""
 
 
 class TaskRunner:
@@ -90,6 +98,11 @@ class TaskRunner:
             self._send_success_callback(message.job_id, uploaded)
             log.info("Job %s SUCCEEDED", message.job_id)
 
+        except CallbackDeliveryError:
+            # Do not convert a successful capability run into FAILED just
+            # because the success callback could not be delivered. The core
+            # lease + dispatch reconciler will make the job visible again.
+            raise
         except CapabilityError as ex:
             log.warning("Job %s failed in capability: %s", message.job_id, ex)
             self._send_failure_callback(message.job_id, ex.code, ex.message)
@@ -142,7 +155,7 @@ class TaskRunner:
     def _send_success_callback(
         self, job_id: str, outputs: list[OutputArtifactPayload]
     ) -> None:
-        self._core_api.callback(CallbackRequest(
+        self._send_callback_with_retry(CallbackRequest(
             job_id=job_id,
             callback_id=str(uuid.uuid4()),
             worker_claim_token=self._worker_id,
@@ -151,7 +164,7 @@ class TaskRunner:
         ))
 
     def _send_failure_callback(self, job_id: str, code: str, message: str) -> None:
-        self._core_api.callback(CallbackRequest(
+        self._send_callback_with_retry(CallbackRequest(
             job_id=job_id,
             callback_id=str(uuid.uuid4()),
             worker_claim_token=self._worker_id,
@@ -159,6 +172,35 @@ class TaskRunner:
             error_code=code,
             error_message=message[:1900],
         ))
+
+    def _send_callback_with_retry(self, request: CallbackRequest) -> None:
+        last_error: Exception | None = None
+        for attempt in range(1, _CALLBACK_MAX_ATTEMPTS + 1):
+            try:
+                self._core_api.callback(request)
+                return
+            except Exception as ex:
+                last_error = ex
+                if attempt >= _CALLBACK_MAX_ATTEMPTS:
+                    break
+                delay = _CALLBACK_RETRY_BASE_SECONDS * attempt
+                log.warning(
+                    "Callback delivery failed jobId=%s outcome=%s "
+                    "attempt=%d/%d; retrying in %.1fs: %s",
+                    request.job_id,
+                    request.outcome,
+                    attempt,
+                    _CALLBACK_MAX_ATTEMPTS,
+                    delay,
+                    ex,
+                )
+                time.sleep(delay)
+
+        raise CallbackDeliveryError(
+            "Callback delivery failed "
+            f"jobId={request.job_id} outcome={request.outcome} "
+            f"after {_CALLBACK_MAX_ATTEMPTS} attempts"
+        ) from last_error
 
 
 def _filename_from_storage_uri(storage_uri: Optional[str]) -> Optional[str]:

@@ -31,8 +31,13 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
 from app.capabilities.rag.embeddings import EmbeddingProvider
+from app.capabilities.rag.embedding_text_builder import (
+    EMBEDDING_TEXT_BUILDER_VERSION,
+    is_known_production_variant,
+)
 from app.capabilities.rag.faiss_index import FaissIndex, IndexBuildInfo
 from app.capabilities.rag.generation import RetrievedChunk
+from app.capabilities.rag.ingest import load_ingest_manifest
 from app.capabilities.rag.metadata_store import RagMetadataStore
 from app.capabilities.rag.query_parser import (
     NoOpQueryParser,
@@ -101,6 +106,9 @@ class Retriever:
         mmr_lambda: float = 0.7,
         query_parser: Optional[QueryParserProvider] = None,
         multi_query_rrf_k: int = _DEFAULT_RRF_K,
+        embedding_text_variant: Optional[str] = None,
+        embedding_text_builder_version: str = EMBEDDING_TEXT_BUILDER_VERSION,
+        embedding_max_seq_length: Optional[int] = None,
     ) -> None:
         self._embedder = embedder
         self._index = index
@@ -125,6 +133,19 @@ class Retriever:
         # clamp to a sane floor the same way we clamp mmr_lambda.
         self._rrf_k = max(1, int(multi_query_rrf_k))
         self._info: IndexBuildInfo | None = None
+        if embedding_text_variant is not None and not is_known_production_variant(
+            embedding_text_variant,
+        ):
+            raise ValueError(
+                f"Unknown embedding_text_variant {embedding_text_variant!r}"
+            )
+        self._embedding_text_variant = embedding_text_variant
+        self._embedding_text_builder_version = embedding_text_builder_version
+        self._embedding_max_seq_length = (
+            int(embedding_max_seq_length)
+            if embedding_max_seq_length is not None
+            else None
+        )
 
     def ensure_ready(self) -> None:
         """Load the index and strictly verify runtime model == build model.
@@ -183,6 +204,7 @@ class Retriever:
                 "Rebuild the index (`python -m scripts.build_rag_index "
                 "--fixture`) and restart the worker."
             )
+        self._verify_ingest_manifest()
         log.info(
             "Retriever ready: model=%s dim=%d index_version=%s reranker=%s",
             self._embedder.model_name,
@@ -190,6 +212,66 @@ class Retriever:
             self._info.index_version,
             self._reranker.name,
         )
+
+    def _verify_ingest_manifest(self) -> None:
+        if self._embedding_text_variant is None:
+            return
+
+        manifest = load_ingest_manifest(self._index.index_dir)
+        if manifest is None:
+            raise RuntimeError(
+                "Ingest manifest missing: runtime embedding_text_variant="
+                f"{self._embedding_text_variant!r}, but no "
+                "ingest_manifest.json was found next to build.json. "
+                "Rebuild the index with the current ingest path before "
+                "serving RAG."
+            )
+        mismatches: list[str] = []
+        if manifest.embedding_text_variant != self._embedding_text_variant:
+            mismatches.append(
+                "variant runtime="
+                f"{self._embedding_text_variant!r} build="
+                f"{manifest.embedding_text_variant!r}"
+            )
+        if (
+            manifest.embedding_text_builder_version
+            != self._embedding_text_builder_version
+        ):
+            mismatches.append(
+                "builder_version runtime="
+                f"{self._embedding_text_builder_version!r} build="
+                f"{manifest.embedding_text_builder_version!r}"
+            )
+        if manifest.embedding_model != self._info.embedding_model:
+            mismatches.append(
+                "manifest_model="
+                f"{manifest.embedding_model!r} build_json="
+                f"{self._info.embedding_model!r}"
+            )
+        if manifest.dimension != self._info.dimension:
+            mismatches.append(
+                f"manifest_dim={manifest.dimension} build_json_dim={self._info.dimension}"
+            )
+        if manifest.chunk_count != self._info.chunk_count:
+            mismatches.append(
+                "manifest_chunks="
+                f"{manifest.chunk_count} build_json_chunks={self._info.chunk_count}"
+            )
+        if (
+            self._embedding_max_seq_length is not None
+            and manifest.max_seq_length != self._embedding_max_seq_length
+        ):
+            mismatches.append(
+                "max_seq_length runtime="
+                f"{self._embedding_max_seq_length} build={manifest.max_seq_length}"
+            )
+
+        if mismatches:
+            raise RuntimeError(
+                "Ingest manifest mismatch: "
+                + "; ".join(mismatches)
+                + ". Rebuild the FAISS index and restart the worker."
+            )
 
     def retrieve(
         self,

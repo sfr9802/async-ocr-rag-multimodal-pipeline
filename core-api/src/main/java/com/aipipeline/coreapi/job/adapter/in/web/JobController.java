@@ -10,6 +10,8 @@ import com.aipipeline.coreapi.job.application.port.in.JobManagementUseCase.Stage
 import com.aipipeline.coreapi.job.application.service.JobSubmissionValidator;
 import com.aipipeline.coreapi.job.domain.JobCapability;
 import com.aipipeline.coreapi.job.domain.JobId;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -41,6 +43,8 @@ import java.util.List;
 @RequestMapping("/api/v1/jobs")
 public class JobController {
 
+    private static final Logger log = LoggerFactory.getLogger(JobController.class);
+
     private final JobManagementUseCase jobManagement;
     private final ArtifactStoragePort storage;
 
@@ -65,24 +69,31 @@ public class JobController {
         JobCapability capability = JobSubmissionValidator.parseCapability(body.capability());
         JobSubmissionValidator.validateTextSubmission(capability, body.text());
 
-        byte[] bytes = body.text().getBytes(StandardCharsets.UTF_8);
-        var stored = storage.store(
-                JobId.generate(),  // provisional prefix
-                ArtifactType.INPUT_TEXT,
-                "prompt.txt",
-                "text/plain; charset=utf-8",
-                new ByteArrayInputStream(bytes),
-                bytes.length);
+        List<ArtifactStoragePort.StoredObject> storedObjects = new ArrayList<>();
+        try {
+            byte[] bytes = body.text().getBytes(StandardCharsets.UTF_8);
+            var stored = storage.store(
+                    JobId.generate(),  // provisional prefix
+                    ArtifactType.INPUT_TEXT,
+                    "prompt.txt",
+                    "text/plain; charset=utf-8",
+                    new ByteArrayInputStream(bytes),
+                    bytes.length);
+            storedObjects.add(stored);
 
-        StagedInputArtifact staged = new StagedInputArtifact(
-                ArtifactType.INPUT_TEXT,
-                stored.storageUri(),
-                "text/plain; charset=utf-8",
-                stored.sizeBytes(),
-                stored.checksumSha256());
+            StagedInputArtifact staged = new StagedInputArtifact(
+                    ArtifactType.INPUT_TEXT,
+                    stored.storageUri(),
+                    "text/plain; charset=utf-8",
+                    stored.sizeBytes(),
+                    stored.checksumSha256());
 
-        var result = jobManagement.createAndEnqueue(new CreateJobCommand(capability, List.of(staged)));
-        return ResponseEntity.accepted().body(JobResponses.JobCreated.from(result.job(), result.inputArtifacts()));
+            var result = jobManagement.createAndEnqueue(new CreateJobCommand(capability, List.of(staged)));
+            return ResponseEntity.accepted().body(JobResponses.JobCreated.from(result.job(), result.inputArtifacts()));
+        } catch (RuntimeException ex) {
+            cleanupStoredObjects(storedObjects);
+            throw ex;
+        }
     }
 
     /**
@@ -118,42 +129,49 @@ public class JobController {
         JobCapability capability = JobSubmissionValidator.parseCapability(capabilityRaw);
         JobSubmissionValidator.validateFileSubmission(capability, file, text);
 
-        var storedFile = storage.store(
-                JobId.generate(),
-                ArtifactType.INPUT_FILE,
-                file.getOriginalFilename(),
-                file.getContentType(),
-                file.getInputStream(),
-                file.getSize());
-
         List<StagedInputArtifact> stagedInputs = new ArrayList<>();
-        stagedInputs.add(new StagedInputArtifact(
-                ArtifactType.INPUT_FILE,
-                storedFile.storageUri(),
-                file.getContentType(),
-                storedFile.sizeBytes(),
-                storedFile.checksumSha256()));
-
-        if (text != null && !text.isBlank()) {
-            byte[] textBytes = text.getBytes(StandardCharsets.UTF_8);
-            var storedText = storage.store(
+        List<ArtifactStoragePort.StoredObject> storedObjects = new ArrayList<>();
+        try {
+            var storedFile = storage.store(
                     JobId.generate(),
-                    ArtifactType.INPUT_TEXT,
-                    "prompt.txt",
-                    "text/plain; charset=utf-8",
-                    new ByteArrayInputStream(textBytes),
-                    textBytes.length);
-
+                    ArtifactType.INPUT_FILE,
+                    file.getOriginalFilename(),
+                    file.getContentType(),
+                    file.getInputStream(),
+                    file.getSize());
+            storedObjects.add(storedFile);
             stagedInputs.add(new StagedInputArtifact(
-                    ArtifactType.INPUT_TEXT,
-                    storedText.storageUri(),
-                    "text/plain; charset=utf-8",
-                    storedText.sizeBytes(),
-                    storedText.checksumSha256()));
-        }
+                    ArtifactType.INPUT_FILE,
+                    storedFile.storageUri(),
+                    file.getContentType(),
+                    storedFile.sizeBytes(),
+                    storedFile.checksumSha256()));
 
-        var result = jobManagement.createAndEnqueue(new CreateJobCommand(capability, stagedInputs));
-        return ResponseEntity.accepted().body(JobResponses.JobCreated.from(result.job(), result.inputArtifacts()));
+            if (text != null && !text.isBlank()) {
+                byte[] textBytes = text.getBytes(StandardCharsets.UTF_8);
+                var storedText = storage.store(
+                        JobId.generate(),
+                        ArtifactType.INPUT_TEXT,
+                        "prompt.txt",
+                        "text/plain; charset=utf-8",
+                        new ByteArrayInputStream(textBytes),
+                        textBytes.length);
+                storedObjects.add(storedText);
+
+                stagedInputs.add(new StagedInputArtifact(
+                        ArtifactType.INPUT_TEXT,
+                        storedText.storageUri(),
+                        "text/plain; charset=utf-8",
+                        storedText.sizeBytes(),
+                        storedText.checksumSha256()));
+            }
+
+            var result = jobManagement.createAndEnqueue(new CreateJobCommand(capability, stagedInputs));
+            return ResponseEntity.accepted().body(JobResponses.JobCreated.from(result.job(), result.inputArtifacts()));
+        } catch (IOException | RuntimeException ex) {
+            cleanupStoredObjects(storedObjects);
+            throw ex;
+        }
     }
 
     @GetMapping("/{jobId}")
@@ -170,5 +188,17 @@ public class JobController {
                 .map(view -> JobResponses.JobResult.from(view.job(), view.artifacts()))
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    private void cleanupStoredObjects(List<ArtifactStoragePort.StoredObject> storedObjects) {
+        for (ArtifactStoragePort.StoredObject stored : storedObjects) {
+            try {
+                storage.delete(stored.storageUri());
+            } catch (RuntimeException cleanupEx) {
+                log.warn(
+                        "Failed to cleanup staged input artifact {} after job creation failure",
+                        stored.storageUri(), cleanupEx);
+            }
+        }
     }
 }

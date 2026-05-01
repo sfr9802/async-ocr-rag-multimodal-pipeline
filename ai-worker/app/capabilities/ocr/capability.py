@@ -141,6 +141,35 @@ class OcrCapability(Capability):
                     warnings=[],
                 )
             elif kind == "pdf":
+                preflight_page_count = self._preflight_pdf_page_count(
+                    artifact.content,
+                )
+                if (
+                    preflight_page_count is not None
+                    and preflight_page_count > self._config.max_pages
+                ):
+                    ocr_ms = elapsed_ms(started)
+                    builder.record_fail(
+                        STAGE_OCR,
+                        provider=self._provider.name,
+                        code="OCR_TOO_MANY_PAGES",
+                        message=(
+                            f"PDF has {preflight_page_count} pages, limit is "
+                            f"{self._config.max_pages}"
+                        ),
+                        duration_ms=ocr_ms,
+                        retryable=False,
+                        details={"pageCount": preflight_page_count},
+                    )
+                    builder.finalize_failed()
+                    raise CapabilityError(
+                        "OCR_TOO_MANY_PAGES",
+                        f"PDF has {preflight_page_count} pages, limit is "
+                        f"{self._config.max_pages}. Raise "
+                        f"AIPIPELINE_WORKER_OCR_MAX_PAGES or split the "
+                        f"document before submitting. "
+                        f"| trace: {builder.summary()}",
+                    )
                 document = self._provider.ocr_pdf(artifact.content)
                 if len(document.pages) > self._config.max_pages:
                     ocr_ms = elapsed_ms(started)
@@ -366,6 +395,15 @@ class OcrCapability(Capability):
             return artifact.filename
         ext = {"image": "img", "pdf": "pdf"}.get(kind, "bin")
         return f"{artifact.artifact_id}.{ext}"
+
+    def _preflight_pdf_page_count(self, pdf_bytes: bytes) -> Optional[int]:
+        counter = getattr(self._provider, "pdf_page_count", None)
+        if not callable(counter):
+            return None
+        page_count = counter(pdf_bytes)
+        if page_count is None:
+            return None
+        return int(page_count)
 
     # ------------------------------------------------------------------
     # warnings + result envelope

@@ -412,28 +412,12 @@ class IngestService:
                 f"Embedder returned {vectors.shape[0]} vectors for {len(chunks)} chunks"
             )
 
-        info = self._index.build(
+        info, stage_dir = self._index.build_staged(
             vectors,
             index_version=index_version,
             embedding_model=self._embedder.model_name,
         )
 
-        self._metadata.replace_all(
-            documents=docs,
-            chunks=chunks,
-            index_version=index_version,
-            embedding_model=self._embedder.model_name,
-            embedding_dim=info.dimension,
-            faiss_index_path=str(self._index_dir_for_notes()),
-            notes=notes,
-        )
-
-        # Phase 7.2: write the ingest manifest sidecar so a downstream
-        # tool can verify the variant + format version + sha256 of
-        # what got embedded. The manifest is best-effort: if writing
-        # it fails (read-only mount, etc.) we log + continue —
-        # ragmeta + faiss.index are the source of truth and a missing
-        # sidecar should not abort an otherwise-successful ingest.
         manifest = self._build_manifest(
             texts_to_embed=texts_to_embed,
             info=info,
@@ -444,13 +428,24 @@ class IngestService:
             ),
         )
         try:
-            self._write_manifest(manifest)
-        except OSError as ex:
-            log.warning(
-                "Failed to write %s next to FAISS index (%s); "
-                "continuing without manifest sidecar.",
-                _INGEST_MANIFEST_FILE, ex,
+            self._write_manifest(manifest, index_dir=stage_dir)
+            self._metadata.replace_all(
+                documents=docs,
+                chunks=chunks,
+                index_version=index_version,
+                embedding_model=self._embedder.model_name,
+                embedding_dim=info.dimension,
+                faiss_index_path=str(self._index_dir_for_notes()),
+                notes=notes,
             )
+            self._index.promote_staged(
+                stage_dir,
+                info,
+                extra_files=(_INGEST_MANIFEST_FILE,),
+            )
+        except Exception:
+            self._index.discard_staged(stage_dir)
+            raise
 
         return IngestResult(
             document_count=len(docs),
@@ -488,14 +483,19 @@ class IngestService:
             embed_text_samples=_embed_text_samples(texts_to_embed),
         )
 
-    def _write_manifest(self, manifest: IngestManifest) -> Path:
+    def _write_manifest(
+        self,
+        manifest: IngestManifest,
+        *,
+        index_dir: Optional[Path] = None,
+    ) -> Path:
         """Persist the manifest dataclass to ``ingest_manifest.json``.
 
         Lives next to ``build.json`` under the FAISS index dir; the
         retriever can pick it up at load time without any IO contract
         change in :class:`FaissIndex` itself.
         """
-        path = self._index_dir / _INGEST_MANIFEST_FILE
+        path = (index_dir or self._index_dir) / _INGEST_MANIFEST_FILE
         path.write_text(
             json.dumps({
                 "embedding_text_variant": manifest.embedding_text_variant,

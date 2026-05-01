@@ -62,15 +62,18 @@ class FakeOcrProvider(OcrProvider):
         *,
         image_result: Optional[OcrPageResult] = None,
         pdf_result: Optional[OcrDocumentResult] = None,
+        pdf_page_count: Optional[int] = None,
         raise_on: Optional[str] = None,
         raise_error: Optional[OcrError] = None,
     ) -> None:
         self._image_result = image_result
         self._pdf_result = pdf_result
+        self._pdf_page_count = pdf_page_count
         self._raise_on = raise_on
         self._raise_error = raise_error
         self.image_calls: List[bytes] = []
         self.pdf_calls: List[bytes] = []
+        self.pdf_page_count_calls: List[bytes] = []
 
     @property
     def name(self) -> str:
@@ -89,6 +92,10 @@ class FakeOcrProvider(OcrProvider):
             raise self._raise_error or OcrError("FAKE_PDF_FAIL", "fake pdf failure")
         assert self._pdf_result is not None, "test did not provide pdf_result"
         return self._pdf_result
+
+    def pdf_page_count(self, pdf_bytes: bytes) -> Optional[int]:
+        self.pdf_page_count_calls.append(pdf_bytes)
+        return self._pdf_page_count
 
 
 def _png_bytes() -> bytes:
@@ -292,6 +299,29 @@ def test_pdf_ocr_above_max_pages_fails_with_typed_error():
 
     assert exc_info.value.code == "OCR_TOO_MANY_PAGES"
     assert "6" in exc_info.value.message and "5" in exc_info.value.message
+
+
+def test_pdf_ocr_page_cap_preflight_fails_before_provider_ocr():
+    provider = FakeOcrProvider(
+        pdf_page_count=6,
+        pdf_result=OcrDocumentResult(
+            pages=[
+                OcrPageResult(page_number=1, text="should not run"),
+            ],
+            engine_name="fake-ocr-1.0",
+        ),
+    )
+    cap = OcrCapability(
+        provider=provider,
+        config=OcrCapabilityConfig(min_confidence_warn=0.0, max_pages=5),
+    )
+
+    with pytest.raises(CapabilityError) as exc_info:
+        cap.run(_make_job_input(content=_pdf_bytes(), content_type="application/pdf"))
+
+    assert exc_info.value.code == "OCR_TOO_MANY_PAGES"
+    assert provider.pdf_page_count_calls == [_pdf_bytes()]
+    assert provider.pdf_calls == []
 
 
 # ---------------------------------------------------------------------------

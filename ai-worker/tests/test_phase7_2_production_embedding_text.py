@@ -637,6 +637,11 @@ class _FakeIngestStore:
         self.replace_all_called = True
 
 
+class _FailingIngestStore(_FakeIngestStore):
+    def replace_all(self, **_kwargs) -> None:
+        raise RuntimeError("metadata store unavailable")
+
+
 _INGEST_FIXTURE_ROWS: List[Dict[str, Any]] = [
     {
         "doc_id": "doc-aria",
@@ -753,6 +758,26 @@ def test_ingest_writes_manifest_with_default_variant(tmp_path: Path):
     # IngestResult also carries the manifest dataclass
     assert result.manifest is not None
     assert result.manifest.embedding_text_variant == VARIANT_RETRIEVAL_TITLE_SECTION
+
+
+def test_ingest_does_not_promote_index_when_metadata_replace_fails(tmp_path: Path):
+    jsonl = _write_jsonl(tmp_path / "in.jsonl", _INGEST_FIXTURE_ROWS)
+    embedder = HashingEmbedder(dim=64)
+    index = FaissIndex(tmp_path / "idx")
+    service = IngestService(
+        embedder=embedder,
+        metadata_store=_FailingIngestStore(),
+        index=index,
+    )
+
+    with pytest.raises(RuntimeError, match="metadata store unavailable"):
+        service.ingest_jsonl(
+            jsonl, source_label="phase7_2-fixture", index_version="test-v1",
+        )
+
+    assert not (tmp_path / "idx" / "faiss.index").exists()
+    assert not (tmp_path / "idx" / "build.json").exists()
+    assert not (tmp_path / "idx" / "ingest_manifest.json").exists()
 
 
 def test_ingest_writes_manifest_with_title_section_rollback(tmp_path: Path):

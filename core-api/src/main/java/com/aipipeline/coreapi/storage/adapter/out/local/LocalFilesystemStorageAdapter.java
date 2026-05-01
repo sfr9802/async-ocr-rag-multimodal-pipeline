@@ -103,6 +103,17 @@ public class LocalFilesystemStorageAdapter implements ArtifactStoragePort {
     }
 
     @Override
+    public void delete(String storageUri) {
+        Path path = resolve(storageUri);
+        try {
+            Files.deleteIfExists(path);
+            log.debug("Deleted local artifact: {}", storageUri);
+        } catch (IOException ex) {
+            throw new RuntimeException("Failed to delete artifact: " + storageUri, ex);
+        }
+    }
+
+    @Override
     public String generateDownloadUrl(String artifactId) {
         // Phase 1: advise callers to use the artifact controller. We return
         // a relative URL so the inbound adapter decides on hostname/auth.
