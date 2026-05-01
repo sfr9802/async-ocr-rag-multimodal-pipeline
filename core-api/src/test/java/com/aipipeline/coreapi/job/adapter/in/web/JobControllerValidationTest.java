@@ -331,6 +331,75 @@ class JobControllerValidationTest {
     }
 
     // ==================================================================
+    // COMPENSATION: staged bytes are deleted if DB enqueue fails
+    // ==================================================================
+
+    @Test
+    void text_job_cleans_staged_input_when_enqueue_fails() throws Exception {
+        Mockito.doThrow(new IllegalStateException("db down"))
+                .when(jobManagement)
+                .createAndEnqueue(any(CreateJobCommand.class));
+
+        mockMvc.perform(post("/api/v1/jobs")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"capability\":\"RAG\",\"text\":\"who feeds the harbor cats?\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CONFLICT"));
+
+        verify(storage).store(any(), any(), any(), any(), any(), org.mockito.ArgumentMatchers.anyLong());
+        verify(storage).delete("local://test/uri");
+    }
+
+    @Test
+    void multipart_job_cleans_all_staged_inputs_when_enqueue_fails() throws Exception {
+        when(storage.store(
+                any(), any(), any(), any(), any(),
+                org.mockito.ArgumentMatchers.anyLong()))
+                .thenReturn(new ArtifactStoragePort.StoredObject("local://file", 10L, "sha-file"))
+                .thenReturn(new ArtifactStoragePort.StoredObject("local://text", 5L, "sha-text"));
+        Mockito.doThrow(new IllegalStateException("db down"))
+                .when(jobManagement)
+                .createAndEnqueue(any(CreateJobCommand.class));
+
+        MockMultipartFile png = new MockMultipartFile(
+                "file", "invoice.png", "image/png",
+                new byte[]{(byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A});
+
+        mockMvc.perform(multipart("/api/v1/jobs")
+                        .file(png)
+                        .param("capability", "MULTIMODAL")
+                        .param("text", "what is the total?"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CONFLICT"));
+
+        verify(storage).delete("local://file");
+        verify(storage).delete("local://text");
+    }
+
+    @Test
+    void multipart_job_cleans_file_when_text_staging_fails() throws Exception {
+        when(storage.store(
+                any(), any(), any(), any(), any(),
+                org.mockito.ArgumentMatchers.anyLong()))
+                .thenReturn(new ArtifactStoragePort.StoredObject("local://file", 10L, "sha-file"))
+                .thenThrow(new RuntimeException("text store failed"));
+
+        MockMultipartFile png = new MockMultipartFile(
+                "file", "invoice.png", "image/png",
+                new byte[]{(byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A});
+
+        mockMvc.perform(multipart("/api/v1/jobs")
+                        .file(png)
+                        .param("capability", "MULTIMODAL")
+                        .param("text", "what is the total?"))
+                .andExpect(status().isInternalServerError())
+                .andExpect(jsonPath("$.code").value("INTERNAL_ERROR"));
+
+        verify(storage).delete("local://file");
+        verify(jobManagement, never()).createAndEnqueue(any(CreateJobCommand.class));
+    }
+
+    // ==================================================================
     // PIPELINE-STATE INVARIANT: no enqueue on rejection
     // ==================================================================
     //
@@ -346,6 +415,7 @@ class JobControllerValidationTest {
     private void assertPipelineNotInvoked() {
         verify(storage, never())
                 .store(any(), any(), any(), any(), any(), org.mockito.ArgumentMatchers.anyLong());
+        verify(storage, never()).delete(any());
         verify(jobManagement, never()).createAndEnqueue(any(CreateJobCommand.class));
     }
 }

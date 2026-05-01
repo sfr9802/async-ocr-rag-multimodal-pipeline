@@ -5,10 +5,12 @@ import com.aipipeline.coreapi.job.domain.Job;
 import com.aipipeline.coreapi.job.domain.JobCapability;
 import com.aipipeline.coreapi.job.domain.JobId;
 import com.aipipeline.coreapi.job.domain.JobStatus;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -43,6 +45,15 @@ public class JobPersistenceAdapter implements JobRepository {
         Instant expiresAt = now.plus(leaseDuration);
         int updated = jpa.claimAtomic(id.value(), workerClaimToken, now, expiresAt);
         return updated > 0;
+    }
+
+    @Override
+    public List<Job> findRedispatchCandidates(Instant now, int limit) {
+        int safeLimit = Math.max(1, limit);
+        return jpa.findRedispatchCandidates(now, PageRequest.of(0, safeLimit))
+                .stream()
+                .map(this::toDomain)
+                .toList();
     }
 
     // ---- mapping ----

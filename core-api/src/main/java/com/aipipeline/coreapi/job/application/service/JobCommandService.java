@@ -9,6 +9,8 @@ import com.aipipeline.coreapi.job.application.port.out.JobDispatchPort;
 import com.aipipeline.coreapi.job.application.port.out.JobRepository;
 import com.aipipeline.coreapi.job.domain.Job;
 import com.aipipeline.coreapi.job.domain.JobId;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,13 +28,14 @@ import java.util.Optional;
  *   - Mark the job as QUEUED and hand it to the dispatch port
  *   - Expose read operations for status and result
  *
- * Note on ordering: we persist and transition the job to QUEUED in the same
- * transaction, but dispatch happens after the transaction commits. This way
- * a dispatch failure cannot leave a QUEUED row that the worker can't see, and
- * a successful dispatch cannot lose the DB state.
+ * Note on ordering: dispatch happens after commit so workers never consume a
+ * database ghost. If Redis is down after the commit, the dispatch reconciler
+ * re-enqueues the durable QUEUED row on a later scan.
  */
 @Service
 public class JobCommandService implements JobManagementUseCase {
+
+    private static final Logger log = LoggerFactory.getLogger(JobCommandService.class);
 
     private final JobRepository jobRepository;
     private final ArtifactRepository artifactRepository;
@@ -80,7 +83,14 @@ public class JobCommandService implements JobManagementUseCase {
                 .registerSynchronization(new org.springframework.transaction.support.TransactionSynchronization() {
                     @Override
                     public void afterCommit() {
-                        dispatchPort.dispatch(saved);
+                        try {
+                            dispatchPort.dispatch(saved);
+                        } catch (JobDispatchPort.DispatchException ex) {
+                            log.warn(
+                                    "After-commit dispatch failed for job {}; "
+                                    + "dispatch reconciler will retry",
+                                    saved.getId(), ex);
+                        }
                     }
                 });
 

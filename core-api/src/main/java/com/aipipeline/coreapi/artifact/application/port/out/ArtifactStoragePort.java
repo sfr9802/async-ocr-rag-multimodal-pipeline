@@ -32,6 +32,12 @@ public interface ArtifactStoragePort {
     InputStream openForRead(String storageUri);
 
     /**
+     * Delete a stored object by URI. Used for compensation when bytes have
+     * been staged but the database operation that should reference them fails.
+     */
+    void delete(String storageUri);
+
+    /**
      * Generate an access URL the caller can hand to an external client so
      * that the client can fetch (or upload) content without a persistent
      * credential. Phase 1 returns a core-api download URL for outputs.

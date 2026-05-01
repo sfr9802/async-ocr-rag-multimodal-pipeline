@@ -223,6 +223,22 @@ class TesseractOcrProvider(OcrProvider):
             warnings=doc_warnings,
         )
 
+    def pdf_page_count(self, pdf_bytes: bytes) -> int:
+        """Cheap preflight used by OcrCapability before rasterizing pages."""
+        import fitz  # type: ignore
+
+        try:
+            doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        except Exception as ex:
+            raise OcrError(
+                "PDF_OPEN_FAILED",
+                f"Could not open PDF bytes with PyMuPDF: {type(ex).__name__}: {ex}",
+            ) from ex
+        try:
+            return int(doc.page_count)
+        finally:
+            doc.close()
+
     # -- helpers ----------------------------------------------------------
 
     def _load_image(self, image_bytes: bytes):

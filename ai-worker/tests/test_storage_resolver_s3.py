@@ -61,6 +61,17 @@ class TestLocalRegressions:
         with pytest.raises(ValueError, match="escapes root"):
             resolver.read_bytes("local://../../etc/passwd")
 
+    def test_sibling_prefix_path_is_blocked(self, tmp_path):
+        root = tmp_path / "local-storage"
+        sibling = tmp_path / "local-storage-evil"
+        root.mkdir()
+        sibling.mkdir()
+        (sibling / "secret.txt").write_text("nope")
+        resolver = StorageResolver(local_root=str(root))
+
+        with pytest.raises(ValueError, match="escapes root"):
+            resolver.read_bytes("local://../local-storage-evil/secret.txt")
+
     def test_missing_file_raises(self, tmp_path):
         resolver = StorageResolver(local_root=str(tmp_path))
         with pytest.raises(FileNotFoundError):
