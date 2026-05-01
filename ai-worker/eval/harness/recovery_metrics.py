@@ -73,6 +73,10 @@ from eval.harness.controlled_recovery_loop import (
     _decision_to_dict,
     _result_to_dict,
 )
+from eval.harness.eval_terminology import (
+    apply_silver_terminology,
+    silver_disclaimer_block,
+)
 
 log = logging.getLogger(__name__)
 
@@ -375,7 +379,7 @@ def aggregate_results(
     ]
     totals["latency_ms"] = _latency_block(all_latencies)
 
-    return {
+    out: Dict[str, Any] = {
         "config": asdict(result.config),
         "n_queries": n,
         "totals": totals,
@@ -387,6 +391,10 @@ def aggregate_results(
         "recovery_actions": list(RECOVERY_ACTIONS),
         "rewrite_modes": list(REWRITE_MODES),
     }
+    # Silver-set disclaimer + terminology aliases. Lives at the top of
+    # the JSON dump so a reader sees them before any metric block.
+    out.update(silver_disclaimer_block())
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -647,7 +655,8 @@ def render_summary_md(aggregate: Mapping[str, Any]) -> str:
         lines.append(f"- max:  {lat.get('max_ms', 0):.3f} ms")
         lines.append("")
 
-    return "\n".join(lines) + "\n"
+    body = "\n".join(lines) + "\n"
+    return apply_silver_terminology(body)
 
 
 def render_final_report_md(aggregate: Mapping[str, Any]) -> str:
@@ -757,4 +766,5 @@ def render_final_report_md(aggregate: Mapping[str, Any]) -> str:
     lines.append("Full distribution and bucket breakdown live in "
                  "`recovery_summary.md` and `recovery_summary.json`.")
     lines.append("")
-    return "\n".join(lines) + "\n"
+    body = "\n".join(lines) + "\n"
+    return apply_silver_terminology(body)
