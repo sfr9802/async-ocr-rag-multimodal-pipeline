@@ -58,6 +58,14 @@ ai-worker/*.egg-info/
 **/tmp_*.py
 **/*_scratch.py
 **/*_sandbox.py
+# Non-Python scratch extensions seen in practice — interactive
+# debugging dumps (lookup tables, page snapshots, intermediate
+# selection lists). The repo-root prefix ``_scratch_`` is the
+# convention so these don't collide with real project artefacts.
+**/_scratch_*.json
+**/_scratch_*.jsonl
+**/_scratch_*.txt
+**/_scratch_*.md
 ai-worker/scripts/_scratch/
 ai-worker/scripts/_drafts/
 ai-worker/eval/harness/_scratch/
