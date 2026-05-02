@@ -13,6 +13,8 @@ package com.aipipeline.coreapi.queue.adapter.out.redis;
 public record QueueMessage(
         String jobId,
         String capability,
+        String taskKind,
+        String pipelineVersion,
         int attemptNo,
         long enqueuedAtEpochMilli,
         String callbackBaseUrl

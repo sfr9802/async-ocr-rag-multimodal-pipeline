@@ -99,14 +99,14 @@ public final class JobSubmissionValidator {
         if (raw == null || raw.isBlank()) {
             throw new InvalidJobSubmissionException(
                     ErrorCodes.CAPABILITY_REQUIRED,
-                    "capability field is required. Accepted values: MOCK, RAG, OCR, MULTIMODAL, AUTO, AGENT.");
+                    "capability field is required. Accepted values: MOCK, RAG, OCR, OCR_EXTRACT, MULTIMODAL, AUTO, AGENT.");
         }
         try {
             return JobCapability.fromString(raw);
         } catch (IllegalArgumentException ex) {
             throw new InvalidJobSubmissionException(
                     ErrorCodes.UNKNOWN_CAPABILITY,
-                    "Unknown capability: " + raw + ". Accepted values: MOCK, RAG, OCR, MULTIMODAL, AUTO, AGENT.");
+                    "Unknown capability: " + raw + ". Accepted values: MOCK, RAG, OCR, OCR_EXTRACT, MULTIMODAL, AUTO, AGENT.");
         }
     }
 
@@ -141,11 +141,12 @@ public final class JobSubmissionValidator {
      */
     public static void validateTextSubmission(JobCapability capability, String text) {
         switch (capability) {
-            case OCR -> throw new InvalidJobSubmissionException(
+            case OCR, OCR_EXTRACT -> throw new InvalidJobSubmissionException(
                     ErrorCodes.FILE_REQUIRED,
-                    "OCR jobs require a file upload. Use the multipart endpoint "
+                    capability + " jobs require a file upload. Use the multipart endpoint "
                             + "(POST /api/v1/jobs with Content-Type: multipart/form-data, "
-                            + "fields: capability=OCR, file=@path/to/input.(png|jpg|jpeg|pdf)).");
+                            + "fields: capability=" + capability
+                            + ", file=@path/to/input.(png|jpg|jpeg|pdf)).");
             case MULTIMODAL -> throw new InvalidJobSubmissionException(
                     ErrorCodes.FILE_REQUIRED,
                     "MULTIMODAL jobs require a file upload. Use the multipart endpoint "
@@ -257,7 +258,7 @@ public final class JobSubmissionValidator {
         }
 
         switch (capability) {
-            case OCR, MULTIMODAL -> requireSupportedFileType(capability, file);
+            case OCR, OCR_EXTRACT, MULTIMODAL -> requireSupportedFileType(capability, file);
             case RAG -> {
                 if (text == null || text.isBlank()) {
                     throw new InvalidJobSubmissionException(

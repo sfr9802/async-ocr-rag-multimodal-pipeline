@@ -14,6 +14,7 @@ package com.aipipeline.coreapi.job.domain;
 public enum JobCapability {
     MOCK,
     OCR,
+    OCR_EXTRACT,
     RAG,
     MULTIMODAL,
     AUTO,

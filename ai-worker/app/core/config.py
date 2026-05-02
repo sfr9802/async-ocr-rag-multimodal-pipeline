@@ -357,6 +357,30 @@ class WorkerSettings(BaseSettings):
             "thousand-page scan. Raise explicitly if you need more."
         ),
     )
+    ocr_extract_enabled: bool = Field(
+        default=True,
+        description=(
+            "Enable the OCR_EXTRACT OCR-lite task kind. This is independent "
+            "of the heavier Tesseract OCR capability so the async pipeline "
+            "can be proven locally with fixture or PaddleOCR providers."
+        ),
+    )
+    ocr_extract_provider: Literal["fixture", "paddle"] = Field(
+        default="fixture",
+        description=(
+            "Provider for OCR_EXTRACT. 'fixture' returns deterministic text "
+            "for CI/local pipeline proof; 'paddle' uses PaddleOCR at local "
+            "runtime behind the provider seam."
+        ),
+    )
+    ocr_extract_fixture_text: str = Field(
+        default="extracted text",
+        description="Text emitted by the OCR_EXTRACT fixture provider.",
+    )
+    ocr_extract_paddle_lang: str = Field(
+        default="en",
+        description="PaddleOCR language code used when ocr_extract_provider='paddle'.",
+    )
 
     # --- anthropic api (shared by claude vision + claude generation) ---
     anthropic_api_key: Optional[str] = Field(

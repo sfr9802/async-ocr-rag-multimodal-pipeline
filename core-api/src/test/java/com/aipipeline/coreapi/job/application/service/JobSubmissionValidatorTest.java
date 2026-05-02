@@ -38,6 +38,8 @@ class JobSubmissionValidatorTest {
                     .isEqualTo(JobCapability.RAG);
             assertThat(JobSubmissionValidator.parseCapability("OCR"))
                     .isEqualTo(JobCapability.OCR);
+            assertThat(JobSubmissionValidator.parseCapability("OCR_EXTRACT"))
+                    .isEqualTo(JobCapability.OCR_EXTRACT);
             assertThat(JobSubmissionValidator.parseCapability("MULTIMODAL"))
                     .isEqualTo(JobCapability.MULTIMODAL);
             assertThat(JobSubmissionValidator.parseCapability("AUTO"))
@@ -147,6 +149,14 @@ class JobSubmissionValidatorTest {
         }
 
         @Test
+        void ocr_extract_on_text_endpoint_rejected_FILE_REQUIRED() {
+            assertThatThrownBy(() ->
+                    JobSubmissionValidator.validateTextSubmission(JobCapability.OCR_EXTRACT, "extract this"))
+                    .isInstanceOf(InvalidJobSubmissionException.class)
+                    .extracting("errorCode").isEqualTo(ErrorCodes.FILE_REQUIRED);
+        }
+
+        @Test
         void multimodal_on_text_endpoint_rejected_FILE_REQUIRED() {
             assertThatThrownBy(() ->
                     JobSubmissionValidator.validateTextSubmission(JobCapability.MULTIMODAL, "caption it"))
@@ -208,6 +218,14 @@ class JobSubmissionValidatorTest {
         }
 
         @Test
+        void null_file_rejected_FILE_REQUIRED_for_ocr_extract() {
+            assertThatThrownBy(() ->
+                    JobSubmissionValidator.validateFileSubmission(JobCapability.OCR_EXTRACT, null, null))
+                    .isInstanceOf(InvalidJobSubmissionException.class)
+                    .extracting("errorCode").isEqualTo(ErrorCodes.FILE_REQUIRED);
+        }
+
+        @Test
         void null_file_rejected_FILE_REQUIRED_for_multimodal() {
             assertThatThrownBy(() ->
                     JobSubmissionValidator.validateFileSubmission(JobCapability.MULTIMODAL, null, "q"))
@@ -245,6 +263,12 @@ class JobSubmissionValidatorTest {
         void ocr_with_png_accepted() {
             MultipartFile png = pngFile("receipt.png");
             JobSubmissionValidator.validateFileSubmission(JobCapability.OCR, png, null);
+        }
+
+        @Test
+        void ocr_extract_with_png_accepted() {
+            MultipartFile png = pngFile("receipt.png");
+            JobSubmissionValidator.validateFileSubmission(JobCapability.OCR_EXTRACT, png, null);
         }
 
         @Test

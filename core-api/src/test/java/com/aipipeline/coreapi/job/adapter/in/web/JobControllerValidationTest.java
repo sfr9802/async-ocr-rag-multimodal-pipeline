@@ -13,6 +13,7 @@ import com.aipipeline.coreapi.job.domain.Job;
 import com.aipipeline.coreapi.job.domain.JobCapability;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
@@ -137,6 +138,17 @@ class JobControllerValidationTest {
         mockMvc.perform(post("/api/v1/jobs")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"capability\":\"OCR\",\"text\":\"extract this\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("FILE_REQUIRED"));
+
+        assertPipelineNotInvoked();
+    }
+
+    @Test
+    void ocr_extract_via_json_endpoint_rejected_FILE_REQUIRED_and_no_enqueue() throws Exception {
+        mockMvc.perform(post("/api/v1/jobs")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"capability\":\"OCR_EXTRACT\",\"text\":\"extract this\"}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("FILE_REQUIRED"));
 
@@ -328,6 +340,25 @@ class JobControllerValidationTest {
 
         verify(jobManagement).createAndEnqueue(any(CreateJobCommand.class));
         verify(storage).store(any(), any(), any(), any(), any(), org.mockito.ArgumentMatchers.anyLong());
+    }
+
+    @Test
+    void valid_ocr_extract_with_png_accepted_and_enqueued_as_ocr_extract() throws Exception {
+        MockMultipartFile png = new MockMultipartFile(
+                "file", "receipt.png", "image/png",
+                new byte[]{(byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A});
+
+        mockMvc.perform(multipart("/api/v1/jobs")
+                        .file(png)
+                        .param("capability", "OCR_EXTRACT"))
+                .andExpect(status().isAccepted());
+
+        ArgumentCaptor<CreateJobCommand> command = ArgumentCaptor.forClass(CreateJobCommand.class);
+        verify(jobManagement).createAndEnqueue(command.capture());
+        verify(storage).store(any(), any(), any(), any(), any(), org.mockito.ArgumentMatchers.anyLong());
+
+        org.assertj.core.api.Assertions.assertThat(command.getValue().capability())
+                .isEqualTo(JobCapability.OCR_EXTRACT);
     }
 
     // ==================================================================

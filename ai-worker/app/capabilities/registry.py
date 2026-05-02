@@ -76,6 +76,7 @@ def build_default_registry(settings: WorkerSettings) -> CapabilityRegistry:
 
     rag_registered = False
     ocr_registered = False
+    ocr_extract_registered = False
 
     if settings.rag_enabled:
         log.info(
@@ -132,6 +133,22 @@ def build_default_registry(settings: WorkerSettings) -> CapabilityRegistry:
                 "To enable OCR: install Tesseract (https://tesseract-ocr.github.io/), "
                 "pip install pytesseract pymupdf, make sure the configured "
                 "language packs are present, then restart the worker.",
+                type(ex).__name__, ex,
+            )
+
+    if settings.ocr_extract_enabled:
+        log.info(
+            "OCR_EXTRACT init: provider=%s pipeline_version=ocr-lite-v1",
+            settings.ocr_extract_provider,
+        )
+        try:
+            registry.register(_build_ocr_extract_capability(settings))
+            ocr_extract_registered = True
+            log.info("OCR_EXTRACT capability registered.")
+        except Exception as ex:
+            log.warning(
+                "OCR_EXTRACT capability NOT registered (%s: %s). "
+                "Worker still serves the other registered capabilities.",
                 type(ex).__name__, ex,
             )
 
@@ -226,7 +243,11 @@ def build_default_registry(settings: WorkerSettings) -> CapabilityRegistry:
             "remains registered."
         )
 
-    log.info("Active capabilities: %s", registry.available())
+    log.info(
+        "Active capabilities: %s (ocr_extract=%s)",
+        registry.available(),
+        ocr_extract_registered,
+    )
     return registry
 
 
@@ -263,6 +284,30 @@ def _build_ocr_capability(settings: WorkerSettings) -> Capability:
             max_pages=settings.ocr_max_pages,
         ),
     )
+
+
+def _build_ocr_extract_capability(settings: WorkerSettings) -> Capability:
+    from app.capabilities.ocr.fixture_provider import FixtureOcrProvider
+    from app.capabilities.ocr.paddle_provider import PaddleOcrProvider
+    from app.capabilities.ocr.service import (
+        OcrExtractCapability,
+        OcrExtractService,
+    )
+
+    provider_name = (settings.ocr_extract_provider or "fixture").strip().lower()
+    if provider_name == "fixture":
+        provider = FixtureOcrProvider(settings.ocr_extract_fixture_text)
+    elif provider_name == "paddle":
+        provider = PaddleOcrProvider(
+            lang=settings.ocr_extract_paddle_lang,
+            pdf_dpi=settings.ocr_pdf_dpi,
+        )
+    else:  # pragma: no cover - WorkerSettings Literal guards this
+        raise RuntimeError(
+            f"Unknown OCR_EXTRACT provider {provider_name!r}. "
+            "Supported: 'fixture', 'paddle'."
+        )
+    return OcrExtractCapability(service=OcrExtractService(provider=provider))
 
 
 def _build_multimodal_capability(settings: WorkerSettings) -> Capability:

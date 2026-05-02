@@ -520,7 +520,11 @@ def test_ocr_disabled_leaves_other_capabilities_intact(monkeypatch):
     monkeypatch.setattr(registry_module, "_build_rag_capability", lambda _s: _FakeRag())
     monkeypatch.setattr(registry_module, "_build_ocr_capability", _should_not_be_called)
 
-    settings = WorkerSettings(rag_enabled=True, ocr_enabled=False)
+    settings = WorkerSettings(
+        rag_enabled=True,
+        ocr_enabled=False,
+        ocr_extract_enabled=False,
+    )
     result = registry_module.build_default_registry(settings)
 
     # AUTO + AGENT auto-register when at least one downstream sub is available.

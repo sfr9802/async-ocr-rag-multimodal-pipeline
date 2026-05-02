@@ -36,6 +36,8 @@ public enum ArtifactType {
     INPUT_FILE,
     OCR_TEXT,
     OCR_RESULT,
+    OCR_RESULT_JSON,
+    OCR_TEXT_MARKDOWN,
     RETRIEVAL_RESULT,
     VISION_RESULT,
     MULTIMODAL_TRACE,

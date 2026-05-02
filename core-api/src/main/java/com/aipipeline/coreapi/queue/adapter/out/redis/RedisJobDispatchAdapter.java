@@ -3,6 +3,7 @@ package com.aipipeline.coreapi.queue.adapter.out.redis;
 import com.aipipeline.coreapi.common.AipipelineProperties;
 import com.aipipeline.coreapi.job.application.port.out.JobDispatchPort;
 import com.aipipeline.coreapi.job.domain.Job;
+import com.aipipeline.coreapi.job.domain.JobCapability;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
@@ -22,6 +23,7 @@ import org.springframework.stereotype.Component;
 public class RedisJobDispatchAdapter implements JobDispatchPort {
 
     private static final Logger log = LoggerFactory.getLogger(RedisJobDispatchAdapter.class);
+    private static final String OCR_LITE_PIPELINE_VERSION = "ocr-lite-v1";
 
     private final StringRedisTemplate redis;
     private final ObjectMapper objectMapper;
@@ -42,6 +44,8 @@ public class RedisJobDispatchAdapter implements JobDispatchPort {
         QueueMessage message = new QueueMessage(
                 job.getId().value(),
                 job.getCapability().name(),
+                job.getCapability().name(),
+                pipelineVersionFor(job.getCapability()),
                 job.getAttemptNo(),
                 System.currentTimeMillis(),
                 callbackBaseUrl);
@@ -57,5 +61,11 @@ public class RedisJobDispatchAdapter implements JobDispatchPort {
         } catch (Exception ex) {
             throw new DispatchException("Failed to push to Redis queue " + pendingKey, ex);
         }
+    }
+
+    private static String pipelineVersionFor(JobCapability capability) {
+        return capability == JobCapability.OCR_EXTRACT
+                ? OCR_LITE_PIPELINE_VERSION
+                : null;
     }
 }

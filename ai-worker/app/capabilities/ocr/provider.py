@@ -19,7 +19,9 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import List, Optional, Protocol
+
+from app.capabilities.ocr.models import OcrDocument
 
 
 @dataclass(frozen=True)
@@ -123,3 +125,27 @@ class OcrProvider(ABC):
         present (born-digital PDFs) and only rasterize+OCR scanned
         pages. Raises OcrError on engine failure.
         """
+
+
+class OcrLiteProvider(Protocol):
+    """Provider protocol for the OCR_EXTRACT OCR-lite slice.
+
+    The existing ``OcrProvider`` ABC above is kept for the phase-2 Tesseract
+    OCR capability and multimodal reuse. OCR-lite has a narrower provider
+    surface so PaddleOCR can stay isolated behind this protocol.
+    """
+
+    @property
+    def engine(self) -> str:
+        """Stable engine name embedded in OCR_RESULT_JSON."""
+
+    def extract(
+        self,
+        content: bytes,
+        *,
+        source_record_id: str,
+        pipeline_version: str,
+        content_type: Optional[str],
+        filename: Optional[str],
+    ) -> OcrDocument:
+        """Extract OCR-lite page/block data from image or PDF bytes."""

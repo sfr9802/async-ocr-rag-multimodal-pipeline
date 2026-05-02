@@ -66,8 +66,13 @@ class TaskRunner:
 
     def handle(self, message: QueueMessage) -> None:
         log.info(
-            "Received dispatch jobId=%s capability=%s attempt=%d",
-            message.job_id, message.capability, message.attempt_no,
+            "Received dispatch jobId=%s capability=%s taskKind=%s "
+            "pipelineVersion=%s attempt=%d",
+            message.job_id,
+            message.capability,
+            message.task_kind,
+            message.pipeline_version,
+            message.attempt_no,
         )
 
         claim_response = self._core_api.claim(
@@ -85,11 +90,16 @@ class TaskRunner:
             return
 
         try:
-            capability = self._registry.get(claim_response.capability or message.capability)
+            effective_capability = (
+                claim_response.capability
+                or message.task_kind
+                or message.capability
+            )
+            capability = self._registry.get(effective_capability)
             fetched_inputs = [self._fetch_input(i) for i in claim_response.inputs]
             cap_input = CapabilityInput(
                 job_id=message.job_id,
-                capability=claim_response.capability or message.capability,
+                capability=effective_capability,
                 attempt_no=claim_response.attempt_no or message.attempt_no,
                 inputs=fetched_inputs,
             )

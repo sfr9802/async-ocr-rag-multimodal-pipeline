@@ -1515,7 +1515,10 @@ def test_multimodal_disabled_leaves_others_untouched(monkeypatch):
     )
 
     settings = WorkerSettings(
-        rag_enabled=True, ocr_enabled=True, multimodal_enabled=False
+        rag_enabled=True,
+        ocr_enabled=True,
+        multimodal_enabled=False,
+        ocr_extract_enabled=False,
     )
     result = registry_module.build_default_registry(settings)
 

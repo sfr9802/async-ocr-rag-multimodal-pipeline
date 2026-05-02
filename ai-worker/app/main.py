@@ -18,6 +18,7 @@ import signal
 import sys
 
 from app.capabilities.registry import build_default_registry
+from app.api import create_app
 from app.clients.core_api_client import CoreApiClient
 from app.core.config import get_settings
 from app.core.logging import configure_logging
@@ -26,6 +27,8 @@ from app.services.task_runner import TaskRunner
 from app.storage.resolver import StorageResolver
 
 log = logging.getLogger(__name__)
+
+app = create_app()
 
 
 def run() -> int:
