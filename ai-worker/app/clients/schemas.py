@@ -125,6 +125,13 @@ class SearchUnitIndexEmbeddedRequest(BaseModel):
     claim_token: str = Field(serialization_alias="claimToken")
     content_sha256: str = Field(serialization_alias="contentSha256")
     index_id: Optional[str] = Field(default=None, serialization_alias="indexId")
+    index_version: Optional[str] = Field(default=None, serialization_alias="indexVersion")
+    embedding_model: Optional[str] = Field(default=None, serialization_alias="embeddingModel")
+    embedding_text_sha256: Optional[str] = Field(
+        default=None,
+        serialization_alias="embeddingTextSha256",
+    )
+    vector_id: Optional[str] = Field(default=None, serialization_alias="vectorId")
 
     model_config = {"populate_by_name": True}
 

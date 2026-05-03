@@ -93,6 +93,46 @@ class RedisJobDispatchAdapterTest {
         assertThat(json.get("inputArtifacts").get(0).get("storageUri").asText()).isEqualTo("local://source/sales.xlsx");
     }
 
+    @Test
+    void pdf_extract_dispatch_payload_includes_task_kind_pipeline_version_and_input_file() throws Exception {
+        StringRedisTemplate redis = mock(StringRedisTemplate.class);
+        @SuppressWarnings("unchecked")
+        ListOperations<String, String> ops = mock(ListOperations.class);
+        when(redis.opsForList()).thenReturn(ops);
+
+        var adapter = new RedisJobDispatchAdapter(
+                redis,
+                new ObjectMapper(),
+                properties());
+        Job job = Job.createNew(JobCapability.PDF_EXTRACT, Instant.parse("2026-05-02T00:00:00Z"));
+        job.markQueued(Instant.parse("2026-05-02T00:00:00Z"));
+        Artifact input = Artifact.rehydrate(
+                ArtifactId.of("input-artifact-1"),
+                job.getId(),
+                ArtifactRole.INPUT,
+                ArtifactType.INPUT_FILE,
+                "local://source/contract.pdf",
+                "application/pdf",
+                1024L,
+                "sha-input",
+                Instant.parse("2026-05-02T00:00:00Z"));
+
+        adapter.dispatch(job, List.of(input));
+
+        org.mockito.ArgumentCaptor<String> payload = org.mockito.ArgumentCaptor.forClass(String.class);
+        verify(ops).leftPush(eq("aipipeline:jobs:pending"), payload.capture());
+
+        var json = new ObjectMapper().readTree(payload.getValue());
+        assertThat(json.get("jobId").asText()).isEqualTo(job.getId().value());
+        assertThat(json.get("capability").asText()).isEqualTo("PDF_EXTRACT");
+        assertThat(json.get("taskKind").asText()).isEqualTo("PDF_EXTRACT");
+        assertThat(json.get("pipelineVersion").asText()).isEqualTo("pdf-extract-v1");
+        assertThat(json.get("inputArtifacts").isArray()).isTrue();
+        assertThat(json.get("inputArtifacts").size()).isEqualTo(1);
+        assertThat(json.get("inputArtifacts").get(0).get("type").asText()).isEqualTo("INPUT_FILE");
+        assertThat(json.get("inputArtifacts").get(0).get("storageUri").asText()).isEqualTo("local://source/contract.pdf");
+    }
+
     private static AipipelineProperties properties() {
         return new AipipelineProperties(
                 new AipipelineProperties.Storage(

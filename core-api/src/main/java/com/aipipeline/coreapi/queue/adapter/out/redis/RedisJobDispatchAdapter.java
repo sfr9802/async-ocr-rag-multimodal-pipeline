@@ -29,6 +29,7 @@ public class RedisJobDispatchAdapter implements JobDispatchPort {
     private static final Logger log = LoggerFactory.getLogger(RedisJobDispatchAdapter.class);
     private static final String OCR_LITE_PIPELINE_VERSION = "ocr-lite-v1";
     private static final String XLSX_PIPELINE_VERSION = "xlsx-extract-v1";
+    private static final String PDF_PIPELINE_VERSION = "pdf-extract-v1";
 
     private final StringRedisTemplate redis;
     private final ObjectMapper objectMapper;
@@ -81,6 +82,7 @@ public class RedisJobDispatchAdapter implements JobDispatchPort {
         return switch (capability) {
             case OCR_EXTRACT -> OCR_LITE_PIPELINE_VERSION;
             case XLSX_EXTRACT -> XLSX_PIPELINE_VERSION;
+            case PDF_EXTRACT -> PDF_PIPELINE_VERSION;
             default -> null;
         };
     }

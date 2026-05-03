@@ -7,6 +7,15 @@ import com.aipipeline.coreapi.artifact.domain.ArtifactRole;
 import com.aipipeline.coreapi.artifact.domain.ArtifactType;
 import com.aipipeline.coreapi.catalog.adapter.out.persistence.ExtractedArtifactJpaEntity;
 import com.aipipeline.coreapi.catalog.adapter.out.persistence.ExtractedArtifactJpaRepository;
+import com.aipipeline.coreapi.catalog.adapter.out.persistence.DocumentV2JpaRepository;
+import com.aipipeline.coreapi.catalog.adapter.out.persistence.DocumentVersionJpaRepository;
+import com.aipipeline.coreapi.catalog.adapter.out.persistence.ParsedArtifactV2JpaRepository;
+import com.aipipeline.coreapi.catalog.adapter.out.persistence.PdfPageMetadataJpaEntity;
+import com.aipipeline.coreapi.catalog.adapter.out.persistence.PdfPageMetadataJpaRepository;
+import com.aipipeline.coreapi.catalog.adapter.out.persistence.TableMetadataJpaEntity;
+import com.aipipeline.coreapi.catalog.adapter.out.persistence.TableMetadataJpaRepository;
+import com.aipipeline.coreapi.catalog.adapter.out.persistence.CellMetadataJpaEntity;
+import com.aipipeline.coreapi.catalog.adapter.out.persistence.CellMetadataJpaRepository;
 import com.aipipeline.coreapi.catalog.adapter.out.persistence.SearchUnitJpaEntity;
 import com.aipipeline.coreapi.catalog.adapter.out.persistence.SearchUnitJpaRepository;
 import com.aipipeline.coreapi.catalog.adapter.out.persistence.SourceFileJpaEntity;
@@ -39,6 +48,12 @@ class DocumentCatalogServiceTest {
     private final SourceFileJpaRepository sourceFiles = mock(SourceFileJpaRepository.class);
     private final ExtractedArtifactJpaRepository extractedArtifacts = mock(ExtractedArtifactJpaRepository.class);
     private final SearchUnitJpaRepository searchUnits = mock(SearchUnitJpaRepository.class);
+    private final DocumentV2JpaRepository documents = mock(DocumentV2JpaRepository.class);
+    private final DocumentVersionJpaRepository documentVersions = mock(DocumentVersionJpaRepository.class);
+    private final ParsedArtifactV2JpaRepository parsedArtifacts = mock(ParsedArtifactV2JpaRepository.class);
+    private final PdfPageMetadataJpaRepository pdfPageMetadata = mock(PdfPageMetadataJpaRepository.class);
+    private final TableMetadataJpaRepository tableMetadata = mock(TableMetadataJpaRepository.class);
+    private final CellMetadataJpaRepository cellMetadata = mock(CellMetadataJpaRepository.class);
     private final ArtifactStoragePort storage = mock(ArtifactStoragePort.class);
 
     @Test
@@ -354,6 +369,197 @@ class DocumentCatalogServiceTest {
         assertThat(chunk.getMetadataJson()).contains("\"role\":\"chunk\"");
         assertThat(chunk.getMetadataJson()).contains("\"rowStart\":4");
 
+        ArgumentCaptor<TableMetadataJpaEntity> tableMetadataCaptor =
+                ArgumentCaptor.forClass(TableMetadataJpaEntity.class);
+        verify(tableMetadata, times(2)).save(tableMetadataCaptor.capture());
+        assertThat(tableMetadataCaptor.getAllValues())
+                .extracting(TableMetadataJpaEntity::getSheetName)
+                .containsOnly("매출");
+        assertThat(tableMetadataCaptor.getAllValues())
+                .extracting(TableMetadataJpaEntity::getTableId)
+                .contains("SalesTable", "detected-0-0");
+        assertThat(tableMetadataCaptor.getAllValues())
+                .extracting(TableMetadataJpaEntity::getCellRange)
+                .contains("A1:D3", "A4:D53");
+
+        ArgumentCaptor<CellMetadataJpaEntity> cellMetadataCaptor =
+                ArgumentCaptor.forClass(CellMetadataJpaEntity.class);
+        verify(cellMetadata).save(cellMetadataCaptor.capture());
+        assertThat(cellMetadataCaptor.getValue().getCellRef()).isEqualTo("D10");
+        assertThat(cellMetadataCaptor.getValue().getFormula()).isEqualTo("=SUM(D2:D9)");
+        assertThat(cellMetadataCaptor.getValue().getFormattedValue()).isEqualTo("12,000,000");
+
+        assertThat(source.getStatus()).isEqualTo(DocumentCatalogService.SOURCE_STATUS_READY);
+    }
+
+    @Test
+    void import_xlsx_excludes_hidden_column_formula_from_search_and_cell_metadata() {
+        Job job = Job.createNew(JobCapability.XLSX_EXTRACT, NOW);
+        SourceFileJpaEntity source = xlsxProcessingSource();
+        stubSourceAndUpserts("local://source.xlsx", source);
+        when(storage.openForRead("local://xlsx-workbook.json"))
+                .thenReturn(stream(hiddenFormulaXlsxJson()));
+
+        Artifact input = artifact("input-artifact-1", job, ArtifactRole.INPUT, ArtifactType.INPUT_FILE,
+                "local://source.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        Artifact workbook = artifact("xlsx-json-1", job, ArtifactRole.OUTPUT, ArtifactType.XLSX_WORKBOOK_JSON,
+                "local://xlsx-workbook.json", "application/json");
+
+        service().importXlsxSucceeded(job, List.of(input), List.of(workbook), NOW);
+
+        ArgumentCaptor<SearchUnitJpaEntity> unitCaptor = ArgumentCaptor.forClass(SearchUnitJpaEntity.class);
+        verify(searchUnits, times(2)).save(unitCaptor.capture());
+        for (SearchUnitJpaEntity unit : unitCaptor.getAllValues()) {
+            assertThat(unit.getTextContent()).doesNotContain("SECRET123");
+            assertThat(unit.getMetadataJson()).doesNotContain("SECRET123");
+            assertThat(unit.getEmbeddingText()).doesNotContain("SECRET123");
+            assertThat(unit.getBm25Text()).doesNotContain("SECRET123");
+            assertThat(unit.getDisplayText()).doesNotContain("SECRET123");
+            assertThat(unit.getCitationText()).doesNotContain("SECRET123");
+        }
+
+        ArgumentCaptor<CellMetadataJpaEntity> cellCaptor = ArgumentCaptor.forClass(CellMetadataJpaEntity.class);
+        verify(cellMetadata).save(cellCaptor.capture());
+        CellMetadataJpaEntity cell = cellCaptor.getValue();
+        assertThat(cell.getCellRef()).isEqualTo("A1");
+        assertThat(cell.getFormula()).isNull();
+        assertThat(cell.getFormattedValue()).isEqualTo("public");
+    }
+
+    @Test
+    void import_xlsx_excludes_hidden_cell_marker_from_search_and_cell_metadata() {
+        Job job = Job.createNew(JobCapability.XLSX_EXTRACT, NOW);
+        SourceFileJpaEntity source = xlsxProcessingSource();
+        stubSourceAndUpserts("local://source.xlsx", source);
+        when(storage.openForRead("local://xlsx-workbook.json"))
+                .thenReturn(stream(hiddenCellXlsxJson()));
+
+        Artifact input = artifact("input-artifact-1", job, ArtifactRole.INPUT, ArtifactType.INPUT_FILE,
+                "local://source.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        Artifact workbook = artifact("xlsx-json-1", job, ArtifactRole.OUTPUT, ArtifactType.XLSX_WORKBOOK_JSON,
+                "local://xlsx-workbook.json", "application/json");
+
+        service().importXlsxSucceeded(job, List.of(input), List.of(workbook), NOW);
+
+        ArgumentCaptor<SearchUnitJpaEntity> unitCaptor = ArgumentCaptor.forClass(SearchUnitJpaEntity.class);
+        verify(searchUnits, times(2)).save(unitCaptor.capture());
+        for (SearchUnitJpaEntity unit : unitCaptor.getAllValues()) {
+            assertThat(unit.getTextContent()).doesNotContain("SECRET123");
+            assertThat(unit.getMetadataJson()).doesNotContain("SECRET123");
+            assertThat(unit.getEmbeddingText()).doesNotContain("SECRET123");
+            assertThat(unit.getBm25Text()).doesNotContain("SECRET123");
+            assertThat(unit.getDisplayText()).doesNotContain("SECRET123");
+            assertThat(unit.getCitationText()).doesNotContain("SECRET123");
+        }
+
+        ArgumentCaptor<CellMetadataJpaEntity> cellCaptor = ArgumentCaptor.forClass(CellMetadataJpaEntity.class);
+        verify(cellMetadata).save(cellCaptor.capture());
+        CellMetadataJpaEntity cell = cellCaptor.getValue();
+        assertThat(cell.getCellRef()).isEqualTo("A1");
+        assertThat(cell.getFormula()).isNull();
+        assertThat(cell.getFormattedValue()).isEqualTo("public");
+    }
+
+    @Test
+    void import_xlsx_excludes_hidden_header_cell_from_labels_and_table_metadata() {
+        Job job = Job.createNew(JobCapability.XLSX_EXTRACT, NOW);
+        SourceFileJpaEntity source = xlsxProcessingSource();
+        stubSourceAndUpserts("local://source.xlsx", source);
+        when(storage.openForRead("local://xlsx-workbook.json"))
+                .thenReturn(stream(hiddenHeaderCellXlsxJson()));
+
+        Artifact input = artifact("input-artifact-1", job, ArtifactRole.INPUT, ArtifactType.INPUT_FILE,
+                "local://source.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        Artifact workbook = artifact("xlsx-json-1", job, ArtifactRole.OUTPUT, ArtifactType.XLSX_WORKBOOK_JSON,
+                "local://xlsx-workbook.json", "application/json");
+
+        service().importXlsxSucceeded(job, List.of(input), List.of(workbook), NOW);
+
+        ArgumentCaptor<SearchUnitJpaEntity> unitCaptor = ArgumentCaptor.forClass(SearchUnitJpaEntity.class);
+        verify(searchUnits, times(3)).save(unitCaptor.capture());
+        for (SearchUnitJpaEntity unit : unitCaptor.getAllValues()) {
+            assertThat(unit.getTextContent()).doesNotContain("SECRET123");
+            assertThat(unit.getMetadataJson()).doesNotContain("SECRET123");
+            assertThat(unit.getEmbeddingText()).doesNotContain("SECRET123");
+            assertThat(unit.getBm25Text()).doesNotContain("SECRET123");
+            assertThat(unit.getDisplayText()).doesNotContain("SECRET123");
+            assertThat(unit.getCitationText()).doesNotContain("SECRET123");
+        }
+
+        ArgumentCaptor<TableMetadataJpaEntity> tableCaptor = ArgumentCaptor.forClass(TableMetadataJpaEntity.class);
+        verify(tableMetadata).save(tableCaptor.capture());
+        TableMetadataJpaEntity table = tableCaptor.getValue();
+        assertThat(table.getHeaderJson()).doesNotContain("SECRET123");
+        assertThat(table.getHeaderPathsJson()).doesNotContain("SECRET123");
+        assertThat(table.getLocationJson()).doesNotContain("SECRET123");
+
+        ArgumentCaptor<CellMetadataJpaEntity> cellCaptor = ArgumentCaptor.forClass(CellMetadataJpaEntity.class);
+        verify(cellMetadata, times(2)).save(cellCaptor.capture());
+        for (CellMetadataJpaEntity cell : cellCaptor.getAllValues()) {
+            assertThat(cell.getCellRef()).isNotEqualTo("B1");
+            assertThat(String.valueOf(cell.getFormattedValue())).doesNotContain("SECRET123");
+            assertThat(String.valueOf(cell.getFormula())).doesNotContain("SECRET123");
+            assertThat(String.valueOf(cell.getHeaderPathJson())).doesNotContain("SECRET123");
+            assertThat(String.valueOf(cell.getColumnLabelJson())).doesNotContain("SECRET123");
+        }
+    }
+
+    @Test
+    void import_pdf_success_creates_native_pdf_search_units_with_v2_citations() {
+        Job job = Job.createNew(JobCapability.PDF_EXTRACT, NOW);
+        SourceFileJpaEntity source = pdfProcessingSource();
+        stubSourceAndUpserts("local://source.pdf", source);
+        when(storage.openForRead("local://pdf-parsed.json"))
+                .thenReturn(stream(validPdfJson()));
+
+        Artifact input = artifact("input-artifact-1", job, ArtifactRole.INPUT, ArtifactType.INPUT_FILE,
+                "local://source.pdf", "application/pdf");
+        Artifact parsed = artifact("pdf-json-1", job, ArtifactRole.OUTPUT, ArtifactType.PDF_PARSED_JSON,
+                "local://pdf-parsed.json", "application/json");
+        Artifact plain = artifact("pdf-text-1", job, ArtifactRole.OUTPUT, ArtifactType.PDF_PLAINTEXT,
+                "local://pdf.txt", "text/plain; charset=utf-8");
+
+        service().importPdfSucceeded(job, List.of(input), List.of(parsed, plain), NOW);
+
+        ArgumentCaptor<ExtractedArtifactJpaEntity> extractedCaptor =
+                ArgumentCaptor.forClass(ExtractedArtifactJpaEntity.class);
+        verify(extractedArtifacts, times(2)).save(extractedCaptor.capture());
+        assertThat(extractedCaptor.getAllValues())
+                .extracting(ExtractedArtifactJpaEntity::getArtifactType)
+                .containsExactly("PDF_PARSED_JSON", "PDF_PLAINTEXT");
+
+        ArgumentCaptor<SearchUnitJpaEntity> unitCaptor = ArgumentCaptor.forClass(SearchUnitJpaEntity.class);
+        verify(searchUnits, times(3)).save(unitCaptor.capture());
+        assertThat(unitCaptor.getAllValues())
+                .extracting(SearchUnitJpaEntity::getUnitType)
+                .containsExactly(
+                        DocumentCatalogService.SEARCH_UNIT_DOCUMENT,
+                        DocumentCatalogService.SEARCH_UNIT_PAGE,
+                        DocumentCatalogService.SEARCH_UNIT_CHUNK);
+
+        SearchUnitJpaEntity page = unitCaptor.getAllValues().get(1);
+        assertThat(page.getParserName()).isEqualTo("pymupdf");
+        assertThat(page.getParserVersion()).isEqualTo(DocumentCatalogService.PDF_PIPELINE_VERSION);
+        assertThat(page.getLocationJson()).contains("\"type\":\"pdf\"");
+        assertThat(page.getLocationJson()).contains("\"physical_page_index\":0");
+        assertThat(page.getCitationText()).isEqualTo("contract.pdf > p.1");
+
+        SearchUnitJpaEntity block = unitCaptor.getAllValues().get(2);
+        assertThat(block.getUnitKey()).isEqualTo("block:p0_b0");
+        assertThat(block.getChunkType()).isEqualTo("paragraph");
+        assertThat(block.getLocationJson()).contains("\"bbox\":[72.0,100.0,520.0,160.0]");
+        assertThat(block.getLocationJson()).contains("\"ocr_used\":false");
+        assertThat(block.getCitationText()).isEqualTo("contract.pdf > p.1 > bbox [72.0,100.0,520.0,160.0]");
+        ArgumentCaptor<PdfPageMetadataJpaEntity> pageMetadataCaptor =
+                ArgumentCaptor.forClass(PdfPageMetadataJpaEntity.class);
+        verify(pdfPageMetadata).save(pageMetadataCaptor.capture());
+        assertThat(pageMetadataCaptor.getValue().getPhysicalPageIndex()).isEqualTo(0);
+        assertThat(pageMetadataCaptor.getValue().getPageNo()).isEqualTo(1);
+        assertThat(pageMetadataCaptor.getValue().getPageLabel()).isEqualTo("1");
+        assertThat(pageMetadataCaptor.getValue().getTextLayerPresent()).isTrue();
+        assertThat(pageMetadataCaptor.getValue().getOcrUsed()).isFalse();
+        assertThat(pageMetadataCaptor.getValue().getBlockCount()).isEqualTo(1);
+        assertThat(pageMetadataCaptor.getValue().getCharCount()).isGreaterThan(0);
         assertThat(source.getStatus()).isEqualTo(DocumentCatalogService.SOURCE_STATUS_READY);
     }
 
@@ -467,6 +673,18 @@ class DocumentCatalogServiceTest {
                 .thenReturn(Optional.empty());
         when(searchUnits.save(any()))
                 .thenAnswer(invocation -> invocation.getArgument(0));
+        when(documents.findById(anyString()))
+                .thenReturn(Optional.empty());
+        when(documents.save(any()))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        when(documentVersions.findById(anyString()))
+                .thenReturn(Optional.empty());
+        when(documentVersions.save(any()))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        when(parsedArtifacts.findById(anyString()))
+                .thenReturn(Optional.empty());
+        when(parsedArtifacts.save(any()))
+                .thenAnswer(invocation -> invocation.getArgument(0));
     }
 
     private DocumentCatalogService service() {
@@ -474,6 +692,12 @@ class DocumentCatalogServiceTest {
                 sourceFiles,
                 extractedArtifacts,
                 searchUnits,
+                documents,
+                documentVersions,
+                parsedArtifacts,
+                pdfPageMetadata,
+                tableMetadata,
+                cellMetadata,
                 storage,
                 new ObjectMapper());
     }
@@ -496,6 +720,17 @@ class DocumentCatalogServiceTest {
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 "SPREADSHEET",
                 "local://source.xlsx",
+                DocumentCatalogService.SOURCE_STATUS_PROCESSING,
+                NOW);
+    }
+
+    private static SourceFileJpaEntity pdfProcessingSource() {
+        return new SourceFileJpaEntity(
+                "source-file-1",
+                "contract.pdf",
+                "application/pdf",
+                "PDF",
+                "local://source.pdf",
                 DocumentCatalogService.SOURCE_STATUS_PROCESSING,
                 NOW);
     }
@@ -578,6 +813,166 @@ class DocumentCatalogServiceTest {
                     ]
                   },
                   "plainText": "workbook text"
+                }
+                """;
+    }
+
+    private static String hiddenFormulaXlsxJson() {
+        return """
+                {
+                  "fileType": "xlsx",
+                  "sourceRecordId": "source-file-1",
+                  "pipelineVersion": "xlsx-extract-v1",
+                  "workbook": {
+                    "sheetCount": 1,
+                    "visibleSheetCount": 1,
+                    "sheets": [
+                      {
+                        "name": "Visible",
+                        "index": 0,
+                        "hidden": false,
+                        "maxRow": 2,
+                        "maxColumn": 2,
+                        "usedRange": "A1:B2",
+                        "hiddenColumns": ["B"],
+                        "hiddenColumnIndexes": [2],
+                        "formulas": [
+                          {"cell": "B2", "formula": "=\\"SECRET123\\"", "cachedValue": "SECRET123"}
+                        ],
+                        "compactText": "public",
+                        "cells": [
+                          {"cell": "A1", "row": 1, "column": 1, "value": "public", "formattedValue": "public"},
+                          {"cell": "B2", "row": 2, "column": 2, "value": "SECRET123", "formattedValue": "SECRET123"}
+                        ],
+                        "tables": [],
+                        "chunks": []
+                      }
+                    ]
+                  },
+                  "plainText": "public"
+                }
+                """;
+    }
+
+    private static String hiddenCellXlsxJson() {
+        return """
+                {
+                  "fileType": "xlsx",
+                  "sourceRecordId": "source-file-1",
+                  "pipelineVersion": "xlsx-extract-v1",
+                  "workbook": {
+                    "sheetCount": 1,
+                    "visibleSheetCount": 1,
+                    "sheets": [
+                      {
+                        "name": "Visible",
+                        "index": 0,
+                        "hidden": false,
+                        "maxRow": 2,
+                        "maxColumn": 2,
+                        "usedRange": "A1:B2",
+                        "hiddenCells": ["B2"],
+                        "formulas": [
+                          {"cell": "B2", "formula": "=\\"SECRET123\\"", "cachedValue": "SECRET123"}
+                        ],
+                        "compactText": "public",
+                        "cells": [
+                          {"cell": "A1", "row": 1, "column": 1, "value": "public", "formattedValue": "public"},
+                          {"cell": "B2", "row": 2, "column": 2, "value": "SECRET123", "formattedValue": "SECRET123", "formula": "=\\"SECRET123\\"", "cachedValue": "SECRET123"}
+                        ],
+                        "tables": [],
+                        "chunks": []
+                      }
+                    ]
+                  },
+                  "plainText": "public"
+                }
+                """;
+    }
+
+    private static String hiddenHeaderCellXlsxJson() {
+        return """
+                {
+                  "fileType": "xlsx",
+                  "sourceRecordId": "source-file-1",
+                  "pipelineVersion": "xlsx-extract-v1",
+                  "workbook": {
+                    "sheetCount": 1,
+                    "visibleSheetCount": 1,
+                    "sheets": [
+                      {
+                        "name": "Visible",
+                        "index": 0,
+                        "hidden": false,
+                        "maxRow": 2,
+                        "maxColumn": 2,
+                        "usedRange": "A1:B2",
+                        "hiddenCells": ["B1"],
+                        "compactText": "[Sheet: Visible]\\n[Range: A1:B2]\\npublic_header: public-visible",
+                        "cells": [
+                          {"cell": "A1", "row": 1, "column": 1, "value": "public_header", "formattedValue": "public_header"},
+                          {"cell": "B1", "row": 1, "column": 2, "value": "SECRET123", "formattedValue": "SECRET123"},
+                          {"cell": "B2", "row": 2, "column": 2, "value": "public-visible", "formattedValue": "public-visible"}
+                        ],
+                        "tables": [
+                          {
+                            "name": "HiddenHeaderTable",
+                            "tableId": "HiddenHeaderTable",
+                            "cellRange": "A1:B2",
+                            "range": "A1:B2",
+                            "rowStart": 1,
+                            "rowEnd": 2,
+                            "columnStart": 1,
+                            "columnEnd": 2,
+                            "rowCount": 2,
+                            "columnCount": 2,
+                            "headers": ["public_header", "SECRET123"],
+                            "text": "[Sheet: Visible]\\n[Range: A1:B2]\\npublic_header: public-visible"
+                          }
+                        ],
+                        "chunks": []
+                      }
+                    ]
+                  },
+                  "plainText": "public_header: public-visible"
+                }
+                """;
+    }
+
+    private static String validPdfJson() {
+        return """
+                {
+                  "document_version_id": "source-file-1",
+                  "sourceRecordId": "source-file-1",
+                  "parser_name": "pymupdf",
+                  "parser_version": "pdf-extract-v1",
+                  "file_type": "pdf",
+                  "fileType": "pdf",
+                  "pages": [
+                    {
+                      "physical_page_index": 0,
+                      "page_no": 1,
+                      "page_label": "1",
+                      "width": 595.0,
+                      "height": 842.0,
+                      "text_layer_present": true,
+                      "ocr_used": false,
+                      "blocks": [
+                        {
+                          "block_id": "p0_b0",
+                          "block_type": "paragraph",
+                          "text": "계약의 목적은 검색 가능한 본문을 제공하는 것입니다.",
+                          "bbox": [72.0, 100.0, 520.0, 160.0],
+                          "reading_order": 0,
+                          "section_path": ["1. 목적"]
+                        }
+                      ],
+                      "tables": []
+                    }
+                  ],
+                  "warnings": [],
+                  "plainText": "계약의 목적은 검색 가능한 본문을 제공하는 것입니다.",
+                  "qualityScore": 0.88
                 }
                 """;
     }

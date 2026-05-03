@@ -2,6 +2,8 @@ package com.aipipeline.coreapi.catalog.application.service;
 
 import com.aipipeline.coreapi.catalog.adapter.out.persistence.ExtractedArtifactJpaEntity;
 import com.aipipeline.coreapi.catalog.adapter.out.persistence.ExtractedArtifactJpaRepository;
+import com.aipipeline.coreapi.catalog.adapter.out.persistence.EmbeddingRecordJpaEntity;
+import com.aipipeline.coreapi.catalog.adapter.out.persistence.EmbeddingRecordJpaRepository;
 import com.aipipeline.coreapi.catalog.adapter.out.persistence.SearchUnitJpaEntity;
 import com.aipipeline.coreapi.catalog.adapter.out.persistence.SearchUnitJpaRepository;
 import com.aipipeline.coreapi.catalog.adapter.out.persistence.SourceFileJpaEntity;
@@ -52,15 +54,18 @@ public class SearchUnitIndexingService {
     private final SearchUnitJpaRepository searchUnits;
     private final SourceFileJpaRepository sourceFiles;
     private final ExtractedArtifactJpaRepository extractedArtifacts;
+    private final EmbeddingRecordJpaRepository embeddingRecords;
     private final ObjectMapper objectMapper;
 
     public SearchUnitIndexingService(SearchUnitJpaRepository searchUnits,
                                      SourceFileJpaRepository sourceFiles,
                                      ExtractedArtifactJpaRepository extractedArtifacts,
+                                     EmbeddingRecordJpaRepository embeddingRecords,
                                      ObjectMapper objectMapper) {
         this.searchUnits = searchUnits;
         this.sourceFiles = sourceFiles;
         this.extractedArtifacts = extractedArtifacts;
+        this.embeddingRecords = embeddingRecords;
         this.objectMapper = objectMapper;
     }
 
@@ -124,6 +129,10 @@ public class SearchUnitIndexingService {
                                          String claimToken,
                                          String contentSha256,
                                          String indexId,
+                                         String indexVersion,
+                                         String embeddingModel,
+                                         String embeddingTextSha256,
+                                         String vectorId,
                                          Instant now) {
         Optional<SearchUnitJpaEntity> maybe = searchUnits.findByIdAndEmbeddingClaimToken(searchUnitId, claimToken);
         if (maybe.isEmpty()) {
@@ -142,8 +151,9 @@ public class SearchUnitIndexingService {
                     "Ignoring mismatched SearchUnit index id searchUnitId={} requestedIndexId={} stableIndexId={}",
                     unit.getId(), indexId, stableIndexId);
         }
-        unit.markEmbedded(stableIndexId, contentSha256, now);
+        unit.markEmbedded(stableIndexId, indexVersion, contentSha256, now);
         searchUnits.save(unit);
+        upsertEmbeddingRecord(unit, indexVersion, embeddingModel, embeddingTextSha256, vectorId, now);
         return CompletionResult.applied(stableIndexId);
     }
 
@@ -194,7 +204,7 @@ public class SearchUnitIndexingService {
                 unit.getSectionPath(),
                 unit.getPageStart(),
                 unit.getPageEnd(),
-                unit.getTextContent(),
+                firstNonBlank(unit.getEmbeddingText(), unit.getTextContent()),
                 unit.getContentSha256(),
                 unit.getMetadataJson(),
                 indexMetadata(unit, source, artifactType));
@@ -217,6 +227,34 @@ public class SearchUnitIndexingService {
         put(metadata, "content_sha256", unit.getContentSha256());
         put(metadata, "artifact_type", artifactType);
         put(metadata, "index_id", stableIndexId(unit));
+        put(metadata, "document_id", unit.getDocumentId());
+        put(metadata, "documentId", unit.getDocumentId());
+        put(metadata, "document_version_id", unit.getDocumentVersionId());
+        put(metadata, "documentVersionId", unit.getDocumentVersionId());
+        put(metadata, "parsed_artifact_id", unit.getParsedArtifactId());
+        put(metadata, "parsedArtifactId", unit.getParsedArtifactId());
+        put(metadata, "source_file_type", unit.getSourceFileType());
+        put(metadata, "sourceFileType", unit.getSourceFileType());
+        put(metadata, "chunk_type", unit.getChunkType());
+        put(metadata, "chunkType", unit.getChunkType());
+        put(metadata, "location_type", unit.getLocationType());
+        put(metadata, "locationType", unit.getLocationType());
+        putJsonIfPresent(metadata, "location_json", unit.getLocationJson());
+        putJsonIfPresent(metadata, "locationJson", unit.getLocationJson());
+        put(metadata, "citation_text", unit.getCitationText());
+        put(metadata, "citationText", unit.getCitationText());
+        put(metadata, "display_text", unit.getDisplayText());
+        put(metadata, "displayText", unit.getDisplayText());
+        put(metadata, "debug_text", unit.getDebugText());
+        put(metadata, "debugText", unit.getDebugText());
+        put(metadata, "parser_name", unit.getParserName());
+        put(metadata, "parserName", unit.getParserName());
+        put(metadata, "parser_version", unit.getParserVersion());
+        put(metadata, "parserVersion", unit.getParserVersion());
+        put(metadata, "quality_score", unit.getQualityScore());
+        put(metadata, "qualityScore", unit.getQualityScore());
+        put(metadata, "confidence_score", unit.getConfidenceScore());
+        put(metadata, "confidenceScore", unit.getConfidenceScore());
         JsonNode unitMetadata = parseMetadata(unit.getMetadataJson());
         String unitFileType = textOrNull(unitMetadata, "fileType");
         put(metadata, "fileType", unitFileType == null && source != null ? source.getFileType() : unitFileType);
@@ -239,8 +277,9 @@ public class SearchUnitIndexingService {
 
     private Embeddability embeddability(SearchUnitJpaEntity unit) {
         String type = unit.getCanonicalUnitType();
-        if (unit.getTextContent() == null || unit.getTextContent().trim().isEmpty()) {
-            return Embeddability.skip("text_content is blank; SearchUnit is not embeddable");
+        String indexableText = firstNonBlank(unit.getEmbeddingText(), unit.getTextContent());
+        if (indexableText == null || indexableText.trim().isEmpty()) {
+            return Embeddability.skip("embedding_text/text_content is blank; SearchUnit is not embeddable");
         }
         JsonNode unitMetadata = parseMetadata(unit.getMetadataJson());
         if (!INDEXABLE_UNIT_TYPES.contains(type)) {
@@ -255,7 +294,104 @@ public class SearchUnitIndexingService {
         if (!metadataAllowsIndexing(unitMetadata)) {
             return Embeddability.skip("metadata_json.indexable=false");
         }
+        if (requiresV2CitationGate(unit, unitMetadata)) {
+            if (unit.getParserVersion() == null || unit.getParserVersion().isBlank()) {
+                return Embeddability.skip("parser_version is required for v2 SearchUnit indexing");
+            }
+            if (unit.getLocationJson() == null || unit.getLocationJson().isBlank()) {
+                return Embeddability.skip("location_json is required for v2 SearchUnit indexing");
+            }
+            if (unit.getCitationText() == null || unit.getCitationText().isBlank()) {
+                return Embeddability.skip("citation_text is required for v2 SearchUnit indexing");
+            }
+            String invalidLocationReason = invalidV2LocationReason(unit, unitMetadata);
+            if (invalidLocationReason != null) {
+                return Embeddability.skip(invalidLocationReason);
+            }
+        }
         return Embeddability.yes();
+    }
+
+    private void upsertEmbeddingRecord(SearchUnitJpaEntity unit,
+                                       String indexVersion,
+                                       String embeddingModel,
+                                       String embeddingTextSha256,
+                                       String vectorId,
+                                       Instant now) {
+        if (indexVersion == null || indexVersion.isBlank()) {
+            return;
+        }
+        String model = firstNonBlank(embeddingModel, "unknown");
+        String textHash = firstNonBlank(embeddingTextSha256, unit.getContentSha256());
+        if (textHash == null || textHash.isBlank()) {
+            return;
+        }
+        EmbeddingRecordJpaEntity record = embeddingRecords
+                .findBySearchUnitIdAndIndexVersionAndEmbeddingModel(unit.getId(), indexVersion, model)
+                .orElseGet(() -> new EmbeddingRecordJpaEntity(UUID.randomUUID().toString()));
+        record.refresh(
+                unit.getId(),
+                indexVersion,
+                model,
+                textHash,
+                firstNonBlank(vectorId, stableIndexId(unit)),
+                now);
+        embeddingRecords.save(record);
+    }
+
+    private String invalidV2LocationReason(SearchUnitJpaEntity unit, JsonNode unitMetadata) {
+        JsonNode location = parseMetadata(unit.getLocationJson());
+        String locationType = firstNonBlank(
+                textOrNull(location, "type"),
+                firstNonBlank(unit.getLocationType(), textOrNull(unitMetadata, "fileType")));
+        String normalizedType = locationType == null ? "" : locationType.trim().toLowerCase();
+        String chunkType = unit.getChunkType() == null ? "" : unit.getChunkType().trim().toLowerCase();
+        if ("xlsx".equals(normalizedType) || "spreadsheet".equals(normalizedType)) {
+            if (!"workbook_summary".equals(chunkType) && isBlank(textOrNull(location, "sheet_name"))) {
+                return "xlsx location_json.sheet_name is required for v2 SearchUnit indexing";
+            }
+            if (("table".equals(chunkType) || "row_group".equals(chunkType))
+                    && isBlank(textOrNull(location, "cell_range"))) {
+                return "xlsx location_json.cell_range is required for table/row_group indexing";
+            }
+        }
+        if ("pdf".equals(normalizedType) || "ocr".equals(normalizedType)) {
+            boolean hasPage = location.hasNonNull("page_no")
+                    || location.hasNonNull("page_label")
+                    || location.hasNonNull("physical_page_index");
+            if (!hasPage) {
+                return "pdf location_json page identifier is required for v2 SearchUnit indexing";
+            }
+            if ("paragraph".equals(chunkType) && !location.hasNonNull("bbox")) {
+                return "pdf paragraph location_json.bbox is required for v2 SearchUnit indexing";
+            }
+            if (location.path("ocr_used").asBoolean(false) && !location.hasNonNull("ocr_confidence")) {
+                return "ocr location_json.ocr_confidence is required for lower-trust indexing";
+            }
+        }
+        return null;
+    }
+
+    private boolean requiresV2CitationGate(SearchUnitJpaEntity unit, JsonNode metadata) {
+        if (unit.getParserVersion() != null && !unit.getParserVersion().isBlank()) {
+            return true;
+        }
+        if (unit.getLocationJson() != null && !unit.getLocationJson().isBlank()) {
+            return true;
+        }
+        String sourceFileType = unit.getSourceFileType();
+        if (sourceFileType != null) {
+            String normalized = sourceFileType.trim().toUpperCase();
+            if ("SPREADSHEET".equals(normalized) || "PDF".equals(normalized)) {
+                return true;
+            }
+        }
+        String fileType = textOrNull(metadata, "fileType");
+        if (fileType == null) {
+            return false;
+        }
+        String normalized = fileType.trim().toLowerCase();
+        return "xlsx".equals(normalized) || "xlsm".equals(normalized) || "pdf".equals(normalized);
     }
 
     private boolean metadataAllowsIndexing(JsonNode root) {
@@ -327,6 +463,16 @@ public class SearchUnitIndexingService {
         }
     }
 
+    private void putJsonIfPresent(Map<String, Object> metadata, String key, String json) {
+        if (json == null || json.isBlank()) {
+            return;
+        }
+        JsonNode parsed = parseMetadata(json);
+        if (!parsed.isMissingNode() && !parsed.isNull()) {
+            metadata.put(key, parsed);
+        }
+    }
+
     private static String firstText(JsonNode node, String... fields) {
         for (String field : fields) {
             String value = textOrNull(node, field);
@@ -343,6 +489,14 @@ public class SearchUnitIndexingService {
         }
         JsonNode value = node.path(field);
         return value.isMissingNode() || value.isNull() ? null : value.asText();
+    }
+
+    private static String firstNonBlank(String first, String second) {
+        return first != null && !first.isBlank() ? first : second;
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.isBlank();
     }
 
     private static Integer intOrNull(JsonNode node, String field) {

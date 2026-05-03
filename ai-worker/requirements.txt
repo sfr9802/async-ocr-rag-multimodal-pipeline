@@ -23,8 +23,13 @@ numpy>=1.26,<3
 # in-process so we don't need poppler/pdf2image. Pillow is already pulled
 # transitively by sentence-transformers but pinned here for clarity.
 pytesseract==0.3.13
-pymupdf==1.24.10
+pymupdf>=1.26,<2
 Pillow>=10,<12
+
+# Optional PDF OCR fallback. Install these in environments that must run
+# live PaddleOCR fallback smoke:
+#   python -m pip install "paddleocr>=3.3.3,<3.4" "paddlepaddle>=3.2,<3.3"
+# They are intentionally not required for native PDF/XLSX ingestion tests.
 
 # XLSX extraction capability (SearchUnit import path).
 openpyxl==3.1.5

@@ -136,6 +136,10 @@ class SearchUnitIndexingWorker:
                     claim_token=item.claim_token,
                     content_sha256=item.content_sha256,
                     index_id=item.index_id,
+                    index_version=indexed.index_version,
+                    embedding_model=indexed.info.embedding_model,
+                    embedding_text_sha256=item.embedding_text_sha256,
+                    vector_id=item.index_id,
                 ),
             )
             if response.stale:

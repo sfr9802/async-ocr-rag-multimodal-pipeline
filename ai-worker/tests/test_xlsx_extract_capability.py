@@ -7,6 +7,7 @@ from io import BytesIO
 
 import pytest
 from openpyxl import Workbook
+from openpyxl.styles import Protection
 from openpyxl.worksheet.table import Table, TableStyleInfo
 
 from app.capabilities.base import (
@@ -112,6 +113,84 @@ def test_xlsx_extract_keeps_blank_sheet_text_blank_for_indexing_skip():
     assert sheet["chunks"] == []
 
 
+def test_xlsx_extract_excludes_hidden_column_formula_values():
+    capability = XlsxExtractCapability(service=XlsxExtractService())
+
+    result = capability.run(_input(_hidden_formula_workbook_bytes()))
+
+    body = json.loads(result.outputs[0].content)
+    sheet = body["workbook"]["sheets"][0]
+    payload = json.dumps(sheet, ensure_ascii=False)
+    assert "SECRET123" not in payload
+    assert sheet["hiddenColumns"] == ["B"]
+    assert sheet["hiddenColumnIndexes"] == [2]
+    assert sheet["formulas"] == []
+    assert all(cell["column"] != 2 for cell in sheet["cells"])
+
+
+def test_xlsx_extract_preserves_visible_coordinates_after_hidden_middle_column():
+    capability = XlsxExtractCapability(service=XlsxExtractService())
+
+    result = capability.run(_input(_hidden_middle_column_workbook_bytes()))
+
+    body = json.loads(result.outputs[0].content)
+    sheet = body["workbook"]["sheets"][0]
+    payload = json.dumps(sheet, ensure_ascii=False)
+    assert "SECRET123" not in payload
+    assert "hidden header" not in payload
+    assert sheet["hiddenColumnIndexes"] == [2]
+    assert any(
+        cell["cell"] == "C2" and cell["column"] == 3 and cell["value"] == "VISIBLE-C"
+        for cell in sheet["cells"]
+    )
+    assert "public_after_hidden: VISIBLE-C" in sheet["compactText"]
+    assert "B: VISIBLE-C" not in sheet["compactText"]
+
+
+def test_xlsx_extract_excludes_protected_hidden_formula_cells():
+    capability = XlsxExtractCapability(service=XlsxExtractService())
+
+    result = capability.run(_input(_protected_hidden_formula_workbook_bytes()))
+
+    body = json.loads(result.outputs[0].content)
+    sheet = body["workbook"]["sheets"][0]
+    payload = json.dumps(sheet, ensure_ascii=False)
+    assert "SECRET123" not in payload
+    assert sheet["hiddenCells"] == ["B2"]
+    assert sheet["formulas"] == []
+    assert all(cell["cell"] != "B2" for cell in sheet["cells"])
+
+
+def test_xlsx_extract_fails_closed_when_hidden_metadata_is_untrusted(monkeypatch):
+    service = XlsxExtractService()
+    monkeypatch.setattr(service, "_collect_second_pass_metadata", lambda _content, _warnings: {})
+    capability = XlsxExtractCapability(service=service)
+
+    result = capability.run(_input(_hidden_formula_workbook_bytes()))
+
+    body = json.loads(result.outputs[0].content)
+    sheet = body["workbook"]["sheets"][0]
+    payload = json.dumps(body, ensure_ascii=False)
+    assert "SECRET123" not in payload
+    assert body["plainText"] == ""
+    assert sheet["indexable"] is False
+    assert "hidden row/column/cell metadata could not be verified" in sheet["warning"]
+
+
+def test_xlsx_extract_fails_closed_for_large_protected_sheet_with_unscanned_hidden_cells():
+    capability = XlsxExtractCapability(service=XlsxExtractService())
+
+    result = capability.run(_input(_large_protected_hidden_cell_workbook_bytes()))
+
+    body = json.loads(result.outputs[0].content)
+    sheet = body["workbook"]["sheets"][0]
+    payload = json.dumps(body, ensure_ascii=False)
+    assert "SECRET123" not in payload
+    assert body["plainText"] == ""
+    assert sheet["indexable"] is False
+    assert any("protected hidden cells cannot be verified" in warning for warning in sheet["warnings"])
+
+
 def test_xlsx_extract_rejects_legacy_xls():
     capability = XlsxExtractCapability(service=XlsxExtractService())
 
@@ -170,6 +249,7 @@ def test_registry_registers_xlsx_extract_without_ocr_or_rag():
         ocr_extract_enabled=False,
         multimodal_enabled=False,
         xlsx_extract_enabled=True,
+        pdf_extract_enabled=False,
     )
 
     result = registry_module.build_default_registry(settings)
@@ -238,6 +318,52 @@ def _large_workbook_bytes() -> bytes:
 def _blank_workbook_bytes() -> bytes:
     wb = Workbook()
     wb.active.title = "Blank"
+    return _save(wb)
+
+
+def _hidden_formula_workbook_bytes() -> bytes:
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Visible"
+    ws.append(["name", "secret"])
+    ws.append(["public", "not-secret"])
+    ws.column_dimensions["B"].hidden = True
+    ws["B2"] = '="SECRET123"'
+    return _save(wb)
+
+
+def _hidden_middle_column_workbook_bytes() -> bytes:
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Visible"
+    ws.append(["name", "hidden header", "public_after_hidden"])
+    ws.append(["row-1", "SECRET123", "VISIBLE-C"])
+    ws.column_dimensions["B"].hidden = True
+    return _save(wb)
+
+
+def _protected_hidden_formula_workbook_bytes() -> bytes:
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Visible"
+    ws.append(["name", "protected_formula"])
+    ws.append(["public", None])
+    ws["B2"] = '="SECRET123"'
+    ws["B2"].protection = Protection(hidden=True, locked=True)
+    ws.protection.sheet = True
+    return _save(wb)
+
+
+def _large_protected_hidden_cell_workbook_bytes() -> bytes:
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Protected"
+    ws.append(["name", "protected_formula"])
+    ws.append(["public", None])
+    ws["B2"] = '="SECRET123"'
+    ws["B2"].protection = Protection(hidden=True, locked=True)
+    ws["CV501"] = "size-marker"
+    ws.protection.sheet = True
     return _save(wb)
 
 

@@ -42,6 +42,8 @@ class JobSubmissionValidatorTest {
                     .isEqualTo(JobCapability.OCR_EXTRACT);
             assertThat(JobSubmissionValidator.parseCapability("XLSX_EXTRACT"))
                     .isEqualTo(JobCapability.XLSX_EXTRACT);
+            assertThat(JobSubmissionValidator.parseCapability("PDF_EXTRACT"))
+                    .isEqualTo(JobCapability.PDF_EXTRACT);
             assertThat(JobSubmissionValidator.parseCapability("MULTIMODAL"))
                     .isEqualTo(JobCapability.MULTIMODAL);
             assertThat(JobSubmissionValidator.parseCapability("AUTO"))
@@ -170,6 +172,14 @@ class JobSubmissionValidatorTest {
         void xlsx_extract_on_text_endpoint_rejected_FILE_REQUIRED() {
             assertThatThrownBy(() ->
                     JobSubmissionValidator.validateTextSubmission(JobCapability.XLSX_EXTRACT, "extract workbook"))
+                    .isInstanceOf(InvalidJobSubmissionException.class)
+                    .extracting("errorCode").isEqualTo(ErrorCodes.FILE_REQUIRED);
+        }
+
+        @Test
+        void pdf_extract_on_text_endpoint_rejected_FILE_REQUIRED() {
+            assertThatThrownBy(() ->
+                    JobSubmissionValidator.validateTextSubmission(JobCapability.PDF_EXTRACT, "extract document"))
                     .isInstanceOf(InvalidJobSubmissionException.class)
                     .extracting("errorCode").isEqualTo(ErrorCodes.FILE_REQUIRED);
         }
@@ -320,6 +330,22 @@ class JobSubmissionValidatorTest {
                     "file", "report.pdf", "application/pdf", "%PDF-1.4 fake".getBytes());
             JobSubmissionValidator.validateFileSubmission(
                     JobCapability.MULTIMODAL, pdf, "summarize this report");
+        }
+
+        @Test
+        void pdf_extract_with_pdf_accepted() {
+            MultipartFile pdf = new MockMultipartFile(
+                    "file", "contract.pdf", "application/pdf", "%PDF-1.4 fake".getBytes());
+            JobSubmissionValidator.validateFileSubmission(JobCapability.PDF_EXTRACT, pdf, null);
+        }
+
+        @Test
+        void pdf_extract_rejects_image_even_when_non_empty() {
+            MultipartFile png = pngFile("scan.png");
+            assertThatThrownBy(() ->
+                    JobSubmissionValidator.validateFileSubmission(JobCapability.PDF_EXTRACT, png, null))
+                    .isInstanceOf(InvalidJobSubmissionException.class)
+                    .extracting("errorCode").isEqualTo(ErrorCodes.UNSUPPORTED_FILE_TYPE);
         }
 
         @Test

@@ -106,7 +106,11 @@ class PaddleOcrProvider:
     ) -> OcrPage:
         path = _write_temp_file(content, suffix=suffix)
         try:
-            raw = self._ocr_client().ocr(path, cls=self._use_angle_cls)
+            raw = _run_paddle_ocr(
+                self._ocr_client(),
+                path,
+                use_textline_orientation=self._use_angle_cls,
+            )
             return OcrPage(page_no=page_no, blocks=_normalize_blocks(raw))
         except OcrProviderError:
             raise
@@ -133,11 +137,51 @@ class PaddleOcrProvider:
                 "runtime or use AIPIPELINE_WORKER_OCR_EXTRACT_PROVIDER=fixture "
                 "for fixture-only local proof.",
             ) from ex
-        self._client = PaddleOCR(
-            lang=self._lang,
-            use_angle_cls=self._use_angle_cls,
-        )
+        try:
+            self._client = PaddleOCR(
+                lang=self._lang,
+                use_doc_orientation_classify=False,
+                use_doc_unwarping=False,
+                use_textline_orientation=self._use_angle_cls,
+            )
+        except TypeError:
+            self._client = PaddleOCR(
+                lang=self._lang,
+                use_angle_cls=self._use_angle_cls,
+            )
         return self._client
+
+
+def _run_paddle_ocr(
+    client: Any,
+    path: str,
+    *,
+    use_textline_orientation: bool,
+) -> Any:
+    predict = getattr(client, "predict", None)
+    if callable(predict):
+        try:
+            return predict(
+                path,
+                use_textline_orientation=use_textline_orientation,
+            )
+        except TypeError as ex:
+            if "use_textline_orientation" not in str(ex):
+                raise
+            return predict(path)
+
+    ocr = getattr(client, "ocr", None)
+    if not callable(ocr):
+        raise OcrProviderError(
+            "PADDLE_API_MISSING",
+            "PaddleOCR client exposes neither predict(...) nor ocr(...).",
+        )
+    try:
+        return ocr(path, cls=use_textline_orientation)
+    except TypeError as ex:
+        if "cls" not in str(ex):
+            raise
+        return ocr(path)
 
 
 def _normalize_blocks(raw: Any) -> list[OcrBlock]:
@@ -153,12 +197,30 @@ def _normalize_blocks(raw: Any) -> list[OcrBlock]:
 def _iter_paddle_lines(raw: Any):
     if raw is None:
         return
+    if hasattr(raw, "res"):
+        for nested in _iter_paddle_lines(raw.res):
+            yield nested
+        return
+    if hasattr(raw, "json") and isinstance(raw.json, dict):
+        for nested in _iter_paddle_lines(raw.json):
+            yield nested
+        return
     if isinstance(raw, dict):
+        if isinstance(raw.get("res"), dict):
+            for nested in _iter_paddle_lines(raw["res"]):
+                yield nested
+            return
         # PaddleOCR v3-style dictionaries often expose recognized text and
         # boxes as parallel arrays.
-        texts = raw.get("rec_texts") or raw.get("texts") or []
-        scores = raw.get("rec_scores") or raw.get("scores") or []
-        boxes = raw.get("rec_boxes") or raw.get("dt_polys") or raw.get("boxes") or []
+        texts = _first_present(raw, "rec_texts", "texts")
+        scores = _first_present(raw, "rec_scores", "scores")
+        boxes = _first_present(raw, "rec_boxes", "rec_polys", "dt_polys", "boxes")
+        if texts is None:
+            texts = []
+        if scores is None:
+            scores = []
+        if boxes is None:
+            boxes = []
         for index, text in enumerate(texts):
             score = scores[index] if index < len(scores) else 0.0
             box = boxes[index] if index < len(boxes) else None
@@ -169,6 +231,9 @@ def _iter_paddle_lines(raw: Any):
             if isinstance(item, (list, tuple)) and item and _looks_like_line(item):
                 yield item
             elif isinstance(item, (list, tuple)):
+                for nested in _iter_paddle_lines(item):
+                    yield nested
+            else:
                 for nested in _iter_paddle_lines(item):
                     yield nested
 
@@ -201,10 +266,28 @@ def _parse_line(item: Any) -> Optional[OcrBlock]:
     )
 
 
+def _first_present(raw: dict[str, Any], *keys: str) -> Any:
+    for key in keys:
+        value = raw.get(key)
+        if value is not None:
+            return value
+    return None
+
+
 def _bbox_from_points(box: Any) -> list[int]:
+    if hasattr(box, "tolist"):
+        box = box.tolist()
+    if (
+        isinstance(box, (list, tuple))
+        and len(box) >= 4
+        and all(isinstance(value, (int, float)) for value in box[:4])
+    ):
+        return [int(round(float(value))) for value in box[:4]]
     points: list[tuple[float, float]] = []
     if isinstance(box, (list, tuple)):
         for point in box:
+            if hasattr(point, "tolist"):
+                point = point.tolist()
             if isinstance(point, (list, tuple)) and len(point) >= 2:
                 try:
                     points.append((float(point[0]), float(point[1])))

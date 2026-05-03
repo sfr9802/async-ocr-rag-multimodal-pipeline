@@ -2,6 +2,11 @@ spring:
   application:
     name: core-api
 
+  servlet:
+    multipart:
+      max-file-size: ${SPRING_SERVLET_MULTIPART_MAX_FILE_SIZE:50MB}
+      max-request-size: ${SPRING_SERVLET_MULTIPART_MAX_REQUEST_SIZE:60MB}
+
   # Default local infra is the compose-managed postgres on host :5433.
   # Override SPRING_DATASOURCE_URL if you intentionally reuse an external
   # postgres cluster instead.

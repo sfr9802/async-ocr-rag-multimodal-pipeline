@@ -12,6 +12,7 @@ import com.aipipeline.coreapi.job.application.port.out.JobRepository;
 import com.aipipeline.coreapi.job.domain.Job;
 import com.aipipeline.coreapi.job.domain.JobCapability;
 import com.aipipeline.coreapi.job.domain.JobStatus;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -41,6 +42,7 @@ public class JobExecutionService implements JobExecutionUseCase {
     private final TimeProvider timeProvider;
     private final Duration claimLease;
 
+    @Autowired
     public JobExecutionService(JobRepository jobRepository,
                                ArtifactRepository artifactRepository,
                                DocumentCatalogService catalogService,
@@ -190,6 +192,13 @@ public class JobExecutionService implements JobExecutionUseCase {
             } else {
                 catalogService.markXlsxFailed(job, inputArtifacts, now);
             }
+        } else if (catalogService != null && job.getCapability() == JobCapability.PDF_EXTRACT) {
+            List<Artifact> inputArtifacts = artifactRepository.findByJobIdAndRole(job.getId(), ArtifactRole.INPUT);
+            if (command.outcome() == CallbackOutcome.SUCCEEDED) {
+                catalogService.importPdfSucceeded(job, inputArtifacts, savedOutputs, now);
+            } else {
+                catalogService.markPdfFailed(job, inputArtifacts, now);
+            }
         }
 
         log.info("Callback applied jobId={} outcome={} status={}",
@@ -200,7 +209,8 @@ public class JobExecutionService implements JobExecutionUseCase {
     private Optional<String> sourceFileIdForClaim(Job job, Artifact artifact) {
         if (catalogService == null
                 || (job.getCapability() != JobCapability.OCR_EXTRACT
-                && job.getCapability() != JobCapability.XLSX_EXTRACT)
+                && job.getCapability() != JobCapability.XLSX_EXTRACT
+                && job.getCapability() != JobCapability.PDF_EXTRACT)
                 || artifact.getType() != ArtifactType.INPUT_FILE) {
             return Optional.empty();
         }

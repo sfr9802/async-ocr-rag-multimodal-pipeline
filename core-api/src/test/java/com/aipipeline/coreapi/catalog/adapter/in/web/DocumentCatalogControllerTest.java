@@ -120,12 +120,47 @@ class DocumentCatalogControllerTest {
     }
 
     @Test
+    void failed_source_file_pdf_retry_is_allowed() throws Exception {
+        SourceFileJpaEntity source = new SourceFileJpaEntity(
+                "source-file-1",
+                "contract.pdf",
+                "application/pdf",
+                "PDF",
+                "local://source.pdf",
+                DocumentCatalogService.SOURCE_STATUS_FAILED,
+                NOW);
+        when(catalog.findSourceFile("source-file-1")).thenReturn(Optional.of(source));
+        when(catalog.supportsPdfExtract(source)).thenReturn(true);
+        when(catalog.canStartPdfExtract(source)).thenReturn(true);
+
+        mockMvc.perform(post("/api/v1/library/source-files/source-file-1/pdf-extract"))
+                .andExpect(status().isAccepted());
+
+        ArgumentCaptor<CreateJobCommand> command = ArgumentCaptor.forClass(CreateJobCommand.class);
+        verify(jobManagement).createAndEnqueue(command.capture());
+        assertThat(command.getValue().capability()).isEqualTo(JobCapability.PDF_EXTRACT);
+        assertThat(command.getValue().inputs()).hasSize(1);
+    }
+
+    @Test
     void xlsx_extract_rejects_unsupported_source_type() throws Exception {
         SourceFileJpaEntity source = sourceWithStatus(DocumentCatalogService.SOURCE_STATUS_FAILED);
         when(catalog.findSourceFile("source-file-1")).thenReturn(Optional.of(source));
         when(catalog.supportsXlsxExtract(source)).thenReturn(false);
 
         mockMvc.perform(post("/api/v1/library/source-files/source-file-1/xlsx-extract"))
+                .andExpect(status().isUnsupportedMediaType());
+
+        verify(jobManagement, never()).createAndEnqueue(any(CreateJobCommand.class));
+    }
+
+    @Test
+    void pdf_extract_rejects_unsupported_source_type() throws Exception {
+        SourceFileJpaEntity source = sourceWithStatus(DocumentCatalogService.SOURCE_STATUS_FAILED);
+        when(catalog.findSourceFile("source-file-1")).thenReturn(Optional.of(source));
+        when(catalog.supportsPdfExtract(source)).thenReturn(false);
+
+        mockMvc.perform(post("/api/v1/library/source-files/source-file-1/pdf-extract"))
                 .andExpect(status().isUnsupportedMediaType());
 
         verify(jobManagement, never()).createAndEnqueue(any(CreateJobCommand.class));
@@ -179,6 +214,160 @@ class DocumentCatalogControllerTest {
         assertThat(response.citation().tableId()).isEqualTo("SalesTable");
         assertThat(response.citation().rowStart()).isEqualTo(1);
         assertThat(response.citation().columnEnd()).isEqualTo(4);
+    }
+
+    @Test
+    void v2_xlsx_citation_prefers_location_json_and_exposes_parser_fields() {
+        SourceFileJpaEntity source = new SourceFileJpaEntity(
+                "source-file-1",
+                "sales.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "SPREADSHEET",
+                "local://source.xlsx",
+                DocumentCatalogService.SOURCE_STATUS_READY,
+                NOW);
+        SearchUnitJpaEntity unit = new SearchUnitJpaEntity(
+                "unit-1",
+                "source-file-1",
+                "xlsx-json-1",
+                DocumentCatalogService.SEARCH_UNIT_TABLE,
+                "sheet:0:table:0:A1:D30",
+                "SalesTable",
+                "workbook/legacy",
+                null,
+                null,
+                "legacy text",
+                """
+                        {
+                          "fileType": "xlsx",
+                          "sheetName": "legacy",
+                          "cellRange": "Z1:Z9"
+                        }
+                        """,
+                DocumentCatalogService.EMBEDDING_STATUS_PENDING,
+                "sha",
+                NOW,
+                NOW);
+        unit.applyIngestionV2(
+                "doc-1",
+                "docv-1",
+                "pa-1",
+                "sales.xlsx",
+                "SPREADSHEET",
+                "table",
+                "xlsx",
+                """
+                        {
+                          "type": "xlsx",
+                          "sheet_name": "매출",
+                          "sheet_index": 0,
+                          "table_id": "SalesTable",
+                          "cell_range": "A1:D30",
+                          "row_range": "1:30",
+                          "hidden_policy": "exclude_hidden"
+                        }
+                        """,
+                "embedding text",
+                "bm25 text",
+                "| 직원명 | 매출 |",
+                "sales.xlsx > 매출 > A1:D30",
+                "{}",
+                "xlsx-openpyxl",
+                "xlsx-extract-v1",
+                0.92,
+                null,
+                "[]",
+                NOW);
+        unit.markEmbedded("source_file:source-file-1:unit:TABLE:sheet:0:table:0:A1:D30",
+                "idx-v1",
+                "sha",
+                NOW);
+
+        DocumentCatalogController.SearchUnitResponse response =
+                DocumentCatalogController.SearchUnitResponse.from(source, unit);
+
+        assertThat(response.chunkType()).isEqualTo("table");
+        assertThat(response.locationType()).isEqualTo("xlsx");
+        assertThat(response.displayText()).isEqualTo("| 직원명 | 매출 |");
+        assertThat(response.citationText()).isEqualTo("sales.xlsx > 매출 > A1:D30");
+        assertThat(response.parserVersion()).isEqualTo("xlsx-extract-v1");
+        assertThat(response.indexVersion()).isEqualTo("idx-v1");
+        assertThat(response.citation().sheetName()).isEqualTo("매출");
+        assertThat(response.citation().cellRange()).isEqualTo("A1:D30");
+        assertThat(response.citation().tableId()).isEqualTo("SalesTable");
+        assertThat(response.citation().citationText()).isEqualTo("sales.xlsx > 매출 > A1:D30");
+        assertThat(response.citation().locationJson()).contains("\"cell_range\": \"A1:D30\"");
+    }
+
+    @Test
+    void v2_pdf_citation_exposes_physical_page_page_label_and_bbox() {
+        SourceFileJpaEntity source = new SourceFileJpaEntity(
+                "source-file-1",
+                "contract.pdf",
+                "application/pdf",
+                "PDF",
+                "local://contract.pdf",
+                DocumentCatalogService.SOURCE_STATUS_READY,
+                NOW);
+        SearchUnitJpaEntity unit = new SearchUnitJpaEntity(
+                "unit-pdf-1",
+                "source-file-1",
+                "ocr-json-1",
+                DocumentCatalogService.SEARCH_UNIT_PAGE,
+                "page:5",
+                null,
+                "3. 계약 조건",
+                5,
+                5,
+                "해지 조건 본문",
+                "{}",
+                DocumentCatalogService.EMBEDDING_STATUS_PENDING,
+                "sha",
+                NOW,
+                NOW);
+        unit.applyIngestionV2(
+                "doc-1",
+                "docv-1",
+                "pa-1",
+                "contract.pdf",
+                "PDF",
+                "page",
+                "pdf",
+                """
+                        {
+                          "type": "pdf",
+                          "physical_page_index": 4,
+                          "page_no": 5,
+                          "page_label": "v",
+                          "bbox": [72.0, 120.0, 510.0, 680.0],
+                          "section_path": ["3. 계약 조건"],
+                          "block_type": "paragraph",
+                          "ocr_used": false,
+                          "ocr_confidence": null
+                        }
+                        """,
+                "embedding text",
+                "bm25 text",
+                "해지 조건 본문",
+                "contract.pdf > p.5 > bbox [72.0,120.0,510.0,680.0]",
+                "{}",
+                "pymupdf",
+                "pdf-extract-v1",
+                0.88,
+                null,
+                "[]",
+                NOW);
+
+        DocumentCatalogController.SearchUnitResponse response =
+                DocumentCatalogController.SearchUnitResponse.from(source, unit);
+
+        assertThat(response.citation().citationText())
+                .isEqualTo("contract.pdf > p.5 > bbox [72.0,120.0,510.0,680.0]");
+        assertThat(response.citation().physicalPageIndex()).isEqualTo(4);
+        assertThat(response.citation().pageNo()).isEqualTo(5);
+        assertThat(response.citation().pageLabel()).isEqualTo("v");
+        assertThat(response.citation().bbox().toString()).contains("72.0");
+        assertThat(response.citation().parserVersion()).isEqualTo("pdf-extract-v1");
     }
 
     private static SourceFileJpaEntity sourceWithStatus(String status) {

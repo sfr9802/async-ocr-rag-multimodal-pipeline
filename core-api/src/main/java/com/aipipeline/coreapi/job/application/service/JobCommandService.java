@@ -80,7 +80,8 @@ public class JobCommandService implements JobManagementUseCase {
                     now);
             inputs.add(artifact);
             if ((saved.getCapability() == JobCapability.OCR_EXTRACT
-                    || saved.getCapability() == JobCapability.XLSX_EXTRACT)
+                    || saved.getCapability() == JobCapability.XLSX_EXTRACT
+                    || saved.getCapability() == JobCapability.PDF_EXTRACT)
                     && staged.type() == ArtifactType.INPUT_FILE) {
                 catalogService.registerProcessingSourceFile(
                         staged.originalFileName(),

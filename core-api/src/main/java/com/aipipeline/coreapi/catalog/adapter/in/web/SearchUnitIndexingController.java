@@ -53,6 +53,10 @@ public class SearchUnitIndexingController {
                 body.claimToken(),
                 body.contentSha256(),
                 body.indexId(),
+                body.indexVersion(),
+                body.embeddingModel(),
+                body.embeddingTextSha256(),
+                body.vectorId(),
                 timeProvider.now());
         return ResponseEntity.ok(CompletionResponse.from(result));
     }
@@ -82,7 +86,11 @@ public class SearchUnitIndexingController {
     public record EmbeddedRequest(
             @NotBlank String claimToken,
             @NotBlank String contentSha256,
-            String indexId
+            String indexId,
+            String indexVersion,
+            String embeddingModel,
+            String embeddingTextSha256,
+            String vectorId
     ) {}
 
     public record FailedRequest(

@@ -92,6 +92,7 @@ class _FakeIndexer:
                 content_sha256=doc.content_sha256,
                 index_id=doc.index_id,
                 faiss_row_id=i,
+                embedding_text_sha256=f"embed-hash-{i}",
             )
             for i, doc in enumerate(docs)
         ]
@@ -188,6 +189,9 @@ def test_nonblank_search_unit_is_indexed_and_marked_embedded():
     assert indexer.indexed_docs[0].search_unit_id == "unit-1"
     assert core.embedded_requests[0][0] == "unit-1"
     assert core.embedded_requests[0][1].content_sha256 == "hash-1"
+    assert core.embedded_requests[0][1].embedding_model == "fake"
+    assert core.embedded_requests[0][1].embedding_text_sha256 == "embed-hash-0"
+    assert core.embedded_requests[0][1].vector_id == "source_file:source-1:unit:PAGE:page:1"
 
 
 def test_blank_claim_is_not_embedded_and_is_failed_defensively():

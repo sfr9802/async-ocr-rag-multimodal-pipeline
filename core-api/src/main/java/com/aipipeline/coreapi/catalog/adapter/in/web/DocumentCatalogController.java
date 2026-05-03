@@ -134,6 +134,36 @@ public class DocumentCatalogController {
                 .body(JobResponses.JobCreated.from(result.job(), result.inputArtifacts()));
     }
 
+    @PostMapping("/source-files/{sourceFileId}/pdf-extract")
+    public ResponseEntity<JobResponses.JobCreated> startPdfExtract(
+            @PathVariable String sourceFileId
+    ) {
+        SourceFileJpaEntity source = catalog.findSourceFile(sourceFileId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "source file not found"));
+        if (!catalog.supportsPdfExtract(source)) {
+            throw new ResponseStatusException(
+                    HttpStatus.UNSUPPORTED_MEDIA_TYPE,
+                    "PDF_EXTRACT supports native PDF source files only.");
+        }
+        if (!catalog.canStartPdfExtract(source)) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "PDF_EXTRACT can start only when source_file.status is UPLOADED, FAILED, or EXTRACTION_FAILED.");
+        }
+
+        var result = jobManagement.createAndEnqueue(new CreateJobCommand(
+                JobCapability.PDF_EXTRACT,
+                List.of(new StagedInputArtifact(
+                        ArtifactType.INPUT_FILE,
+                        source.getStorageUri(),
+                        source.getMimeType(),
+                        null,
+                        null,
+                        source.getOriginalFileName()))));
+        return ResponseEntity.accepted()
+                .body(JobResponses.JobCreated.from(result.job(), result.inputArtifacts()));
+    }
+
     @GetMapping("/search")
     public ResponseEntity<LibrarySearchResponse> search(
             @RequestParam("query") String query,
@@ -180,6 +210,15 @@ public class DocumentCatalogController {
             String textPreview,
             String metadataJson,
             String embeddingStatus,
+            String sourceFileType,
+            String chunkType,
+            String locationType,
+            String locationJson,
+            String displayText,
+            String citationText,
+            String parserName,
+            String parserVersion,
+            String indexVersion,
             Citation citation
     ) {
         static SearchUnitResponse from(SourceFileJpaEntity source, SearchUnitJpaEntity unit) {
@@ -197,6 +236,15 @@ public class DocumentCatalogController {
                     preview(unit.getTextContent()),
                     unit.getMetadataJson(),
                     unit.getEmbeddingStatus(),
+                    unit.getSourceFileType(),
+                    unit.getChunkType(),
+                    unit.getLocationType(),
+                    unit.getLocationJson(),
+                    unit.getDisplayText(),
+                    unit.getCitationText(),
+                    unit.getParserName(),
+                    unit.getParserVersion(),
+                    unit.getIndexVersion(),
                     Citation.from(source, unit));
         }
     }
@@ -239,10 +287,20 @@ public class DocumentCatalogController {
             String imageId,
             Object bbox,
             String artifactId,
-            String artifactType
+            String artifactType,
+            String citationText,
+            String locationType,
+            String locationJson,
+            String chunkType,
+            String parserVersion,
+            String indexVersion,
+            Integer physicalPageIndex,
+            Integer pageNo,
+            String pageLabel
     ) {
         static Citation from(SourceFileJpaEntity source, SearchUnitJpaEntity unit) {
             JsonNode metadata = readMetadata(unit.getMetadataJson());
+            JsonNode location = readMetadata(unit.getLocationJson());
             return new Citation(
                     source.getId(),
                     source.getOriginalFileName(),
@@ -254,20 +312,29 @@ public class DocumentCatalogController {
                     unit.getPageStart(),
                     unit.getPageEnd(),
                     unit.getSectionPath(),
-                    textOrNull(metadata, "sheetName"),
-                    intOrNull(metadata, "sheetIndex"),
-                    firstText(metadata, "cellRange", "range", "usedRange"),
-                    intOrNull(metadata, "rowStart"),
-                    intOrNull(metadata, "rowEnd"),
-                    intOrNull(metadata, "columnStart"),
-                    intOrNull(metadata, "columnEnd"),
+                    firstText(location, metadata, "sheet_name", "sheetName"),
+                    firstInt(location, metadata, "sheet_index", "sheetIndex"),
+                    firstText(location, metadata, "cell_range", "cellRange", "range", "usedRange"),
+                    firstInt(location, metadata, "row_start", "rowStart"),
+                    firstInt(location, metadata, "row_end", "rowEnd"),
+                    firstInt(location, metadata, "column_start", "columnStart"),
+                    firstInt(location, metadata, "column_end", "columnEnd"),
                     firstNonBlank(
-                            firstText(metadata, "tableId", "tableName"),
+                            firstText(location, metadata, "table_id", "tableId", "tableName"),
                             idSuffix(unit.getCanonicalUnitType(), unit.getUnitKey(), "table:")),
                     idSuffix(unit.getCanonicalUnitType(), unit.getUnitKey(), "image:"),
-                    null,
+                    firstNode(location, metadata, "bbox", "boundingBox"),
                     unit.getExtractedArtifactId(),
-                    null);
+                    null,
+                    unit.getCitationText(),
+                    unit.getLocationType(),
+                    unit.getLocationJson(),
+                    unit.getChunkType(),
+                    unit.getParserVersion(),
+                    unit.getIndexVersion(),
+                    firstInt(location, metadata, "physical_page_index", "physicalPageIndex"),
+                    firstInt(location, metadata, "page_no", "pageNo", "pageNumber", "page"),
+                    firstText(location, metadata, "page_label", "pageLabel"));
         }
     }
 
@@ -321,6 +388,11 @@ public class DocumentCatalogController {
         return null;
     }
 
+    private static String firstText(JsonNode firstNode, JsonNode secondNode, String... fields) {
+        String first = firstText(firstNode, fields);
+        return first != null && !first.isBlank() ? first : firstText(secondNode, fields);
+    }
+
     private static String textOrNull(JsonNode node, String field) {
         if (node == null || node.isMissingNode() || node.isNull()) {
             return null;
@@ -345,6 +417,42 @@ public class DocumentCatalogController {
             }
         }
         return null;
+    }
+
+    private static Integer firstInt(JsonNode firstNode, JsonNode secondNode, String... fields) {
+        for (String field : fields) {
+            Integer value = intOrNull(firstNode, field);
+            if (value != null) {
+                return value;
+            }
+            value = intOrNull(secondNode, field);
+            if (value != null) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private static Object firstNode(JsonNode firstNode, JsonNode secondNode, String... fields) {
+        for (String field : fields) {
+            JsonNode value = childOrNull(firstNode, field);
+            if (value != null) {
+                return value;
+            }
+            value = childOrNull(secondNode, field);
+            if (value != null) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private static JsonNode childOrNull(JsonNode node, String field) {
+        if (node == null || node.isMissingNode() || node.isNull()) {
+            return null;
+        }
+        JsonNode value = node.path(field);
+        return value.isMissingNode() || value.isNull() ? null : value;
     }
 
     private static String firstNonBlank(String first, String second) {

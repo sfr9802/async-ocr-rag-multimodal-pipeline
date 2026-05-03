@@ -1,0 +1,54 @@
+{
+  "document_version_id": "docv_sales_001",
+  "parser_name": "xlsx-openpyxl",
+  "parser_version": "xlsx-extract-v2",
+  "file_type": "xlsx",
+  "sheets": [
+    {
+      "sheet_name": "매출현황",
+      "sheet_index": 0,
+      "hidden": false,
+      "tables": [
+        {
+          "table_id": "tbl_001",
+          "title": "2024년 분기별 매출",
+          "cell_range": "A3:F20",
+          "header_rows": [3],
+          "header_paths": [
+            ["기간"],
+            ["부서"],
+            ["제품군"],
+            ["매출"],
+            ["증감률"]
+          ],
+          "rows": [
+            {
+              "row_index": 4,
+              "cell_range": "A4:F4",
+              "values": {
+                "기간": "2024 Q3",
+                "부서": "온라인",
+                "제품군": "가전",
+                "매출": "120억 원",
+                "증감률": "8%"
+              },
+              "formulas": {
+                "F4": "=E4/E3-1"
+              },
+              "cached_values": {
+                "F4": "8%"
+              },
+              "formats": {
+                "E4": "#,##0",
+                "F4": "0%"
+              },
+              "merged_cells": []
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "warnings": [],
+  "quality_score": 0.92
+}

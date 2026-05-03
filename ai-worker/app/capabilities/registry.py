@@ -78,6 +78,7 @@ def build_default_registry(settings: WorkerSettings) -> CapabilityRegistry:
     ocr_registered = False
     ocr_extract_registered = False
     xlsx_extract_registered = False
+    pdf_extract_registered = False
 
     if settings.rag_enabled:
         log.info(
@@ -168,6 +169,20 @@ def build_default_registry(settings: WorkerSettings) -> CapabilityRegistry:
                 "Worker still serves the other registered capabilities. "
                 "To enable XLSX extraction: pip install openpyxl defusedxml, "
                 "then restart the worker.",
+                type(ex).__name__, ex,
+            )
+
+    if settings.pdf_extract_enabled:
+        log.info("PDF_EXTRACT init: pipeline_version=pdf-extract-v1 parser=pymupdf")
+        try:
+            registry.register(_build_pdf_extract_capability(settings))
+            pdf_extract_registered = True
+            log.info("PDF_EXTRACT capability registered.")
+        except Exception as ex:
+            log.warning(
+                "PDF_EXTRACT capability NOT registered (%s: %s). "
+                "Worker still serves the other registered capabilities. "
+                "To enable PDF extraction: pip install pymupdf, then restart the worker.",
                 type(ex).__name__, ex,
             )
 
@@ -263,10 +278,11 @@ def build_default_registry(settings: WorkerSettings) -> CapabilityRegistry:
         )
 
     log.info(
-        "Active capabilities: %s (ocr_extract=%s xlsx_extract=%s)",
+        "Active capabilities: %s (ocr_extract=%s xlsx_extract=%s pdf_extract=%s)",
         registry.available(),
         ocr_extract_registered,
         xlsx_extract_registered,
+        pdf_extract_registered,
     )
     return registry
 
@@ -338,6 +354,18 @@ def _build_xlsx_extract_capability(settings: WorkerSettings) -> Capability:
     return XlsxExtractCapability(
         service=XlsxExtractService(
             include_hidden=settings.xlsx_extract_include_hidden,
+        )
+    )
+
+
+def _build_pdf_extract_capability(settings: WorkerSettings) -> Capability:
+    from app.capabilities.pdf.service import PdfExtractCapability, PdfExtractService
+
+    return PdfExtractCapability(
+        service=PdfExtractService(
+            ocr_fallback_enabled=settings.pdf_extract_ocr_fallback_enabled,
+            ocr_lang=settings.ocr_extract_paddle_lang,
+            ocr_pdf_dpi=settings.ocr_pdf_dpi,
         )
     )
 

@@ -62,6 +62,7 @@ class IndexedSearchUnit:
     content_sha256: str
     index_id: str
     faiss_row_id: int
+    embedding_text_sha256: str
 
 
 @dataclass(frozen=True)
@@ -179,6 +180,7 @@ class SearchUnitVectorIndexer:
                     content_sha256=doc.content_sha256,
                     index_id=doc.index_id,
                     faiss_row_id=faiss_row_id,
+                    embedding_text_sha256=embedding_text.sha256,
                 ))
                 continue
 
@@ -212,6 +214,7 @@ class SearchUnitVectorIndexer:
                 content_sha256=doc.content_sha256,
                 index_id=doc.index_id,
                 faiss_row_id=faiss_row_id,
+                embedding_text_sha256=embedding_text.sha256,
             ))
 
         if not changed_chunks:

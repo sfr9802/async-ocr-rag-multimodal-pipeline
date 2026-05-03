@@ -27,7 +27,7 @@ class WorkerSettings(BaseSettings):
         default="http://localhost:8080",
         description="Base URL for core-api, used for claim / callback / artifact upload.",
     )
-    core_api_request_timeout_seconds: float = 15.0
+    core_api_request_timeout_seconds: float = 60.0
     internal_secret: Optional[str] = Field(
         default=None,
         description=(
@@ -396,6 +396,21 @@ class WorkerSettings(BaseSettings):
             "When false (default), hidden worksheets are kept in workbook "
             "metadata but not made indexable. Hidden rows/columns are also "
             "excluded from extracted text when metadata can be collected."
+        ),
+    )
+    pdf_extract_enabled: bool = Field(
+        default=True,
+        description=(
+            "Enable the PDF_EXTRACT native text-layer task kind. It reads PDF "
+            "text with PyMuPDF, emits page/block/bbox metadata, and can run "
+            "PaddleOCR fallback for empty or low-density pages."
+        ),
+    )
+    pdf_extract_ocr_fallback_enabled: bool = Field(
+        default=True,
+        description=(
+            "When true, PDF_EXTRACT runs native PyMuPDF extraction first and "
+            "falls back to PaddleOCR only for empty or low-density pages."
         ),
     )
 

@@ -86,6 +86,25 @@ def test_paddle_output_normalization_uses_text_confidence_and_bbox():
     assert blocks[0].bbox == [10, 20, 110, 50]
 
 
+def test_paddle_v3_result_normalization_uses_res_wrapper_and_rec_boxes():
+    from app.capabilities.ocr.paddle_provider import _normalize_blocks
+
+    blocks = _normalize_blocks([
+        {
+            "res": {
+                "rec_texts": ["v3 paddle text"],
+                "rec_scores": [0.87],
+                "rec_boxes": [[12, 24, 140, 58]],
+            }
+        }
+    ])
+
+    assert len(blocks) == 1
+    assert blocks[0].text == "v3 paddle text"
+    assert blocks[0].confidence == 0.87
+    assert blocks[0].bbox == [12, 24, 140, 58]
+
+
 def test_ocr_extract_emits_json_and_markdown_artifacts():
     capability = OcrExtractCapability(
         service=OcrExtractService(
@@ -234,6 +253,7 @@ def test_registry_registers_ocr_extract_without_heavy_ocr_provider():
         ocr_extract_enabled=True,
         ocr_extract_provider="fixture",
         xlsx_extract_enabled=False,
+        pdf_extract_enabled=False,
     )
 
     result = registry_module.build_default_registry(settings)

@@ -87,6 +87,11 @@ public final class JobSubmissionValidator {
     private static final Set<String> SUPPORTED_XLSX_EXTENSIONS = Set.of(
             "xlsx", "xlsm"
     );
+    private static final Set<String> SUPPORTED_PDF_MIME_TYPES = Set.of(
+            "application/pdf",
+            "application/x-pdf"
+    );
+    private static final Set<String> SUPPORTED_PDF_EXTENSIONS = Set.of("pdf");
 
     private JobSubmissionValidator() {}
 
@@ -106,14 +111,14 @@ public final class JobSubmissionValidator {
         if (raw == null || raw.isBlank()) {
             throw new InvalidJobSubmissionException(
                     ErrorCodes.CAPABILITY_REQUIRED,
-                    "capability field is required. Accepted values: MOCK, RAG, OCR, OCR_EXTRACT, XLSX_EXTRACT, MULTIMODAL, AUTO, AGENT.");
+                    "capability field is required. Accepted values: MOCK, RAG, OCR, OCR_EXTRACT, XLSX_EXTRACT, PDF_EXTRACT, MULTIMODAL, AUTO, AGENT.");
         }
         try {
             return JobCapability.fromString(raw);
         } catch (IllegalArgumentException ex) {
             throw new InvalidJobSubmissionException(
                     ErrorCodes.UNKNOWN_CAPABILITY,
-                    "Unknown capability: " + raw + ". Accepted values: MOCK, RAG, OCR, OCR_EXTRACT, XLSX_EXTRACT, MULTIMODAL, AUTO, AGENT.");
+                    "Unknown capability: " + raw + ". Accepted values: MOCK, RAG, OCR, OCR_EXTRACT, XLSX_EXTRACT, PDF_EXTRACT, MULTIMODAL, AUTO, AGENT.");
         }
     }
 
@@ -148,7 +153,7 @@ public final class JobSubmissionValidator {
      */
     public static void validateTextSubmission(JobCapability capability, String text) {
         switch (capability) {
-            case OCR, OCR_EXTRACT -> throw new InvalidJobSubmissionException(
+            case OCR, OCR_EXTRACT, PDF_EXTRACT -> throw new InvalidJobSubmissionException(
                     ErrorCodes.FILE_REQUIRED,
                     capability + " jobs require a file upload. Use the multipart endpoint "
                             + "(POST /api/v1/jobs with Content-Type: multipart/form-data, "
@@ -272,6 +277,7 @@ public final class JobSubmissionValidator {
         switch (capability) {
             case OCR, OCR_EXTRACT, MULTIMODAL -> requireSupportedFileType(capability, file);
             case XLSX_EXTRACT -> requireSupportedXlsxFileType(file);
+            case PDF_EXTRACT -> requireSupportedPdfFileType(file);
             case RAG -> {
                 if (text == null || text.isBlank()) {
                     throw new InvalidJobSubmissionException(
@@ -371,6 +377,23 @@ public final class JobSubmissionValidator {
                             + ". Supported types: XLSX, XLSM "
                             + "(application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, "
                             + "application/vnd.ms-excel.sheet.macroenabled.12).");
+        }
+    }
+
+    private static void requireSupportedPdfFileType(MultipartFile file) {
+        String mime = normalizeMime(file.getContentType());
+        String ext = extractExtension(file.getOriginalFilename());
+
+        boolean mimeMatches = mime != null && SUPPORTED_PDF_MIME_TYPES.contains(mime);
+        boolean extMatches = ext != null && SUPPORTED_PDF_EXTENSIONS.contains(ext);
+
+        if (!mimeMatches && !extMatches) {
+            throw new InvalidJobSubmissionException(
+                    ErrorCodes.UNSUPPORTED_FILE_TYPE,
+                    "Unsupported file type for PDF_EXTRACT. "
+                            + "Received contentType=" + describe(file.getContentType())
+                            + " filename=" + describe(file.getOriginalFilename())
+                            + ". Supported type: PDF (application/pdf).");
         }
     }
 

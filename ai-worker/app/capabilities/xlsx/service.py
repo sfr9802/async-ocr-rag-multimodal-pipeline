@@ -39,7 +39,7 @@ _SECOND_PASS_MAX_BYTES = 5 * 1024 * 1024
 _SECOND_PASS_MAX_CELLS = 50_000
 _MAX_COLUMNS = 80
 _MAX_ROWS_TO_READ = 10_000
-_MAX_CELLS_TO_EXPORT = 10_000
+_MAX_CELLS_TO_EXPORT = 500
 _SECTION_PREVIEW_ROWS = 40
 _CHUNK_DATA_ROWS = 50
 _MAX_CELL_TEXT = 500
@@ -68,6 +68,8 @@ class SheetMetadata:
     formulas: list[dict[str, Any]] = field(default_factory=list)
     hidden_rows: set[int] = field(default_factory=set)
     hidden_columns: set[int] = field(default_factory=set)
+    hidden_cells: set[str] = field(default_factory=set)
+    metadata_trusted: bool = True
     warnings: list[str] = field(default_factory=list)
 
 
@@ -178,6 +180,7 @@ class XlsxExtractService:
                     max_row=worksheet.max_row or 0,
                     max_column=worksheet.max_column or 0,
                     used_range=_used_range(worksheet.max_row or 0, worksheet.max_column or 0),
+                    metadata_trusted=False,
                 )
                 sheet_payload = self._extract_sheet(worksheet, sheet_meta)
                 sheets.append(sheet_payload)
@@ -260,9 +263,22 @@ class XlsxExtractService:
                 meta.merged_cells = [str(cell_range) for cell_range in worksheet.merged_cells.ranges]
                 meta.tables = _table_metadata(worksheet)
 
-                if cell_count <= _SECOND_PASS_MAX_CELLS:
+                if meta.hidden and not self._include_hidden:
+                    meta.warnings.append("Formula scan skipped because hidden sheet is excluded.")
+                elif cell_count <= _SECOND_PASS_MAX_CELLS:
                     for row in worksheet.iter_rows():
+                        row_index = getattr(row[0], "row", None) if row else None
+                        if row_index in meta.hidden_rows:
+                            continue
                         for cell in row:
+                            col_idx = getattr(cell, "column", None)
+                            if isinstance(col_idx, str):
+                                col_idx = _column_index(col_idx)
+                            if col_idx in meta.hidden_columns:
+                                continue
+                            if _is_protected_hidden_cell(worksheet, cell):
+                                meta.hidden_cells.add(cell.coordinate)
+                                continue
                             if cell.data_type == "f" or (
                                 isinstance(cell.value, str) and cell.value.startswith("=")
                             ):
@@ -277,6 +293,11 @@ class XlsxExtractService:
                                 meta.formulas.append(item)
                 else:
                     meta.warnings.append("Formula scan skipped because sheet exceeds second-pass cell limit.")
+                    if bool(getattr(getattr(worksheet, "protection", None), "sheet", False)):
+                        meta.metadata_trusted = False
+                        meta.warnings.append(
+                            "Sheet skipped because protected hidden cells cannot be verified at this size."
+                        )
                 result[worksheet.title] = meta
             return result
         finally:
@@ -301,12 +322,26 @@ class XlsxExtractService:
             "columnEnd": meta.max_column,
             "tables": [],
             "mergedCells": meta.merged_cells,
+            "hiddenRows": sorted(meta.hidden_rows),
+            "hiddenColumns": [
+                get_column_letter(column)
+                for column in sorted(meta.hidden_columns)
+                if column and column > 0
+            ],
+            "hiddenColumnIndexes": sorted(meta.hidden_columns),
+            "hiddenCells": sorted(meta.hidden_cells),
             "formulas": meta.formulas,
             "warnings": list(meta.warnings),
         }
         if hidden and not self._include_hidden:
             base["indexable"] = False
             base["warning"] = "hidden sheet skipped by default"
+            return base
+        if not meta.metadata_trusted and not self._include_hidden:
+            base["indexable"] = False
+            warning = "sheet skipped because hidden row/column/cell metadata could not be verified"
+            base["warning"] = warning
+            base["warnings"].append(warning)
             return base
 
         read = _read_sheet(worksheet, meta)
@@ -361,6 +396,9 @@ class XlsxExtractService:
                 "sheetName": meta.name,
                 "sheetIndex": meta.index,
                 "type": "named",
+                "headers": table_headers or [],
+                "headerRange": _header_range(table_range),
+                "dataRange": _data_range(table_range),
                 "markdown": _limit(markdown, _MAX_UNIT_TEXT),
                 "text": _limit(text, _MAX_UNIT_TEXT),
             })
@@ -385,6 +423,9 @@ class XlsxExtractService:
                 "columnEnd": max_col,
                 "rowCount": max(len(read.rows), 0),
                 "columnCount": _max_row_width(read.rows),
+                "headers": detected_headers or [],
+                "headerRange": _header_range(table_range),
+                "dataRange": _data_range(table_range),
                 "markdown": _limit(_markdown_table(read.rows, detected_headers), _MAX_UNIT_TEXT),
                 "text": _limit(
                     _rows_to_text(
@@ -416,6 +457,7 @@ def _read_sheet(worksheet: Any, meta: SheetMetadata) -> SheetReadResult:
     cells_truncated = False
     max_col = min(meta.max_column or _MAX_COLUMNS, _MAX_COLUMNS)
     formulas_by_cell = {item["cell"]: item for item in meta.formulas if item.get("cell")}
+    merged_by_cell = _merged_ranges_by_cell(meta.merged_cells)
     for row in worksheet.iter_rows(max_col=max_col):
         row_index = getattr(row[0], "row", len(rows) + 1) if row else len(rows) + 1
         if row_index in meta.hidden_rows:
@@ -427,24 +469,41 @@ def _read_sheet(worksheet: Any, meta: SheetMetadata) -> SheetReadResult:
             if isinstance(col_idx, str):
                 col_idx = _column_index(col_idx)
             if col_idx in meta.hidden_columns:
+                values.append("")
+                continue
+            cell_ref = getattr(cell, "coordinate", None)
+            if cell_ref in meta.hidden_cells:
+                values.append("")
                 continue
             raw_value = getattr(cell, "value", None)
-            value = _display_value(raw_value)
-            formula_meta = formulas_by_cell.get(getattr(cell, "coordinate", ""))
+            number_format = getattr(cell, "number_format", None)
+            value = _display_value(raw_value, number_format=number_format)
+            formula_meta = formulas_by_cell.get(cell_ref or "")
             if formula_meta is not None:
                 formula_meta["cachedValue"] = value or None
-                if not value and formula_meta.get("formula"):
-                    value = str(formula_meta["formula"])
             if value or formula_meta is not None:
                 cell_record: dict[str, Any] = {
-                    "cell": getattr(cell, "coordinate", None),
+                    "cell": cell_ref,
+                    "cellRef": cell_ref,
                     "row": row_index,
                     "column": col_idx,
+                    "columnLetter": get_column_letter(col_idx) if col_idx else None,
                     "value": value,
+                    "formattedValue": value,
+                    "rawValue": _raw_value(raw_value),
+                    "dataType": getattr(cell, "data_type", None),
+                    "numberFormat": number_format,
+                    "hiddenRow": False,
+                    "hiddenColumn": False,
                 }
                 if formula_meta is not None:
                     cell_record["formula"] = formula_meta.get("formula")
                     cell_record["cachedValue"] = formula_meta.get("cachedValue")
+                if cell_ref in merged_by_cell:
+                    cell_record["mergedCell"] = True
+                    cell_record["mergedRange"] = merged_by_cell[cell_ref]
+                else:
+                    cell_record["mergedCell"] = False
                 row_cells.append(cell_record)
             values.append(value)
         if any(value for value in values):
@@ -499,6 +558,7 @@ def _build_chunks(
             "rowEnd": row_end,
             "columnStart": 1,
             "columnEnd": end_col,
+            "headers": headers or [],
             "text": _limit(text, _MAX_UNIT_TEXT),
         })
     return chunks
@@ -616,7 +676,7 @@ def _header_index(rows: list[list[str]], headers: list[str] | None) -> int:
     return 0
 
 
-def _display_value(value: Any) -> str:
+def _display_value(value: Any, *, number_format: Any = None) -> str:
     if value is None:
         return ""
     if isinstance(value, datetime):
@@ -628,14 +688,86 @@ def _display_value(value: Any) -> str:
     if isinstance(value, bool):
         return "true" if value else "false"
     if isinstance(value, int):
+        fmt = str(number_format or "")
+        if "%" in fmt:
+            return _format_percent(float(value), fmt)
+        currency = _currency_symbol(fmt)
+        if currency:
+            return f"{currency}{value:,.0f}"
         return f"{value:,}"
     if isinstance(value, float):
+        fmt = str(number_format or "")
+        if "%" in fmt:
+            return _format_percent(value, fmt)
+        currency = _currency_symbol(fmt)
+        if currency:
+            decimals = _decimal_places(fmt)
+            return f"{currency}{value:,.{decimals}f}"
         if value.is_integer():
             return f"{int(value):,}"
         return f"{value:,.6g}"
     text = str(value).strip()
     text = re.sub(r"\s+", " ", text)
     return _limit(text, _MAX_CELL_TEXT)
+
+
+def _raw_value(value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, (datetime, date, time)):
+        return value.isoformat()
+    return str(value)
+
+
+def _format_percent(value: float, number_format: str) -> str:
+    decimals = _decimal_places(number_format)
+    return f"{value * 100:,.{decimals}f}%"
+
+
+def _currency_symbol(number_format: str) -> str | None:
+    for symbol in ("₩", "$", "€", "¥", "£"):
+        if symbol in number_format:
+            return symbol
+    if "원" in number_format:
+        return "₩"
+    return None
+
+
+def _decimal_places(number_format: str) -> int:
+    if "." not in number_format:
+        return 0
+    tail = number_format.split(".", 1)[1]
+    count = 0
+    for char in tail:
+        if char in "0#":
+            count += 1
+        else:
+            break
+    return min(count, 6)
+
+
+def _merged_ranges_by_cell(ranges: list[str]) -> dict[str, str]:
+    result: dict[str, str] = {}
+    for cell_range in ranges:
+        try:
+            min_col, min_row, max_col, max_row = range_boundaries(cell_range)
+        except ValueError:
+            continue
+        for row in range(min_row, max_row + 1):
+            for col in range(min_col, max_col + 1):
+                result[f"{get_column_letter(col)}{row}"] = cell_range
+    return result
+
+
+def _header_range(cell_range: str) -> str:
+    min_col, min_row, max_col, _max_row = _range_parts(cell_range)
+    return f"{get_column_letter(min_col)}{min_row}:{get_column_letter(max_col)}{min_row}"
+
+
+def _data_range(cell_range: str) -> str:
+    min_col, min_row, max_col, max_row = _range_parts(cell_range)
+    data_start = min(min_row + 1, max_row)
+    return f"{get_column_letter(min_col)}{data_start}:{get_column_letter(max_col)}{max_row}"
 
 
 def _is_small_detectable_table(rows: list[list[str]], meta: SheetMetadata) -> bool:
@@ -683,6 +815,14 @@ def _column_index(key: Any) -> Optional[int]:
             return None
         total = total * 26 + (ord(char) - ord("A") + 1)
     return total
+
+
+def _is_protected_hidden_cell(worksheet: Any, cell: Any) -> bool:
+    protection = getattr(worksheet, "protection", None)
+    if not bool(getattr(protection, "sheet", False)):
+        return False
+    cell_protection = getattr(cell, "protection", None)
+    return bool(getattr(cell_protection, "hidden", False))
 
 
 def _is_volatile_formula(formula: str) -> bool:

@@ -25,7 +25,28 @@ public interface SearchUnitJpaRepository extends JpaRepository<SearchUnitJpaEnti
             select unit
             from SearchUnitJpaEntity unit
             where lower(coalesce(unit.textContent, '')) like lower(concat('%', :query, '%'))
-            order by unit.createdAt desc
+               or lower(coalesce(unit.bm25Text, '')) like lower(concat('%', :query, '%'))
+               or lower(coalesce(unit.displayText, '')) like lower(concat('%', :query, '%'))
+               or lower(coalesce(unit.citationText, '')) like lower(concat('%', :query, '%'))
+               or lower(coalesce(unit.debugText, '')) like lower(concat('%', :query, '%'))
+            order by
+              case
+                when lower(coalesce(unit.bm25Text, '')) like lower(concat(:query, '%')) then 0
+                when lower(coalesce(unit.displayText, '')) like lower(concat(:query, '%')) then 1
+                when lower(coalesce(unit.textContent, '')) like lower(concat(:query, '%')) then 2
+                else 3
+              end,
+              case lower(coalesce(unit.chunkType, unit.unitType, ''))
+                when 'row_group' then 0
+                when 'paragraph' then 1
+                when 'table' then 2
+                when 'page' then 3
+                when 'sheet_summary' then 4
+                when 'document_summary' then 5
+                when 'workbook_summary' then 6
+                else 7
+              end,
+              unit.createdAt desc
             """)
     List<SearchUnitJpaEntity> searchByText(@Param("query") String query, Pageable pageable);
 

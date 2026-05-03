@@ -16,6 +16,7 @@ public enum JobCapability {
     OCR,
     OCR_EXTRACT,
     XLSX_EXTRACT,
+    PDF_EXTRACT,
     RAG,
     MULTIMODAL,
     AUTO,

@@ -2,6 +2,8 @@ package com.aipipeline.coreapi.catalog.application.service;
 
 import com.aipipeline.coreapi.catalog.adapter.out.persistence.ExtractedArtifactJpaEntity;
 import com.aipipeline.coreapi.catalog.adapter.out.persistence.ExtractedArtifactJpaRepository;
+import com.aipipeline.coreapi.catalog.adapter.out.persistence.EmbeddingRecordJpaEntity;
+import com.aipipeline.coreapi.catalog.adapter.out.persistence.EmbeddingRecordJpaRepository;
 import com.aipipeline.coreapi.catalog.adapter.out.persistence.SearchUnitJpaEntity;
 import com.aipipeline.coreapi.catalog.adapter.out.persistence.SearchUnitJpaRepository;
 import com.aipipeline.coreapi.catalog.adapter.out.persistence.SourceFileJpaEntity;
@@ -32,6 +34,7 @@ class SearchUnitIndexingServiceTest {
     private final SearchUnitJpaRepository searchUnits = mock(SearchUnitJpaRepository.class);
     private final SourceFileJpaRepository sourceFiles = mock(SourceFileJpaRepository.class);
     private final ExtractedArtifactJpaRepository extractedArtifacts = mock(ExtractedArtifactJpaRepository.class);
+    private final EmbeddingRecordJpaRepository embeddingRecords = mock(EmbeddingRecordJpaRepository.class);
 
     @Test
     void pending_nonblank_search_unit_is_claimed_with_stable_index_id_and_metadata() {
@@ -102,6 +105,36 @@ class SearchUnitIndexingServiceTest {
                 "hash-xlsx",
                 NOW,
                 NOW);
+        unit.applyIngestionV2(
+                "doc-1",
+                "docv-1",
+                "pa-1",
+                "sales.xlsx",
+                "SPREADSHEET",
+                "table",
+                "xlsx",
+                """
+                        {
+                          "type": "xlsx",
+                          "sheet_name": "매출",
+                          "sheet_index": 0,
+                          "table_id": "SalesTable",
+                          "cell_range": "A1:D30",
+                          "row_range": "1:30",
+                          "hidden_policy": "exclude_hidden"
+                        }
+                        """,
+                "직원명: 홍길동",
+                "sales.xlsx\n매출\nA1:D30\n직원명: 홍길동",
+                "직원명: 홍길동",
+                "sales.xlsx > 매출 > A1:D30",
+                "{}",
+                "xlsx-openpyxl",
+                DocumentCatalogService.XLSX_PIPELINE_VERSION,
+                null,
+                null,
+                "[]",
+                NOW);
         SourceFileJpaEntity source = new SourceFileJpaEntity(
                 "source-file-1",
                 "sales.xlsx",
@@ -163,6 +196,106 @@ class SearchUnitIndexingServiceTest {
     }
 
     @Test
+    void embedding_text_only_search_unit_can_be_claimed_when_v2_metadata_is_complete() {
+        SearchUnitJpaEntity unit = new SearchUnitJpaEntity(
+                "unit-embedding-only",
+                "source-file-1",
+                "artifact-1",
+                DocumentCatalogService.SEARCH_UNIT_CHUNK,
+                "sheet:0:chunk:0:A1:B2",
+                "매출 A1:B2",
+                "workbook/매출",
+                null,
+                null,
+                "   ",
+                "{\"fileType\":\"xlsx\",\"sheetName\":\"매출\",\"cellRange\":\"A1:B2\"}",
+                SearchUnitIndexingService.EMBEDDING_STATUS_PENDING,
+                "embedding-hash",
+                NOW,
+                NOW);
+        unit.applyIngestionV2(
+                "doc-1",
+                "docv-1",
+                "pa-1",
+                "sales.xlsx",
+                "SPREADSHEET",
+                "row_group",
+                "xlsx",
+                "{\"type\":\"xlsx\",\"sheet_name\":\"매출\",\"cell_range\":\"A1:B2\"}",
+                "Source: sales.xlsx\nSheet: 매출\nRange: A1:B2\nContent:\n직원명: 홍길동",
+                "sales.xlsx\n매출\nA1:B2\n직원명: 홍길동",
+                "직원명: 홍길동",
+                "sales.xlsx > 매출 > A1:B2",
+                "{}",
+                "xlsx-openpyxl",
+                DocumentCatalogService.XLSX_PIPELINE_VERSION,
+                null,
+                null,
+                "[]",
+                NOW);
+        stubCandidates(List.of(unit), List.of());
+        when(searchUnits.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(sourceFiles.findAllById(any())).thenReturn(List.of(source()));
+        when(extractedArtifacts.findAllById(any())).thenReturn(List.of(artifact()));
+
+        List<SearchUnitIndexingService.ClaimedSearchUnit> claimed = service()
+                .claimPending("worker-1", 10, Duration.ofMinutes(10), NOW);
+
+        assertThat(claimed).hasSize(1);
+        assertThat(claimed.getFirst().textContent()).contains("Source: sales.xlsx");
+        assertThat(claimed.getFirst().contentSha256()).isEqualTo("embedding-hash");
+    }
+
+    @Test
+    void xlsx_row_group_missing_cell_range_is_skipped_before_indexing() {
+        SearchUnitJpaEntity unit = new SearchUnitJpaEntity(
+                "unit-bad-xlsx",
+                "source-file-1",
+                "artifact-1",
+                DocumentCatalogService.SEARCH_UNIT_CHUNK,
+                "sheet:0:chunk:0",
+                "매출",
+                "workbook/매출",
+                null,
+                null,
+                "직원명: 홍길동",
+                "{\"fileType\":\"xlsx\",\"sheetName\":\"매출\"}",
+                SearchUnitIndexingService.EMBEDDING_STATUS_PENDING,
+                "hash-bad-xlsx",
+                NOW,
+                NOW);
+        unit.applyIngestionV2(
+                "doc-1",
+                "docv-1",
+                "pa-1",
+                "sales.xlsx",
+                "SPREADSHEET",
+                "row_group",
+                "xlsx",
+                "{\"type\":\"xlsx\",\"sheet_name\":\"매출\"}",
+                "직원명: 홍길동",
+                "직원명: 홍길동",
+                "직원명: 홍길동",
+                "sales.xlsx > 매출",
+                "{}",
+                "xlsx-openpyxl",
+                DocumentCatalogService.XLSX_PIPELINE_VERSION,
+                null,
+                null,
+                "[]",
+                NOW);
+        stubCandidates(List.of(unit), List.of());
+        when(searchUnits.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        List<SearchUnitIndexingService.ClaimedSearchUnit> claimed = service()
+                .claimPending("worker-1", 10, Duration.ofMinutes(10), NOW);
+
+        assertThat(claimed).isEmpty();
+        assertThat(unit.getEmbeddingStatus()).isEqualTo(SearchUnitIndexingService.EMBEDDING_STATUS_SKIPPED);
+        assertThat(unit.getEmbeddingStatusDetail()).contains("cell_range");
+    }
+
+    @Test
     void non_spreadsheet_document_unit_is_skipped_to_avoid_raw_document_embedding() {
         SearchUnitJpaEntity unit = unit(
                 "unit-document",
@@ -206,6 +339,32 @@ class SearchUnitIndexingServiceTest {
                 "hash-workbook",
                 NOW,
                 NOW);
+        unit.applyIngestionV2(
+                "doc-1",
+                "docv-1",
+                "pa-1",
+                "sales.xlsx",
+                "SPREADSHEET",
+                "workbook_summary",
+                "xlsx",
+                """
+                        {
+                          "type": "xlsx",
+                          "document_version_id": "docv-1",
+                          "hidden_policy": "exclude_hidden"
+                        }
+                        """,
+                "full workbook text that worker-side builder must not embed as-is",
+                "sales.xlsx\nSales\nSummary",
+                "full workbook text that worker-side builder must not embed as-is",
+                "sales.xlsx > workbook",
+                "{}",
+                "xlsx-openpyxl",
+                DocumentCatalogService.XLSX_PIPELINE_VERSION,
+                null,
+                null,
+                "[]",
+                NOW);
         SourceFileJpaEntity source = new SourceFileJpaEntity(
                 "source-file-1",
                 "sales.xlsx",
@@ -237,7 +396,9 @@ class SearchUnitIndexingServiceTest {
         assertThat(claimed.getFirst().indexMetadata())
                 .containsEntry("fileType", "xlsx")
                 .containsEntry("sourceFileName", "sales.xlsx")
-                .containsEntry("artifact_type", "XLSX_WORKBOOK_JSON");
+                .containsEntry("artifact_type", "XLSX_WORKBOOK_JSON")
+                .containsEntry("parserVersion", DocumentCatalogService.XLSX_PIPELINE_VERSION)
+                .containsEntry("citationText", "sales.xlsx > workbook");
     }
 
     @Test
@@ -312,7 +473,8 @@ class SearchUnitIndexingServiceTest {
         when(searchUnits.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         SearchUnitIndexingService.CompletionResult result = service()
-                .markEmbedded("unit-1", "claim-1", "hash-old", "ignored", NOW);
+                .markEmbedded("unit-1", "claim-1", "hash-old", "ignored", "idx-v1",
+                        "fake-model", "embed-hash-old", "vector-1", NOW);
 
         assertThat(result.applied()).isFalse();
         assertThat(result.stale()).isTrue();
@@ -333,15 +495,22 @@ class SearchUnitIndexingServiceTest {
         when(searchUnits.findByIdAndEmbeddingClaimToken("unit-1", "claim-1"))
                 .thenReturn(Optional.of(unit));
         when(searchUnits.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(embeddingRecords.findBySearchUnitIdAndIndexVersionAndEmbeddingModel(
+                "unit-1", "idx-v1", "fake-model"))
+                .thenReturn(Optional.empty());
+        when(embeddingRecords.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         SearchUnitIndexingService.CompletionResult result = service()
-                .markEmbedded("unit-1", "claim-1", "hash-table", "wrong-id", NOW);
+                .markEmbedded("unit-1", "claim-1", "hash-table", "wrong-id", "idx-v1",
+                        "fake-model", "embed-hash-table", "vector-1", NOW);
 
         assertThat(result.applied()).isTrue();
         assertThat(result.indexId()).isEqualTo("source_file:source-file-1:unit:TABLE:page:2:table:1");
         assertThat(unit.getEmbeddingStatus()).isEqualTo(SearchUnitIndexingService.EMBEDDING_STATUS_EMBEDDED);
         assertThat(unit.getIndexId()).isEqualTo("source_file:source-file-1:unit:TABLE:page:2:table:1");
+        assertThat(unit.getIndexVersion()).isEqualTo("idx-v1");
         assertThat(unit.getIndexedContentSha256()).isEqualTo("hash-table");
+        verify(embeddingRecords).save(any(EmbeddingRecordJpaEntity.class));
     }
 
     @Test
@@ -405,6 +574,7 @@ class SearchUnitIndexingServiceTest {
                 searchUnits,
                 sourceFiles,
                 extractedArtifacts,
+                embeddingRecords,
                 new ObjectMapper());
     }
 

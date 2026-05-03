@@ -77,13 +77,22 @@ class SearchUnitIndexingControllerTest {
 
     @Test
     void embedded_endpoint_passes_completion_request_to_service() throws Exception {
-        when(indexing.markEmbedded("unit-1", "claim-1", "hash-1", "index-1", NOW))
+        when(indexing.markEmbedded("unit-1", "claim-1", "hash-1", "index-1", "idx-v1",
+                "fake-model", "embed-hash-1", "vector-1", NOW))
                 .thenReturn(new SearchUnitIndexingService.CompletionResult(true, false, "index-1", null));
 
         mockMvc.perform(post("/api/internal/search-units/indexing/unit-1/embedded")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"claimToken":"claim-1","contentSha256":"hash-1","indexId":"index-1"}
+                                {
+                                  "claimToken":"claim-1",
+                                  "contentSha256":"hash-1",
+                                  "indexId":"index-1",
+                                  "indexVersion":"idx-v1",
+                                  "embeddingModel":"fake-model",
+                                  "embeddingTextSha256":"embed-hash-1",
+                                  "vectorId":"vector-1"
+                                }
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.applied").value(true))
