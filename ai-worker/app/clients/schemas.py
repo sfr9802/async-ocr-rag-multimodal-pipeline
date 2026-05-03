@@ -6,7 +6,7 @@ These must stay wire-compatible with the Spring DTOs in
 
 from __future__ import annotations
 
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -23,6 +23,7 @@ class ClaimRequest(BaseModel):
 
 class ClaimedInput(BaseModel):
     artifact_id: str = Field(alias="artifactId")
+    source_file_id: Optional[str] = Field(default=None, alias="sourceFileId")
     type: str
     storage_uri: str = Field(alias="storageUri")
     content_type: Optional[str] = Field(default=None, alias="contentType")
@@ -75,6 +76,72 @@ class CallbackResponse(BaseModel):
     applied: bool
     duplicate: bool
     current_status: Optional[str] = Field(default=None, alias="currentStatus")
+
+    model_config = {"populate_by_name": True}
+
+
+# ---- SearchUnit indexing ----
+
+class SearchUnitIndexClaimRequest(BaseModel):
+    worker_id: str = Field(serialization_alias="workerId")
+    batch_size: Optional[int] = Field(default=None, serialization_alias="batchSize")
+    stale_after_seconds: Optional[int] = Field(
+        default=None,
+        serialization_alias="staleAfterSeconds",
+    )
+
+    model_config = {"populate_by_name": True}
+
+
+class SearchUnitIndexDocument(BaseModel):
+    search_unit_id: str = Field(alias="searchUnitId")
+    claim_token: str = Field(alias="claimToken")
+    index_id: str = Field(alias="indexId")
+    source_file_id: str = Field(alias="sourceFileId")
+    source_file_name: Optional[str] = Field(default=None, alias="sourceFileName")
+    extracted_artifact_id: Optional[str] = Field(default=None, alias="extractedArtifactId")
+    artifact_type: Optional[str] = Field(default=None, alias="artifactType")
+    unit_type: str = Field(alias="unitType")
+    unit_key: str = Field(alias="unitKey")
+    title: Optional[str] = None
+    section_path: Optional[str] = Field(default=None, alias="sectionPath")
+    page_start: Optional[int] = Field(default=None, alias="pageStart")
+    page_end: Optional[int] = Field(default=None, alias="pageEnd")
+    text_content: str = Field(alias="textContent")
+    content_sha256: str = Field(alias="contentSha256")
+    metadata_json: Optional[Any] = Field(default=None, alias="metadataJson")
+    index_metadata: dict[str, Any] = Field(default_factory=dict, alias="indexMetadata")
+
+    model_config = {"populate_by_name": True}
+
+
+class SearchUnitIndexClaimResponse(BaseModel):
+    units: list[SearchUnitIndexDocument] = Field(default_factory=list)
+
+    model_config = {"populate_by_name": True}
+
+
+class SearchUnitIndexEmbeddedRequest(BaseModel):
+    claim_token: str = Field(serialization_alias="claimToken")
+    content_sha256: str = Field(serialization_alias="contentSha256")
+    index_id: Optional[str] = Field(default=None, serialization_alias="indexId")
+
+    model_config = {"populate_by_name": True}
+
+
+class SearchUnitIndexFailedRequest(BaseModel):
+    claim_token: str = Field(serialization_alias="claimToken")
+    content_sha256: str = Field(serialization_alias="contentSha256")
+    detail: Optional[str] = None
+
+    model_config = {"populate_by_name": True}
+
+
+class SearchUnitIndexCompletionResponse(BaseModel):
+    applied: bool
+    stale: bool = False
+    index_id: Optional[str] = Field(default=None, alias="indexId")
+    detail: Optional[str] = None
 
     model_config = {"populate_by_name": True}
 

@@ -39,6 +39,14 @@ class OcrExtractService:
 
     def run(self, input: CapabilityInput) -> CapabilityOutput:
         artifact = self._pick_input_artifact(input)
+        source_record_id = artifact.source_file_id or f"input-artifact:{artifact.artifact_id}"
+        if not artifact.source_file_id:
+            log.warning(
+                "OCR-lite claim missing sourceFileId jobId=%s artifact=%s; "
+                "using legacy sourceRecordId fallback.",
+                input.job_id,
+                artifact.artifact_id,
+            )
         mime_type, kind = self._classify(artifact)
         filename = self._derive_filename(artifact, kind)
 
@@ -52,7 +60,7 @@ class OcrExtractService:
         try:
             document = self._provider.extract(
                 artifact.content,
-                source_record_id=artifact.artifact_id,
+                source_record_id=source_record_id,
                 pipeline_version=self._pipeline_version,
                 content_type=mime_type,
                 filename=filename,

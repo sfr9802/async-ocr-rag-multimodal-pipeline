@@ -1,9 +1,10 @@
 """HTTP client for core-api.
 
-Covers the three operations the worker needs:
+Covers the worker-facing internal operations:
   - POST /api/internal/jobs/claim
   - POST /api/internal/jobs/callback
   - POST /api/internal/artifacts (multipart upload)
+  - POST /api/internal/search-units/indexing/*
 
 Kept synchronous via httpx.Client because the per-job pipeline in this
 worker is sequential — there is no benefit to asyncio in phase 1, and
@@ -22,6 +23,11 @@ from app.clients.schemas import (
     CallbackResponse,
     ClaimRequest,
     ClaimResponse,
+    SearchUnitIndexClaimRequest,
+    SearchUnitIndexClaimResponse,
+    SearchUnitIndexCompletionResponse,
+    SearchUnitIndexEmbeddedRequest,
+    SearchUnitIndexFailedRequest,
     UploadResponse,
 )
 
@@ -86,3 +92,38 @@ class CoreApiClient:
         response = self._client.get(f"/api/v1/artifacts/{artifact_id}/content")
         response.raise_for_status()
         return response.content
+
+    def claim_search_unit_indexing(
+        self,
+        request: SearchUnitIndexClaimRequest,
+    ) -> SearchUnitIndexClaimResponse:
+        payload = request.model_dump(by_alias=True, exclude_none=True)
+        response = self._client.post("/api/internal/search-units/indexing/claim", json=payload)
+        response.raise_for_status()
+        return SearchUnitIndexClaimResponse.model_validate(response.json())
+
+    def mark_search_unit_embedded(
+        self,
+        search_unit_id: str,
+        request: SearchUnitIndexEmbeddedRequest,
+    ) -> SearchUnitIndexCompletionResponse:
+        payload = request.model_dump(by_alias=True, exclude_none=True)
+        response = self._client.post(
+            f"/api/internal/search-units/indexing/{search_unit_id}/embedded",
+            json=payload,
+        )
+        response.raise_for_status()
+        return SearchUnitIndexCompletionResponse.model_validate(response.json())
+
+    def mark_search_unit_indexing_failed(
+        self,
+        search_unit_id: str,
+        request: SearchUnitIndexFailedRequest,
+    ) -> SearchUnitIndexCompletionResponse:
+        payload = request.model_dump(by_alias=True, exclude_none=True)
+        response = self._client.post(
+            f"/api/internal/search-units/indexing/{search_unit_id}/failed",
+            json=payload,
+        )
+        response.raise_for_status()
+        return SearchUnitIndexCompletionResponse.model_validate(response.json())

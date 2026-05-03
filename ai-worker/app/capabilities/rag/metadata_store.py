@@ -63,6 +63,7 @@ class ChunkLookupResult:
     section: str
     text: str
     faiss_row_id: int
+    extra: Optional[dict] = None
 
 
 class RagMetadataStore:
@@ -206,6 +207,92 @@ class RagMetadataStore:
             len(documents), len(chunks), index_version,
         )
 
+    def upsert_index_rows(
+        self,
+        *,
+        documents: List[DocumentRow],
+        chunks: List[ChunkRow],
+    ) -> None:
+        """Upsert SearchUnit-backed rows without rebuilding all metadata.
+
+        The vector index writer owns FAISS row allocation. This method only
+        makes the ragmeta lookup rows idempotent for a stable chunk_id/index_id.
+        """
+        now = datetime.now(tz=timezone.utc).replace(tzinfo=None)
+        with self._connect() as conn, conn.cursor() as cur:
+            if documents:
+                psycopg2.extras.execute_values(
+                    cur,
+                    """
+                    INSERT INTO ragmeta.documents
+                      (doc_id, title, source, category, metadata_json,
+                       domain, language, created_at, updated_at)
+                    VALUES %s
+                    ON CONFLICT (doc_id) DO UPDATE SET
+                      title = EXCLUDED.title,
+                      source = EXCLUDED.source,
+                      category = EXCLUDED.category,
+                      metadata_json = EXCLUDED.metadata_json,
+                      domain = EXCLUDED.domain,
+                      language = EXCLUDED.language,
+                      updated_at = EXCLUDED.updated_at
+                    """,
+                    [
+                        (
+                            d.doc_id,
+                            d.title,
+                            d.source,
+                            d.category,
+                            json.dumps(d.metadata) if d.metadata is not None else None,
+                            d.domain,
+                            d.language,
+                            now,
+                            now,
+                        )
+                        for d in documents
+                    ],
+                )
+
+            if chunks:
+                psycopg2.extras.execute_values(
+                    cur,
+                    """
+                    INSERT INTO ragmeta.chunks
+                      (chunk_id, doc_id, section, chunk_order, text,
+                       token_count, faiss_row_id, index_version, extra_json, created_at)
+                    VALUES %s
+                    ON CONFLICT (chunk_id) DO UPDATE SET
+                      doc_id = EXCLUDED.doc_id,
+                      section = EXCLUDED.section,
+                      chunk_order = EXCLUDED.chunk_order,
+                      text = EXCLUDED.text,
+                      token_count = EXCLUDED.token_count,
+                      faiss_row_id = EXCLUDED.faiss_row_id,
+                      index_version = EXCLUDED.index_version,
+                      extra_json = EXCLUDED.extra_json
+                    """,
+                    [
+                        (
+                            c.chunk_id,
+                            c.doc_id,
+                            c.section,
+                            c.chunk_order,
+                            c.text,
+                            c.token_count,
+                            c.faiss_row_id,
+                            c.index_version,
+                            json.dumps(c.extra) if c.extra is not None else None,
+                            now,
+                        )
+                        for c in chunks
+                    ],
+                )
+        log.info(
+            "ragmeta search-unit rows upserted: %d documents, %d chunks",
+            len(documents),
+            len(chunks),
+        )
+
     # ------------------------------------------------------------------
     # reads
     # ------------------------------------------------------------------
@@ -219,7 +306,7 @@ class RagMetadataStore:
         with self._connect() as conn, conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT chunk_id, doc_id, section, text, faiss_row_id
+                SELECT chunk_id, doc_id, section, text, faiss_row_id, extra_json
                   FROM ragmeta.chunks
                  WHERE index_version = %s
                    AND faiss_row_id = ANY(%s)
@@ -228,7 +315,8 @@ class RagMetadataStore:
             )
             rows = cur.fetchall()
         by_row = {r[4]: ChunkLookupResult(
-            chunk_id=r[0], doc_id=r[1], section=r[2] or "", text=r[3], faiss_row_id=r[4]
+            chunk_id=r[0], doc_id=r[1], section=r[2] or "", text=r[3], faiss_row_id=r[4],
+            extra=_json_dict_or_none(r[5]),
         ) for r in rows}
         # Preserve the FAISS ranking order of the input ids.
         return [by_row[i] for i in ids if i in by_row]
@@ -296,3 +384,15 @@ class RagMetadataStore:
                 if latest else None
             ),
         }
+
+
+def _json_dict_or_none(value) -> Optional[dict]:
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return None
+        return parsed if isinstance(parsed, dict) else None
+    return None

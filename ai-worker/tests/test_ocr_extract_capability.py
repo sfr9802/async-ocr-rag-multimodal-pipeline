@@ -101,6 +101,7 @@ def test_ocr_extract_emits_json_and_markdown_artifacts():
             inputs=[
                 CapabilityInputArtifact(
                     artifact_id="source-1",
+                    source_file_id="source-1",
                     type="INPUT_FILE",
                     content=b"\x89PNG\r\n\x1a\nfixture",
                     content_type="image/png",
@@ -139,6 +140,61 @@ def test_ocr_extract_emits_json_and_markdown_artifacts():
     assert "# OCR Text" in markdown
     assert "Pipeline: ocr-lite-v1" in markdown
     assert "fixture invoice total" in markdown
+
+
+def test_ocr_extract_uses_source_file_id_when_claim_provides_it():
+    capability = OcrExtractCapability(
+        service=OcrExtractService(
+            provider=FixtureOcrProvider("catalog text"),
+        ),
+    )
+
+    result = capability.run(
+        CapabilityInput(
+            job_id="job-1",
+            capability="OCR_EXTRACT",
+            attempt_no=1,
+            inputs=[
+                CapabilityInputArtifact(
+                    artifact_id="input-artifact-1",
+                    source_file_id="source-file-1",
+                    type="INPUT_FILE",
+                    content=b"\x89PNG\r\n\x1a\nfixture",
+                    content_type="image/png",
+                    filename="invoice.png",
+                )
+            ],
+        )
+    )
+
+    body = json.loads(result.outputs[0].content)
+    assert body["sourceRecordId"] == "source-file-1"
+
+
+def test_ocr_extract_uses_legacy_source_record_id_fallback_when_claim_omits_source_file_id():
+    capability = OcrExtractCapability(
+        service=OcrExtractService(provider=FixtureOcrProvider()),
+    )
+
+    result = capability.run(
+        CapabilityInput(
+            job_id="job-1",
+            capability="OCR_EXTRACT",
+            attempt_no=1,
+            inputs=[
+                CapabilityInputArtifact(
+                    artifact_id="input-artifact-1",
+                    type="INPUT_FILE",
+                    content=b"\x89PNG\r\n\x1a\nfixture",
+                    content_type="image/png",
+                    filename="invoice.png",
+                )
+            ],
+        )
+    )
+
+    body = json.loads(result.outputs[0].content)
+    assert body["sourceRecordId"] == "input-artifact:input-artifact-1"
 
 
 def test_ocr_extract_rejects_text_only_input():

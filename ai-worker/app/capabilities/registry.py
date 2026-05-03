@@ -260,6 +260,7 @@ def _build_rag_capability(settings: WorkerSettings) -> Capability:
     # Imports are local so a broken RAG subsystem can't take down mock-only
     # deployments on startup — ImportError on faiss / psycopg2 surfaces as
     # a clean "RAG not registered" warning.
+    from app.capabilities.rag.audit_store import RetrievalAuditStore
     from app.capabilities.rag.capability import RagCapability, RagCapabilityConfig
 
     retriever, generator = _get_shared_retriever_bundle(settings)
@@ -267,6 +268,7 @@ def _build_rag_capability(settings: WorkerSettings) -> Capability:
         retriever=retriever,
         generator=generator,
         config=RagCapabilityConfig(top_k=settings.rag_top_k),
+        audit_store=RetrievalAuditStore(settings.rag_db_dsn),
     )
 
 

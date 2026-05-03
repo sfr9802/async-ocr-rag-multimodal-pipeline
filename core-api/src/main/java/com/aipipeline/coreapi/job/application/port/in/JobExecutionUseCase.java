@@ -41,6 +41,7 @@ public interface JobExecutionUseCase {
 
     record ClaimedInputArtifact(
             String artifactId,
+            String sourceFileId,
             ArtifactType type,
             String storageUri,
             String contentType,

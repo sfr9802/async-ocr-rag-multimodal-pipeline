@@ -27,8 +27,8 @@ from __future__ import annotations
 
 import logging
 import time
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from dataclasses import dataclass, field, replace
+from typing import Any, Dict, List, Optional
 
 from app.capabilities.rag.embeddings import EmbeddingProvider
 from app.capabilities.rag.embedding_text_builder import (
@@ -486,11 +486,8 @@ class Retriever:
         for hit in looked_up:
             if allowed_doc_ids is not None and hit.doc_id not in allowed_doc_ids:
                 continue
-            candidates.append(RetrievedChunk(
-                chunk_id=hit.chunk_id,
-                doc_id=hit.doc_id,
-                section=hit.section or "",
-                text=hit.text,
+            candidates.append(_retrieved_chunk_from_lookup(
+                hit,
                 score=float(score_by_row.get(hit.faiss_row_id, 0.0)),
             ))
             if len(candidates) >= self._candidate_k:
@@ -605,7 +602,7 @@ def _rrf_merge(
 ) -> List[RetrievedChunk]:
     """Merge per-query candidate lists via Reciprocal Rank Fusion.
 
-    For each chunk_id appearing in any of the per-query result lists we
+    For each SearchUnit-aware key appearing in any of the per-query lists we
     sum ``1 / (k_rrf + rank_i)`` across the lists that contain it (rank
     is 1-based). The chunks are then sorted by the fused score in
     descending order and capped at ``pool_size`` so the reranker sees a
@@ -615,8 +612,8 @@ def _rrf_merge(
     score so downstream code (reranker fallback, MMR relevance signal,
     topk_gap computation) has a single consistent ordering signal. The
     original bi-encoder score is preserved on the variant that wins —
-    we keep the first occurrence of each chunk_id as the "representative"
-    so doc_id / section / text stay intact.
+    we keep the first occurrence of each key as the "representative"
+    so SearchUnit citation metadata stays intact.
 
     k_rrf=60 is the Cormack et al. default; the value is exposed on the
     Retriever so evaluation sweeps can tune it without code changes.
@@ -628,23 +625,91 @@ def _rrf_merge(
     representative: dict[str, RetrievedChunk] = {}
     for variant in candidate_lists:
         for rank, chunk in enumerate(variant, start=1):
+            key = _dedup_key(chunk)
             contribution = 1.0 / float(k_rrf + rank)
-            fused_score[chunk.chunk_id] = (
-                fused_score.get(chunk.chunk_id, 0.0) + contribution
+            fused_score[key] = (
+                fused_score.get(key, 0.0) + contribution
             )
-            representative.setdefault(chunk.chunk_id, chunk)
+            representative.setdefault(key, chunk)
 
     merged: List[RetrievedChunk] = [
-        RetrievedChunk(
-            chunk_id=rep.chunk_id,
-            doc_id=rep.doc_id,
-            section=rep.section,
-            text=rep.text,
-            score=fused_score[rep.chunk_id],
-            rerank_score=rep.rerank_score,
+        replace(
+            rep,
+            score=fused_score[key],
         )
-        for rep in representative.values()
+        for key, rep in representative.items()
     ]
     merged.sort(key=lambda c: c.score, reverse=True)
     cap = max(1, int(pool_size))
     return merged[:cap]
+
+
+def _retrieved_chunk_from_lookup(hit, *, score: float) -> RetrievedChunk:
+    extra: dict[str, Any] = hit.extra if isinstance(hit.extra, dict) else {}
+    return RetrievedChunk(
+        chunk_id=hit.chunk_id,
+        doc_id=hit.doc_id,
+        section=hit.section or "",
+        text=hit.text,
+        score=score,
+        dense_score=_float_or_none(_extra(extra, "denseScore", "dense_score")) or score,
+        sparse_score=_float_or_none(_extra(extra, "sparseScore", "sparse_score")),
+        search_unit_id=_str_or_none(_extra(extra, "searchUnitId", "search_unit_id")),
+        source_file_id=_str_or_none(_extra(extra, "sourceFileId", "source_file_id")),
+        source_file_name=_str_or_none(_extra(extra, "sourceFileName", "source_file_name", "originalFilename")),
+        extracted_artifact_id=_str_or_none(_extra(extra, "extractedArtifactId", "artifactId", "extracted_artifact_id")),
+        artifact_type=_str_or_none(_extra(extra, "artifactType", "artifact_type")),
+        unit_type=_str_or_none(_extra(extra, "unitType", "unit_type")),
+        unit_key=_str_or_none(_extra(extra, "unitKey", "unit_key")),
+        title=_str_or_none(_extra(extra, "title")),
+        section_path=_str_or_none(_extra(extra, "sectionPath", "section_path")) or (hit.section or None),
+        page_start=_int_or_none(_extra(extra, "pageStart", "page_start")),
+        page_end=_int_or_none(_extra(extra, "pageEnd", "page_end")),
+        metadata_json=_dict_or_none(_extra(extra, "metadataJson", "metadata_json", "metadata")),
+    )
+
+
+def _extra(extra: dict[str, Any], *keys: str) -> Any:
+    for key in keys:
+        if key in extra:
+            return extra[key]
+    return None
+
+
+def _dedup_key(chunk: RetrievedChunk) -> str:
+    if chunk.search_unit_id:
+        return f"search_unit:{chunk.search_unit_id}"
+    if chunk.source_file_id and chunk.unit_type and chunk.unit_key:
+        return f"source_file:{chunk.source_file_id}:unit:{chunk.unit_type}:{chunk.unit_key}"
+    if chunk.chunk_id:
+        return f"chunk:{chunk.chunk_id}"
+    return f"doc:{chunk.doc_id}:section:{chunk.section}"
+
+
+def _str_or_none(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _int_or_none(value: Any) -> Optional[int]:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _float_or_none(value: Any) -> Optional[float]:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _dict_or_none(value: Any) -> Optional[dict[str, Any]]:
+    return value if isinstance(value, dict) else None

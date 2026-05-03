@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import Any, List, Optional
 
 
 @dataclass(frozen=True)
@@ -25,6 +25,20 @@ class RetrievedChunk:
     text: str
     score: float
     rerank_score: Optional[float] = None
+    search_unit_id: Optional[str] = None
+    source_file_id: Optional[str] = None
+    source_file_name: Optional[str] = None
+    extracted_artifact_id: Optional[str] = None
+    artifact_type: Optional[str] = None
+    unit_type: Optional[str] = None
+    unit_key: Optional[str] = None
+    title: Optional[str] = None
+    section_path: Optional[str] = None
+    page_start: Optional[int] = None
+    page_end: Optional[int] = None
+    dense_score: Optional[float] = None
+    sparse_score: Optional[float] = None
+    metadata_json: Optional[dict[str, Any]] = None
 
 
 class GenerationProvider(ABC):

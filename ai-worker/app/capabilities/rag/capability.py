@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass
+from typing import Any
 
 from app.capabilities.base import (
     Capability,
@@ -27,6 +28,7 @@ from app.capabilities.base import (
     CapabilityOutputArtifact,
 )
 from app.capabilities.rag.generation import GenerationProvider, RetrievedChunk
+from app.capabilities.rag.retrieval_contract import retrieval_result_row
 from app.capabilities.rag.retriever import RetrievalReport, Retriever
 
 log = logging.getLogger(__name__)
@@ -47,10 +49,12 @@ class RagCapability(Capability):
         retriever: Retriever,
         generator: GenerationProvider,
         config: RagCapabilityConfig,
+        audit_store: Any | None = None,
     ) -> None:
         self._retriever = retriever
         self._generator = generator
         self._config = config
+        self._audit_store = audit_store
 
     # ------------------------------------------------------------------
 
@@ -68,6 +72,7 @@ class RagCapability(Capability):
             "RAG retrieval done jobId=%s hits=%d index_version=%s",
             input.job_id, len(report.results), report.index_version,
         )
+        self._record_audit(input, report)
 
         answer_md = self._generator.generate(query, report.results)
 
@@ -114,20 +119,30 @@ class RagCapability(Capability):
             "embeddingModel": report.embedding_model,
             "hitCount": len(report.results),
             "results": [
-                {
-                    "rank": i + 1,
-                    "chunkId": r.chunk_id,
-                    "docId": r.doc_id,
-                    "section": r.section,
-                    "score": round(r.score, 6),
-                    "text": r.text,
-                }
+                retrieval_result_row(i + 1, r)
                 for i, r in enumerate(report.results)
             ],
         }
         if report.parsed_query is not None:
             body["parsedQuery"] = report.parsed_query.to_dict()
         return json.dumps(body, ensure_ascii=False, indent=2)
+
+    def _record_audit(self, input: CapabilityInput, report: RetrievalReport) -> None:
+        if self._audit_store is None:
+            return
+        try:
+            self._audit_store.record_retrieval(
+                report,
+                request_id=input.job_id,
+                user_id=None,
+            )
+        except Exception as ex:
+            log.warning(
+                "RAG retrieval audit failed jobId=%s error=%s",
+                input.job_id,
+                ex,
+                exc_info=True,
+            )
 
 
 def _make_retrieved(

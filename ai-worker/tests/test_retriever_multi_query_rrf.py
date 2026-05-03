@@ -446,6 +446,44 @@ def test_rrf_merge_ranks_shared_chunks_higher_than_singletons():
     assert all(shared_score > s for s in singleton_scores)
 
 
+def test_rrf_merge_deduplicates_by_search_unit_id_and_preserves_metadata():
+    first = RetrievedChunk(
+        chunk_id="legacy-a",
+        doc_id="doc-a",
+        section="overview",
+        text="same unit first",
+        score=0.5,
+        search_unit_id="unit-1",
+        source_file_id="source-1",
+        unit_type="PAGE",
+        unit_key="page:1",
+        page_start=1,
+        page_end=1,
+    )
+    second = RetrievedChunk(
+        chunk_id="legacy-b",
+        doc_id="doc-a",
+        section="overview",
+        text="same unit second",
+        score=0.4,
+        search_unit_id="unit-1",
+        source_file_id="source-1",
+        unit_type="PAGE",
+        unit_key="page:1",
+        page_start=1,
+        page_end=1,
+    )
+
+    merged = _rrf_merge([[first], [second]], k_rrf=60, pool_size=5)
+
+    assert len(merged) == 1
+    assert merged[0].chunk_id == "legacy-a"
+    assert merged[0].search_unit_id == "unit-1"
+    assert merged[0].unit_type == "PAGE"
+    assert merged[0].page_start == 1
+    assert merged[0].score == (1 / 61) + (1 / 61)
+
+
 def test_rrf_merge_respects_pool_size_cap():
     chunks = [_chunk(f"c{i}", f"doc-{i}", score=0.5) for i in range(10)]
     merged = _rrf_merge([chunks], k_rrf=60, pool_size=3)

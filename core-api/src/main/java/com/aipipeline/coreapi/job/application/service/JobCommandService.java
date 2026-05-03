@@ -3,11 +3,14 @@ package com.aipipeline.coreapi.job.application.service;
 import com.aipipeline.coreapi.artifact.application.port.out.ArtifactRepository;
 import com.aipipeline.coreapi.artifact.domain.Artifact;
 import com.aipipeline.coreapi.artifact.domain.ArtifactRole;
+import com.aipipeline.coreapi.artifact.domain.ArtifactType;
+import com.aipipeline.coreapi.catalog.application.service.DocumentCatalogService;
 import com.aipipeline.coreapi.common.TimeProvider;
 import com.aipipeline.coreapi.job.application.port.in.JobManagementUseCase;
 import com.aipipeline.coreapi.job.application.port.out.JobDispatchPort;
 import com.aipipeline.coreapi.job.application.port.out.JobRepository;
 import com.aipipeline.coreapi.job.domain.Job;
+import com.aipipeline.coreapi.job.domain.JobCapability;
 import com.aipipeline.coreapi.job.domain.JobId;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -41,15 +44,18 @@ public class JobCommandService implements JobManagementUseCase {
     private final ArtifactRepository artifactRepository;
     private final JobDispatchPort dispatchPort;
     private final TimeProvider timeProvider;
+    private final DocumentCatalogService catalogService;
 
     public JobCommandService(JobRepository jobRepository,
                              ArtifactRepository artifactRepository,
                              JobDispatchPort dispatchPort,
-                             TimeProvider timeProvider) {
+                             TimeProvider timeProvider,
+                             DocumentCatalogService catalogService) {
         this.jobRepository = jobRepository;
         this.artifactRepository = artifactRepository;
         this.dispatchPort = dispatchPort;
         this.timeProvider = timeProvider;
+        this.catalogService = catalogService;
     }
 
     @Override
@@ -73,6 +79,14 @@ public class JobCommandService implements JobManagementUseCase {
                     staged.checksumSha256(),
                     now);
             inputs.add(artifact);
+            if (saved.getCapability() == JobCapability.OCR_EXTRACT
+                    && staged.type() == ArtifactType.INPUT_FILE) {
+                catalogService.registerProcessingSourceFile(
+                        staged.originalFileName(),
+                        staged.contentType(),
+                        staged.storageUri(),
+                        now);
+            }
         }
         if (!inputs.isEmpty()) {
             artifactRepository.saveAll(inputs);

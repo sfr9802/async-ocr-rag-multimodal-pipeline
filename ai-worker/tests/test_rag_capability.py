@@ -20,9 +20,9 @@ from app.capabilities.base import CapabilityInput, CapabilityInputArtifact
 from app.capabilities.rag.capability import RagCapability, RagCapabilityConfig
 from app.capabilities.rag.embeddings import HashingEmbedder
 from app.capabilities.rag.faiss_index import FaissIndex
-from app.capabilities.rag.generation import ExtractiveGenerator
+from app.capabilities.rag.generation import ExtractiveGenerator, RetrievedChunk
 from app.capabilities.rag.metadata_store import ChunkLookupResult
-from app.capabilities.rag.retriever import Retriever
+from app.capabilities.rag.retriever import RetrievalReport, Retriever
 
 
 class _FakeMetadataStore:
@@ -46,7 +46,7 @@ class _FakeMetadataStore:
         return [self._by_row[i] for i in faiss_row_ids if i in self._by_row]
 
 
-def _build_in_memory_rag(tmp_path: Path) -> RagCapability:
+def _build_in_memory_rag(tmp_path: Path, audit_store=None) -> RagCapability:
     passages = [
         ("chunk-1", "doc-aoi",  "overview",  "Aoi Tsukishiro is a new arrival who tends luminescent gardens suspended above the clouds."),
         ("chunk-2", "doc-aoi",  "characters","Grandmother Rin is the village's oldest gardener, stern about pruning."),
@@ -81,6 +81,7 @@ def _build_in_memory_rag(tmp_path: Path) -> RagCapability:
         retriever=retriever,
         generator=ExtractiveGenerator(),
         config=RagCapabilityConfig(top_k=3),
+        audit_store=audit_store,
     )
 
 
@@ -124,6 +125,87 @@ def test_rag_capability_emits_retrieval_and_answer_artifacts(tmp_path):
     # from the retrieval step.
     doc_ids_in_answer = [d for d in ("doc-aoi", "doc-mech", "doc-book", "doc-cats") if d in answer]
     assert doc_ids_in_answer, f"answer should cite retrieved doc ids: {answer}"
+
+
+def test_retrieval_payload_includes_search_unit_citation_contract():
+    report = RetrievalReport(
+        query="diagram",
+        top_k=1,
+        index_version="test-v1",
+        embedding_model="hashing",
+        reranker_name="noop",
+        results=[
+            RetrievedChunk(
+                chunk_id="chunk-1",
+                doc_id="doc-1",
+                section="architecture",
+                text="architecture diagram caption",
+                score=0.88,
+                search_unit_id="unit-image-1",
+                source_file_id="source-file-1",
+                source_file_name="design.pdf",
+                extracted_artifact_id="artifact-1",
+                artifact_type="IMAGE_CAPTION_JSON",
+                unit_type="IMAGE",
+                unit_key="image:fig-7",
+                title="architecture diagram",
+                section_path="Architecture",
+                page_start=3,
+                page_end=3,
+                metadata_json={"bbox": [1, 2, 3, 4]},
+            )
+        ],
+    )
+
+    body = json.loads(RagCapability._retrieval_payload(report))
+    hit = body["results"][0]
+
+    assert hit["searchUnitId"] == "unit-image-1"
+    assert hit["unitType"] == "IMAGE"
+    assert hit["pageStart"] == 3
+    assert hit["sectionPath"] == "Architecture"
+    assert hit["artifactType"] == "IMAGE_CAPTION_JSON"
+    assert hit["citation"]["searchUnitId"] == "unit-image-1"
+    assert hit["citation"]["unitId"] == "unit-image-1"
+    assert hit["citation"]["unitType"] == "IMAGE"
+    assert hit["citation"]["unitKey"] == "image:fig-7"
+    assert hit["citation"]["title"] == "architecture diagram"
+    assert hit["citation"]["imageId"] == "fig-7"
+    assert hit["citation"]["bbox"] == [1, 2, 3, 4]
+    assert hit["citation"]["artifactId"] == "artifact-1"
+    assert hit["citation"]["artifactType"] == "IMAGE_CAPTION_JSON"
+    assert hit["grounding"]["hasCitation"] is True
+    assert hit["grounding"]["hasSearchUnitId"] is True
+    assert hit["grounding"]["hasPageRange"] is True
+
+
+def test_rag_capability_records_retrieval_audit_best_effort(tmp_path):
+    class _AuditStore:
+        def __init__(self) -> None:
+            self.calls = []
+
+        def record_retrieval(self, report, *, request_id, user_id):
+            self.calls.append((report, request_id, user_id))
+
+    audit = _AuditStore()
+    cap = _build_in_memory_rag(tmp_path, audit_store=audit)
+    result = cap.run(_make_input("who runs the bookshop?"))
+
+    assert len(result.outputs) == 2
+    assert len(audit.calls) == 1
+    assert audit.calls[0][1] == "job-rag-test"
+    assert audit.calls[0][0].results
+
+
+def test_rag_capability_ignores_audit_store_failure(tmp_path):
+    class _FailingAuditStore:
+        def record_retrieval(self, report, *, request_id, user_id):
+            raise RuntimeError("audit unavailable")
+
+    cap = _build_in_memory_rag(tmp_path, audit_store=_FailingAuditStore())
+    result = cap.run(_make_input("who runs the bookshop?"))
+
+    assert {a.type for a in result.outputs} == {"RETRIEVAL_RESULT", "FINAL_RESPONSE"}
 
 
 def test_rag_capability_rejects_empty_input(tmp_path):

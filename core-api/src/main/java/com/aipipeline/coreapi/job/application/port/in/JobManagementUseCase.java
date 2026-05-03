@@ -48,7 +48,8 @@ public interface JobManagementUseCase {
             String storageUri,
             String contentType,
             Long sizeBytes,
-            String checksumSha256
+            String checksumSha256,
+            String originalFileName
     ) {}
 
     record JobCreationResult(Job job, List<Artifact> inputArtifacts) {}

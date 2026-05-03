@@ -138,6 +138,7 @@ class TaskRunner:
             content=content,
             content_type=claimed.content_type,
             filename=_filename_from_storage_uri(claimed.storage_uri),
+            source_file_id=claimed.source_file_id,
         )
 
     def _execute(self, capability: Capability, cap_input: CapabilityInput) -> CapabilityOutput:

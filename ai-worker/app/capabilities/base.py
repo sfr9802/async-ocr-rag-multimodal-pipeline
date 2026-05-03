@@ -29,6 +29,7 @@ class CapabilityInputArtifact:
     content: bytes
     content_type: Optional[str] = None
     filename: Optional[str] = None
+    source_file_id: Optional[str] = None
 
 
 @dataclass(frozen=True)

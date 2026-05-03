@@ -86,7 +86,8 @@ public class JobController {
                     stored.storageUri(),
                     "text/plain; charset=utf-8",
                     stored.sizeBytes(),
-                    stored.checksumSha256());
+                    stored.checksumSha256(),
+                    "prompt.txt");
 
             var result = jobManagement.createAndEnqueue(new CreateJobCommand(capability, List.of(staged)));
             return ResponseEntity.accepted().body(JobResponses.JobCreated.from(result.job(), result.inputArtifacts()));
@@ -145,7 +146,8 @@ public class JobController {
                     storedFile.storageUri(),
                     file.getContentType(),
                     storedFile.sizeBytes(),
-                    storedFile.checksumSha256()));
+                    storedFile.checksumSha256(),
+                    file.getOriginalFilename()));
 
             if (text != null && !text.isBlank()) {
                 byte[] textBytes = text.getBytes(StandardCharsets.UTF_8);
@@ -163,7 +165,8 @@ public class JobController {
                         storedText.storageUri(),
                         "text/plain; charset=utf-8",
                         storedText.sizeBytes(),
-                        storedText.checksumSha256()));
+                        storedText.checksumSha256(),
+                        "prompt.txt"));
             }
 
             var result = jobManagement.createAndEnqueue(new CreateJobCommand(capability, stagedInputs));

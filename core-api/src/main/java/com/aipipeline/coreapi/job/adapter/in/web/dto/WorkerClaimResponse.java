@@ -15,6 +15,7 @@ public record WorkerClaimResponse(
 
     public record ClaimedInput(
             String artifactId,
+            String sourceFileId,
             String type,
             String storageUri,
             String contentType,
@@ -25,6 +26,7 @@ public record WorkerClaimResponse(
         List<ClaimedInput> mapped = r.inputs().stream()
                 .map(i -> new ClaimedInput(
                         i.artifactId(),
+                        i.sourceFileId(),
                         i.type().name(),
                         i.storageUri(),
                         i.contentType(),

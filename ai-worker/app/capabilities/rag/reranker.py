@@ -47,6 +47,7 @@ from __future__ import annotations
 import logging
 import time
 from abc import ABC, abstractmethod
+from dataclasses import replace
 from functools import lru_cache
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -464,14 +465,7 @@ def _replace_rerank_score(
     mutate. The original ``score`` (bi-encoder similarity) is preserved
     so downstream consumers that want to log both can do so.
     """
-    return RetrievedChunk(
-        chunk_id=chunk.chunk_id,
-        doc_id=chunk.doc_id,
-        section=chunk.section,
-        text=chunk.text,
-        score=chunk.score,
-        rerank_score=score,
-    )
+    return replace(chunk, rerank_score=score)
 
 
 # ---------------------------------------------------------------------------
