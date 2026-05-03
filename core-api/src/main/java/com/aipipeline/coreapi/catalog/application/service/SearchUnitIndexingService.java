@@ -45,7 +45,6 @@ public class SearchUnitIndexingService {
             DocumentCatalogService.SEARCH_UNIT_PAGE,
             DocumentCatalogService.SEARCH_UNIT_SECTION,
             DocumentCatalogService.SEARCH_UNIT_TABLE,
-            DocumentCatalogService.SEARCH_UNIT_IMAGE,
             DocumentCatalogService.SEARCH_UNIT_CHUNK);
 
     private static final Logger log = LoggerFactory.getLogger(SearchUnitIndexingService.class);
@@ -219,7 +218,8 @@ public class SearchUnitIndexingService {
         put(metadata, "artifact_type", artifactType);
         put(metadata, "index_id", stableIndexId(unit));
         JsonNode unitMetadata = parseMetadata(unit.getMetadataJson());
-        put(metadata, "fileType", textOrNull(unitMetadata, "fileType"));
+        String unitFileType = textOrNull(unitMetadata, "fileType");
+        put(metadata, "fileType", unitFileType == null && source != null ? source.getFileType() : unitFileType);
         put(metadata, "sheetName", textOrNull(unitMetadata, "sheetName"));
         put(metadata, "sheetIndex", intOrNull(unitMetadata, "sheetIndex"));
         put(metadata, "cellRange", firstText(unitMetadata, "cellRange", "range", "usedRange"));
@@ -231,6 +231,7 @@ public class SearchUnitIndexingService {
         put(metadata, "columnEnd", intOrNull(unitMetadata, "columnEnd"));
         if (source != null) {
             put(metadata, "source_file_name", source.getOriginalFileName());
+            put(metadata, "sourceFileName", source.getOriginalFileName());
             put(metadata, "original_filename", source.getOriginalFileName());
         }
         return metadata;
@@ -238,28 +239,42 @@ public class SearchUnitIndexingService {
 
     private Embeddability embeddability(SearchUnitJpaEntity unit) {
         String type = unit.getCanonicalUnitType();
+        if (unit.getTextContent() == null || unit.getTextContent().trim().isEmpty()) {
+            return Embeddability.skip("text_content is blank; SearchUnit is not embeddable");
+        }
+        JsonNode unitMetadata = parseMetadata(unit.getMetadataJson());
         if (!INDEXABLE_UNIT_TYPES.contains(type)) {
             return Embeddability.skip("unit_type is not indexable: " + type);
         }
-        if (unit.getTextContent() == null || unit.getTextContent().trim().isEmpty()) {
-            return Embeddability.skip("text_content is blank; SearchUnit is not embeddable");
+        if (DocumentCatalogService.SEARCH_UNIT_DOCUMENT.equals(type) && !isSpreadsheetMetadata(unitMetadata)) {
+            return Embeddability.skip("DOCUMENT SearchUnit is not embedded directly; use PAGE/SECTION/TABLE/CHUNK");
         }
         if (unit.getContentSha256() == null || unit.getContentSha256().isBlank()) {
             return Embeddability.skip("content_sha256 is missing; SearchUnit is not embeddable");
         }
-        if (!metadataAllowsIndexing(unit.getMetadataJson())) {
+        if (!metadataAllowsIndexing(unitMetadata)) {
             return Embeddability.skip("metadata_json.indexable=false");
         }
         return Embeddability.yes();
     }
 
-    private boolean metadataAllowsIndexing(String metadataJson) {
-        JsonNode root = parseMetadata(metadataJson);
+    private boolean metadataAllowsIndexing(JsonNode root) {
         if (root.isMissingNode()) {
             return true;
         }
         JsonNode indexable = root.path("indexable");
         return !indexable.isBoolean() || indexable.asBoolean();
+    }
+
+    private static boolean isSpreadsheetMetadata(JsonNode root) {
+        String fileType = textOrNull(root, "fileType");
+        if (fileType == null) {
+            return false;
+        }
+        String normalized = fileType.trim().toLowerCase();
+        return "xlsx".equals(normalized)
+                || "xlsm".equals(normalized)
+                || "spreadsheet".equals(normalized);
     }
 
     private JsonNode parseMetadata(String metadataJson) {

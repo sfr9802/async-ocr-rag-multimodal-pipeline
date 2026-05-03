@@ -665,7 +665,7 @@ def _retrieved_chunk_from_lookup(hit, *, score: float) -> RetrievedChunk:
         section_path=_str_or_none(_extra(extra, "sectionPath", "section_path")) or (hit.section or None),
         page_start=_int_or_none(_extra(extra, "pageStart", "page_start")),
         page_end=_int_or_none(_extra(extra, "pageEnd", "page_end")),
-        metadata_json=_dict_or_none(_extra(extra, "metadataJson", "metadata_json", "metadata")),
+        metadata_json=_dict_or_none(_extra(extra, "metadataJson", "metadata_json", "metadata")) or extra,
     )
 
 

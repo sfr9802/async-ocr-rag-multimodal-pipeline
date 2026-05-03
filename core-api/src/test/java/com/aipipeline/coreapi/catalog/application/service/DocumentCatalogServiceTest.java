@@ -330,6 +330,7 @@ class DocumentCatalogServiceTest {
         assertThat(document.getTitle()).isEqualTo("sales.xlsx");
         assertThat(document.getMetadataJson()).contains("\"fileType\":\"xlsx\"");
         assertThat(document.getMetadataJson()).contains("\"role\":\"workbook\"");
+        assertThat(document.getMetadataJson()).contains("\"sheetNames\":[\"매출\"]");
 
         SearchUnitJpaEntity section = unitCaptor.getAllValues().get(1);
         assertThat(section.getUnitKey()).isEqualTo("sheet:0:매출");

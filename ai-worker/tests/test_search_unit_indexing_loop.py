@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from app.capabilities.rag.embeddings import HashingEmbedder
@@ -132,6 +133,26 @@ class _FakeMetadataStore:
         self.index_builds.append(kwargs)
 
 
+class _CountingEmbedder:
+    model_name = "counting-embedder"
+    dimension = 8
+
+    def __init__(self):
+        self.passages = []
+
+    def embed_passages(self, texts):
+        self.passages.extend(texts)
+        rows = []
+        for index, _text in enumerate(texts, start=1):
+            row = np.zeros(self.dimension, dtype=np.float32)
+            row[0] = float(index)
+            rows.append(row)
+        return np.vstack(rows).astype(np.float32) if rows else np.empty((0, self.dimension), dtype=np.float32)
+
+    def embed_queries(self, texts):
+        return self.embed_passages(texts)
+
+
 def test_once_mode_claims_and_exits_when_empty():
     core = _FakeCoreApi(units=[])
     indexer = _FakeIndexer()
@@ -254,3 +275,28 @@ def test_vector_indexer_upserts_same_search_unit_with_stable_index_id(tmp_path: 
     assert chunk.extra["indexId"] == first.index_id
     assert chunk.extra["contentSha256"] == "hash-2"
     assert (tmp_path / "rag-index" / "ingest_manifest.json").exists()
+
+
+def test_vector_indexer_skips_duplicate_same_content_model_and_variant(tmp_path: Path):
+    metadata = _FakeMetadataStore()
+    index = FaissIndex(tmp_path / "rag-index")
+    embedder = _CountingEmbedder()
+    indexer = SearchUnitVectorIndexer(
+        embedder=embedder,
+        metadata_store=metadata,
+        index=index,
+        embedding_text_variant="retrieval_title_section",
+        max_seq_length=1024,
+    )
+    doc = document_from_claim(_claim_unit().model_dump(by_alias=True))
+
+    first = indexer.index_documents([doc])
+    second = indexer.index_documents([doc])
+
+    assert first.indexed[0].faiss_row_id == second.indexed[0].faiss_row_id == 0
+    assert len(embedder.passages) == 1
+    assert embedder.passages[0] != doc.text_content
+    assert "Source: doc.pdf" in embedder.passages[0]
+    assert "Title: Page 1" in embedder.passages[0]
+    assert "Page: 1" in embedder.passages[0]
+    assert len(metadata.index_builds) == 1

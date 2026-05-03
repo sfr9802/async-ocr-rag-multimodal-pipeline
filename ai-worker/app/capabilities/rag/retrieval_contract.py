@@ -49,6 +49,7 @@ def citation_payload(chunk: RetrievedChunk) -> dict[str, Any]:
     metadata = chunk.metadata_json or {}
     search_unit_id = chunk.search_unit_id or chunk.chunk_id
     unit_type = chunk.unit_type or "CHUNK"
+    table_id = metadata.get("tableId") or metadata.get("tableName") or _id_from_unit_key(chunk.unit_key, "table")
     return {
         "sourceFileId": chunk.source_file_id or chunk.doc_id,
         "sourceFileName": chunk.source_file_name,
@@ -60,7 +61,14 @@ def citation_payload(chunk: RetrievedChunk) -> dict[str, Any]:
         "pageStart": chunk.page_start,
         "pageEnd": chunk.page_end,
         "sectionPath": chunk.section_path or chunk.section,
-        "tableId": _id_from_unit_key(chunk.unit_key, "table"),
+        "sheetName": metadata.get("sheetName"),
+        "sheetIndex": metadata.get("sheetIndex"),
+        "cellRange": metadata.get("cellRange") or metadata.get("range") or metadata.get("usedRange"),
+        "rowStart": metadata.get("rowStart"),
+        "rowEnd": metadata.get("rowEnd"),
+        "columnStart": metadata.get("columnStart"),
+        "columnEnd": metadata.get("columnEnd"),
+        "tableId": table_id,
         "imageId": _id_from_unit_key(chunk.unit_key, "image"),
         "bbox": metadata.get("bbox") or metadata.get("boundingBox"),
         "artifactId": chunk.extracted_artifact_id,

@@ -94,6 +94,9 @@ def test_xlsx_extract_creates_row_window_chunks_for_large_sheets():
     assert sheet["chunks"][0]["cellRange"].startswith("A2:")
     assert sheet["chunks"][0]["range"].startswith("A2:")
     assert "항목: item-1" in sheet["chunks"][0]["text"]
+    assert "값: 1" in sheet["chunks"][0]["text"]
+    assert "항목: item-60" in sheet["chunks"][1]["text"]
+    assert "값: 60" in sheet["chunks"][1]["text"]
 
 
 def test_xlsx_extract_keeps_blank_sheet_text_blank_for_indexing_skip():

@@ -62,11 +62,13 @@ class SearchUnitIndexingServiceTest {
         assertThat(item.indexMetadata())
                 .containsEntry("search_unit_id", "unit-1")
                 .containsEntry("source_file_id", "source-file-1")
+                .containsEntry("fileType", "IMAGE")
                 .containsEntry("unit_type", "PAGE")
                 .containsEntry("unit_key", "page:1")
                 .containsEntry("content_hash", "hash-1")
                 .containsEntry("artifact_type", "OCR_RESULT_JSON")
-                .containsEntry("source_file_name", "receipt.png");
+                .containsEntry("source_file_name", "receipt.png")
+                .containsEntry("sourceFileName", "receipt.png");
         assertThat(unit.getEmbeddingStatus()).isEqualTo(SearchUnitIndexingService.EMBEDDING_STATUS_EMBEDDING);
     }
 
@@ -158,6 +160,84 @@ class SearchUnitIndexingServiceTest {
         assertThat(claimed).isEmpty();
         assertThat(unit.getEmbeddingStatus()).isEqualTo(SearchUnitIndexingService.EMBEDDING_STATUS_SKIPPED);
         assertThat(unit.getEmbeddingStatusDetail()).contains("text_content is blank");
+    }
+
+    @Test
+    void non_spreadsheet_document_unit_is_skipped_to_avoid_raw_document_embedding() {
+        SearchUnitJpaEntity unit = unit(
+                "unit-document",
+                DocumentCatalogService.SEARCH_UNIT_DOCUMENT,
+                "document",
+                "long full OCR document text",
+                SearchUnitIndexingService.EMBEDDING_STATUS_PENDING,
+                "hash-document");
+        stubCandidates(List.of(unit), List.of());
+        when(searchUnits.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        List<SearchUnitIndexingService.ClaimedSearchUnit> claimed = service()
+                .claimPending("worker-1", 10, Duration.ofMinutes(10), NOW);
+
+        assertThat(claimed).isEmpty();
+        assertThat(unit.getEmbeddingStatus()).isEqualTo(SearchUnitIndexingService.EMBEDDING_STATUS_SKIPPED);
+        assertThat(unit.getEmbeddingStatusDetail()).contains("DOCUMENT SearchUnit is not embedded directly");
+    }
+
+    @Test
+    void xlsx_workbook_document_can_be_claimed_with_file_metadata_for_guarded_builder() {
+        SearchUnitJpaEntity unit = new SearchUnitJpaEntity(
+                "unit-workbook",
+                "source-file-1",
+                "artifact-1",
+                DocumentCatalogService.SEARCH_UNIT_DOCUMENT,
+                "workbook",
+                "sales.xlsx",
+                null,
+                null,
+                null,
+                "full workbook text that worker-side builder must not embed as-is",
+                """
+                        {
+                          "fileType": "xlsx",
+                          "role": "workbook",
+                          "sheetNames": ["Sales", "Summary"]
+                        }
+                        """,
+                SearchUnitIndexingService.EMBEDDING_STATUS_PENDING,
+                "hash-workbook",
+                NOW,
+                NOW);
+        SourceFileJpaEntity source = new SourceFileJpaEntity(
+                "source-file-1",
+                "sales.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "SPREADSHEET",
+                "local://source.xlsx",
+                DocumentCatalogService.SOURCE_STATUS_READY,
+                NOW);
+        ExtractedArtifactJpaEntity artifact = new ExtractedArtifactJpaEntity(
+                "artifact-1",
+                "source-file-1",
+                "XLSX_WORKBOOK_JSON",
+                "job-1",
+                "local://xlsx-workbook.json",
+                DocumentCatalogService.XLSX_PIPELINE_VERSION,
+                "checksum",
+                "{}",
+                NOW,
+                NOW);
+        stubCandidates(List.of(unit), List.of());
+        when(searchUnits.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(sourceFiles.findAllById(any())).thenReturn(List.of(source));
+        when(extractedArtifacts.findAllById(any())).thenReturn(List.of(artifact));
+
+        List<SearchUnitIndexingService.ClaimedSearchUnit> claimed = service()
+                .claimPending("worker-1", 10, Duration.ofMinutes(10), NOW);
+
+        assertThat(claimed).hasSize(1);
+        assertThat(claimed.getFirst().indexMetadata())
+                .containsEntry("fileType", "xlsx")
+                .containsEntry("sourceFileName", "sales.xlsx")
+                .containsEntry("artifact_type", "XLSX_WORKBOOK_JSON");
     }
 
     @Test

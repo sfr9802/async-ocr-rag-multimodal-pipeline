@@ -789,6 +789,7 @@ public class DocumentCatalogService {
 
         List<SearchUnitDraft> units = new ArrayList<>();
         List<String> visibleSheetTexts = new ArrayList<>();
+        List<String> visibleSheetNames = new ArrayList<>();
         int sheetCount = intOrNull(workbook, "sheetCount") == null
                 ? (sheets.isArray() ? sheets.size() : 0)
                 : intOrNull(workbook, "sheetCount");
@@ -805,11 +806,12 @@ public class DocumentCatalogService {
                 if (hidden && !sheet.path("indexable").isBoolean()) {
                     indexable = false;
                 }
+                String sheetName = textOrDefault(sheet.path("name"), "Sheet" + (sheetIndex + 1));
                 if (!indexable) {
                     continue;
                 }
 
-                String sheetName = textOrDefault(sheet.path("name"), "Sheet" + (sheetIndex + 1));
+                visibleSheetNames.add(sheetName);
                 String sheetKey = xlsxSheetKey(sheetIndex, sheetName);
                 String usedRange = firstText(sheet, "usedRange", "range");
                 String sheetText = firstText(sheet, "compactText", "text");
@@ -877,6 +879,7 @@ public class DocumentCatalogService {
         documentMetadata.put("sheetCount", sheetCount);
         documentMetadata.put("visibleSheetCount", workbook.path("visibleSheetCount").asInt(visibleSheetTexts.size()));
         documentMetadata.put("resultArtifactId", workbookJsonArtifactId);
+        documentMetadata.set("sheetNames", objectMapper.valueToTree(visibleSheetNames));
         units.add(0, new SearchUnitDraft(
                 source.getId(),
                 workbookJsonArtifactId,
