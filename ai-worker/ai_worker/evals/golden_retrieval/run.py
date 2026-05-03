@@ -18,6 +18,7 @@ class GoldenQuery:
     id: str
     query: str
     category: Optional[str] = None
+    query_types: list[str] = field(default_factory=list)
     expected: list[dict[str, Any]] = field(default_factory=list)
     acceptable: list[dict[str, Any]] = field(default_factory=list)
     must_not: list[dict[str, Any]] = field(default_factory=list)
@@ -35,6 +36,7 @@ def load_golden_queries(path: Path) -> list[GoldenQuery]:
             id=str(raw["id"]),
             query=str(raw["query"]),
             category=_str_or_none(raw.get("category")),
+            query_types=_list_of_str(raw.get("queryTypes") or raw.get("query_types")),
             expected=_list_of_dicts(raw.get("expected")),
             acceptable=_list_of_dicts(raw.get("acceptable")),
             must_not=_list_of_dicts(raw.get("mustNot") or raw.get("must_not")),
@@ -51,6 +53,12 @@ def load_source_manifest(path: Optional[Path]) -> dict[str, Any]:
     raw = json.loads(path.read_text(encoding="utf-8"))
     sources = raw.get("sources") if isinstance(raw, dict) else None
     if not isinstance(sources, list):
+        if isinstance(raw, dict):
+            return {
+                key: value
+                for key, value in raw.items()
+                if key in {"dataset", "datasetId", "source", "matchingIdentity"}
+            }
         return {}
     by_id: dict[str, Any] = {}
     by_file: dict[str, Any] = {}
@@ -63,7 +71,11 @@ def load_source_manifest(path: Optional[Path]) -> dict[str, Any]:
             by_id[logical_id] = source
         if file_name:
             by_file[file_name] = source
-    return {"by_id": by_id, "by_file": by_file}
+    manifest = {"by_id": by_id, "by_file": by_file}
+    for key in ("dataset", "datasetId", "source", "matchingIdentity"):
+        if isinstance(raw, dict) and key in raw:
+            manifest[key] = raw[key]
+    return manifest
 
 
 def evaluate_golden_queries(
@@ -73,6 +85,8 @@ def evaluate_golden_queries(
     top_k: int,
     manifest: Optional[dict[str, Any]] = None,
 ) -> dict[str, Any]:
+    from ai_worker.evals.golden_retrieval.metrics import ndcg_at_k
+
     manifest = manifest or {}
     rows: list[dict[str, Any]] = []
     failures: list[dict[str, Any]] = []
@@ -81,6 +95,7 @@ def evaluate_golden_queries(
         "hit@3": 0.0,
         "hit@5": 0.0,
         "mrr": 0.0,
+        "ndcg@5": 0.0,
         "source_file_accuracy@5": 0.0,
         "page_accuracy@5": 0.0,
         "unit_type_accuracy@5": 0.0,
@@ -101,6 +116,13 @@ def evaluate_golden_queries(
                 metric_totals[f"hit@{k}"] += 1.0
         if first_match_rank is not None:
             metric_totals["mrr"] += 1.0 / float(first_match_rank)
+        metric_totals["ndcg@5"] += ndcg_at_k(
+            results,
+            golden.expected,
+            golden.acceptable,
+            manifest=manifest,
+            k=min(5, top_k),
+        )
         if _has_source_match(results[:top_k], positives, manifest):
             metric_totals["source_file_accuracy@5"] += 1.0
         if _has_page_match(results[:top_k], positives, manifest):
@@ -129,7 +151,11 @@ def evaluate_golden_queries(
     n = len(queries) or 1
     metrics = {key: round(value / n, 6) for key, value in metric_totals.items()}
     metrics["must_not_violation_count"] = must_not_violations
+    title = "Golden Retrieval Eval"
+    if manifest.get("dataset") == "kovidore-v2-economic-beir" or manifest.get("datasetId") == "kovidore-v2-economic-beir":
+        title = "Golden Retrieval Eval - KoViDoRe Economic"
     return {
+        "title": title,
         "queries": len(queries),
         "topK": top_k,
         "metrics": metrics,
@@ -141,13 +167,15 @@ def evaluate_golden_queries(
 
 def print_report(report: dict[str, Any]) -> None:
     metrics = report["metrics"]
-    print("Golden Retrieval Eval")
+    title = report.get("title") or "Golden Retrieval Eval"
+    print(title)
     print("")
     print(f"queries: {report['queries']}")
     print(f"hit@1: {metrics['hit@1']:.2f}")
     print(f"hit@3: {metrics['hit@3']:.2f}")
     print(f"hit@5: {metrics['hit@5']:.2f}")
     print(f"mrr: {metrics['mrr']:.2f}")
+    print(f"ndcg@5: {metrics['ndcg@5']:.2f}")
     print(f"source_file_accuracy@5: {metrics['source_file_accuracy@5']:.2f}")
     print(f"page_accuracy@5: {metrics['page_accuracy@5']:.2f}")
     print(f"unit_type_accuracy@5: {metrics['unit_type_accuracy@5']:.2f}")
@@ -245,25 +273,28 @@ def result_matches_spec(
     manifest: Optional[dict[str, Any]] = None,
 ) -> bool:
     manifest = manifest or {}
-    source_names = _spec_source_names(spec, manifest)
-    result_source_name = _value(result, "sourceFileName", "source_file_name", "originalFilename")
-
-    if source_names and result_source_name not in source_names:
-        return False
-    if spec.get("sourceFileName") and not source_names and result_source_name != spec.get("sourceFileName"):
+    if not _result_source_matches_spec(result, spec, manifest):
         return False
     if spec.get("sourceFileId") and _value(result, "sourceFileId", "source_file_id") != spec.get("sourceFileId"):
         return False
     if spec.get("searchUnitId") and _value(result, "searchUnitId", "search_unit_id") != spec.get("searchUnitId"):
         return False
-    if spec.get("unitType") and _value(result, "unitType", "unit_type") != spec.get("unitType"):
-        return False
-    if spec.get("unitKey") and _value(result, "unitKey", "unit_key") != spec.get("unitKey"):
-        return False
-    if "pageStart" in spec and _int_or_none(_value(result, "pageStart", "page_start")) != int(spec["pageStart"]):
-        return False
-    if "pageEnd" in spec and _int_or_none(_value(result, "pageEnd", "page_end")) != int(spec["pageEnd"]):
-        return False
+
+    spec_unit_type = _str_or_none(spec.get("unitType"))
+    spec_unit_key = _str_or_none(spec.get("unitKey"))
+    result_unit_type = _str_or_none(_value(result, "unitType", "unit_type"))
+    result_unit_key = _str_or_none(_value(result, "unitKey", "unit_key"))
+
+    if spec_unit_type or spec_unit_key:
+        has_result_identity = bool(result_unit_type and result_unit_key)
+        if has_result_identity:
+            return result_unit_type == spec_unit_type and result_unit_key == spec_unit_key
+        if spec_unit_type and result_unit_type and result_unit_type != spec_unit_type:
+            return False
+        return _page_range_matches(result, spec)
+
+    if "pageStart" in spec or "pageEnd" in spec:
+        return _page_range_matches(result, spec)
     return True
 
 
@@ -315,9 +346,7 @@ def _has_page_match(
         for spec in page_specs:
             if not _result_source_matches_spec(result, spec, manifest):
                 continue
-            spec_start = int(spec.get("pageStart", spec.get("pageEnd")))
-            spec_end = int(spec.get("pageEnd", spec.get("pageStart")))
-            if result_start <= spec_end and result_end >= spec_start:
+            if _page_range_matches(result, spec):
                 return True
     return False
 
@@ -400,6 +429,12 @@ def _list_of_dicts(value: Any) -> list[dict[str, Any]]:
     return [dict(item) for item in value if isinstance(item, dict)]
 
 
+def _list_of_str(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item) for item in value if _str_or_none(item)]
+
+
 def _str_or_none(value: Any) -> Optional[str]:
     if value is None:
         return None
@@ -414,6 +449,20 @@ def _int_or_none(value: Any) -> Optional[int]:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _page_range_matches(result: dict[str, Any], spec: dict[str, Any]) -> bool:
+    if "pageStart" not in spec and "pageEnd" not in spec:
+        return False
+    result_start = _int_or_none(_value(result, "pageStart", "page_start"))
+    result_end = _int_or_none(_value(result, "pageEnd", "page_end"))
+    if result_start is None or result_end is None:
+        return False
+    spec_start = _int_or_none(spec.get("pageStart", spec.get("pageEnd")))
+    spec_end = _int_or_none(spec.get("pageEnd", spec.get("pageStart")))
+    if spec_start is None or spec_end is None:
+        return False
+    return result_start <= spec_end and result_end >= spec_start
 
 
 if __name__ == "__main__":  # pragma: no cover

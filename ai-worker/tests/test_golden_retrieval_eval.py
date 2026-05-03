@@ -174,6 +174,7 @@ def test_eval_metrics_and_failure_report_are_computed():
     assert report["metrics"]["hit@3"] == pytest.approx(0.5)
     assert report["metrics"]["hit@5"] == pytest.approx(0.5)
     assert report["metrics"]["mrr"] == pytest.approx(0.5)
+    assert report["metrics"]["ndcg@5"] == pytest.approx(0.398354, rel=1e-6)
     assert report["metrics"]["source_file_accuracy@5"] == pytest.approx(0.5)
     assert report["metrics"]["page_accuracy@5"] == pytest.approx(0.5)
     assert report["metrics"]["unit_type_accuracy@5"] == pytest.approx(0.5)
