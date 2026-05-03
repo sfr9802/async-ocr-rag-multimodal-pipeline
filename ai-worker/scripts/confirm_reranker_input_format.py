@@ -1,4 +1,9 @@
-"""Confirm sweep — reranker input passage formatting.
+"""LEGACY V3 ONLY - historical reranker input formatting confirmation.
+
+This script keeps v3 corpus/cache defaults only for archived reproduction. Do
+not use it as an active Phase 7 eval/tuning entrypoint.
+
+Confirm sweep — reranker input passage formatting.
 
 Phase 2 follow-up to ``confirm_embedding_text_variant``. The verdict
 from that run was ``NEED_RERANKER_INPUT_AUDIT_FIRST``: the title /

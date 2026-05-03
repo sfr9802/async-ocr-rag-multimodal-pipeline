@@ -1,4 +1,9 @@
-"""Run the legacy-vs-graph A/B harness using legacy-baseline-final config.
+"""LEGACY V3 ONLY - historical legacy-baseline-final agent-loop A/B.
+
+This script preserves the old legacy-baseline-final replay path. Do not use it
+as an active Phase 7 eval/tuning source of truth.
+
+Run the legacy-vs-graph A/B harness using legacy-baseline-final config.
 
 Loads the locked legacy baseline manifest + ``selected_config.json``,
 applies those values to a per-run ``WorkerSettings`` copy (without

@@ -1,0 +1,128 @@
+{
+  "distribution": {
+    "chunks": {
+      "test": 11308,
+      "train": 111588,
+      "valid": 12706
+    },
+    "group_size": {
+      "test": {
+        "avg_chunks_per_group": 33.16129032258065,
+        "avg_docs_per_group": 1.1436950146627567,
+        "max_chunks_per_group": 198,
+        "max_docs_per_group": 4
+      },
+      "train": {
+        "avg_chunks_per_group": 41.040088267745496,
+        "avg_docs_per_group": 1.2920191246781905,
+        "max_chunks_per_group": 2625,
+        "max_docs_per_group": 120
+      },
+      "valid": {
+        "avg_chunks_per_group": 37.26099706744868,
+        "avg_docs_per_group": 1.2052785923753666,
+        "max_chunks_per_group": 277,
+        "max_docs_per_group": 9
+      }
+    },
+    "page_type": {
+      "test": {
+        "character": 34,
+        "episode": 5,
+        "other": 3,
+        "plot": 1,
+        "review": 11,
+        "setting": 6,
+        "work": 330
+      },
+      "train": {
+        "character": 332,
+        "episode": 62,
+        "other": 297,
+        "plot": 52,
+        "review": 75,
+        "setting": 60,
+        "work": 2635
+      },
+      "valid": {
+        "character": 48,
+        "other": 15,
+        "plot": 3,
+        "review": 12,
+        "setting": 6,
+        "work": 327
+      }
+    },
+    "section_type": {
+      "test": {
+        "character": 2329,
+        "episode": 971,
+        "evaluation": 1432,
+        "music": 753,
+        "other": 138,
+        "production": 167,
+        "setting": 331,
+        "summary": 2793,
+        "synopsis": 549,
+        "trivia": 1835,
+        "worldview": 10
+      },
+      "train": {
+        "character": 25766,
+        "concept": 63,
+        "episode": 10789,
+        "evaluation": 10746,
+        "music": 7217,
+        "other": 4877,
+        "production": 2023,
+        "setting": 4055,
+        "summary": 23141,
+        "synopsis": 6828,
+        "trivia": 15882,
+        "worldview": 201
+      },
+      "valid": {
+        "character": 2978,
+        "episode": 1101,
+        "evaluation": 1162,
+        "music": 761,
+        "other": 395,
+        "production": 260,
+        "setting": 502,
+        "summary": 2927,
+        "synopsis": 705,
+        "trivia": 1884,
+        "worldview": 31
+      }
+    }
+  },
+  "extension": null,
+  "fallback_group_count": 0,
+  "grouping": {
+    "fallback_doc_ids_sample": [],
+    "fallback_group_count": 0,
+    "fallback_titles_sample": [],
+    "total_docs": 4314,
+    "work_id_coverage_ratio": 1.0,
+    "work_id_missing_docs": 0,
+    "work_id_present_docs": 4314
+  },
+  "leakage": {
+    "doc_id_overlap": [],
+    "group_id_overlap": []
+  },
+  "schema_version": "namu_anime_v4_split_report",
+  "split_doc_counts": {
+    "test": 390,
+    "train": 3513,
+    "valid": 411
+  },
+  "split_group_counts": {
+    "test": 341,
+    "train": 2719,
+    "valid": 341
+  },
+  "total_docs": 4314,
+  "total_groups": 3401,
+  "warnings": []
+}

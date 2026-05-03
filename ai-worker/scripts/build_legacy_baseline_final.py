@@ -1,4 +1,10 @@
-"""Build the legacy-baseline-final report directory from a phase 2A sweep.
+"""LEGACY V3 ONLY - historical legacy-baseline-final report builder.
+
+This script preserves the Phase 2A report materialization path for archived
+reproduction. Do not use its generated v3 command examples as active Phase 7
+eval/tuning guidance.
+
+Build the legacy-baseline-final report directory from a phase 2A sweep.
 
 Reads the artifacts under ``eval/reports/legacy-baseline-final/_sweep/``
 (produced by ``python -m eval.run_eval phase2a-latency-sweep``) and

@@ -1,5 +1,10 @@
 # anime_namu_v3 — namu-wiki anime 코퍼스 (1,764개 작품)
 
+> **LEGACY V3 ONLY.** 이 코퍼스는 historical reproduction 과 v3 -> v4
+> migration provenance 용도로만 유지합니다. Phase 7 이후 active
+> eval/tuning 은 `eval/corpora/namu-v4-structured-combined/` 를 기준으로
+> 시작하세요.
+
 Retrieval **코퍼스** (eval query 셋이 아님). retrieval-eval harness 가
 점수 매기는 인덱싱된 문서 저장소로 사용. 이 코퍼스를 타깃으로 하는 eval
 query 는 [`ai-worker/eval/eval_queries/`](../../eval_queries/) 에 있음.

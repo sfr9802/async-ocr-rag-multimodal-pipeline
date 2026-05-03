@@ -164,6 +164,14 @@ from eval.harness.topn_sweep import build_topn_sweep
 
 log = logging.getLogger("eval")
 
+_PHASE7_V4_HELP_NOTE = (
+    "Phase 7 active eval/tuning uses the fail-closed "
+    "eval/experiments/active.yaml guardrail and the v4 corpus under "
+    "eval/corpora/namu-v4-structured-combined/. Any anime_namu_v3 or "
+    "Phase 1/2 corpus examples in this CLI are LEGACY V3 ONLY for "
+    "historical reproduction."
+)
+
 
 # ---------------------------------------------------------------------------
 # Argparse wiring.
@@ -236,6 +244,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="eval.run_eval",
         description="Run an eval harness over a JSONL dataset.",
+        epilog=_PHASE7_V4_HELP_NOTE,
     )
     parser.add_argument(
         "-v", "--verbose", action="store_true",
@@ -319,8 +328,11 @@ def _build_parser() -> argparse.ArgumentParser:
                     help="Path to the eval-queries JSONL "
                          "(see ai-worker/eval/eval_queries/README.md).")
     rt.add_argument("--corpus", type=Path, default=None,
-                    help="Offline corpus JSONL (e.g. "
-                         "eval/corpora/anime_namu_v3/corpus.jsonl). "
+                    help="Offline corpus JSONL. LEGACY V3 ONLY example: "
+                         "eval/corpora/anime_namu_v3/corpus.jsonl. "
+                         "For Phase 7 active work, use v4-specific "
+                         "harnesses/artifacts under "
+                         "eval/corpora/namu-v4-structured-combined/. "
                          "When set, skips the live ragmeta/FAISS stack and "
                          "builds an in-memory retriever.")
     rt.add_argument("--out-dir", type=Path, default=None,
@@ -344,8 +356,9 @@ def _build_parser() -> argparse.ArgumentParser:
                          "OOM on a small GPU.")
     rt.add_argument("--extra-hit-k", type=int, action="append", default=None,
                     help="Additional hit@k cutoff to compute on top of "
-                         "the default {1,3,5}. Used for the Phase 2A "
-                         "candidate-recall report — pass --extra-hit-k 10 "
+                         "the default {1,3,5}. LEGACY V3 ONLY: used for "
+                         "the Phase 2A candidate-recall report — pass "
+                         "--extra-hit-k 10 "
                          "--extra-hit-k 20 --extra-hit-k 50 to surface "
                          "hit@10 / hit@20 / hit@50 in the summary. The "
                          "harness will warn if any cutoff exceeds top-k. "
@@ -353,7 +366,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     # --- retrieval-rerank ---
     #
-    # Phase 2A entrypoint. Same offline retrieval-eval flow as
+    # LEGACY V3 ONLY: Phase 2A entrypoint. Same offline retrieval-eval flow as
     # ``retrieval``, but builds the in-memory Retriever with a
     # cross-encoder reranker stacked on top. dense-top-N candidates
     # flow into the reranker; the reranker returns final-top-K. All
@@ -362,14 +375,17 @@ def _build_parser() -> argparse.ArgumentParser:
     # command line.
     rrk = subs.add_parser(
         "retrieval-rerank",
-        help="Phase 2A: run retrieval eval with a cross-encoder reranker "
-             "stacked on top of the dense retriever.",
+        description="LEGACY V3 ONLY / Phase 2A historical reproduction.",
+        help="LEGACY V3 ONLY / Phase 2A historical reproduction: run "
+             "retrieval eval with a cross-encoder reranker stacked on "
+             "top of the dense retriever.",
     )
     rrk.add_argument("--dataset", required=True, type=Path,
                      help="Eval-queries JSONL.")
     rrk.add_argument("--corpus", required=True, type=Path,
-                     help="Offline corpus JSONL (B2 token-aware-v1 by "
-                          "default for Phase 2A).")
+                     help="Offline corpus JSONL. LEGACY V3 ONLY: Phase 2A "
+                          "B2 token-aware-v1 corpus examples are historical "
+                          "reproduction inputs, not Phase 7 defaults.")
     rrk.add_argument("--out-dir", type=Path, default=None,
                      help="Directory to drop the four output artifacts "
                           "into. Defaults to eval/reports/"
@@ -415,9 +431,10 @@ def _build_parser() -> argparse.ArgumentParser:
                           "(default: half of --reranker-batch-size).")
     rrk.add_argument("--extra-hit-k", type=int, action="append",
                      default=None,
-                     help="Additional hit@k cutoffs (repeatable). Phase 2A "
-                          "rerank reports usually leave this empty — the "
-                          "candidate-recall report exists for that.")
+                     help="Additional hit@k cutoffs (repeatable). LEGACY "
+                          "V3 ONLY: Phase 2A rerank reports usually leave "
+                          "this empty — the candidate-recall report exists "
+                          "for that.")
 
     # --- phase2a-reranker-comparison ---
     #
@@ -426,8 +443,10 @@ def _build_parser() -> argparse.ArgumentParser:
     # Never re-runs retrieval, never re-embeds.
     rcomp = subs.add_parser(
         "phase2a-reranker-comparison",
-        help="Phase 2A: build the side-by-side reranker comparison report "
-             "from N labelled retrieval_eval_report.json files.",
+        description="LEGACY V3 ONLY / Phase 2A historical reproduction.",
+        help="LEGACY V3 ONLY / Phase 2A historical reproduction: build "
+             "the side-by-side reranker comparison report from N labelled "
+             "retrieval_eval_report.json files.",
     )
     rcomp.add_argument(
         "--slice", action="append", required=True,
@@ -451,8 +470,10 @@ def _build_parser() -> argparse.ArgumentParser:
     # --- phase2a-reranker-failure-analysis ---
     rfail = subs.add_parser(
         "phase2a-reranker-failure-analysis",
-        help="Phase 2A: cross-tab dense vs. rerank hit@1 and dump samples "
-             "from the rescued / regressed / both-miss buckets.",
+        description="LEGACY V3 ONLY / Phase 2A historical reproduction.",
+        help="LEGACY V3 ONLY / Phase 2A historical reproduction: cross-tab "
+             "dense vs. rerank hit@1 and dump samples from the rescued / "
+             "regressed / both-miss buckets.",
     )
     rfail.add_argument(
         "--dense-report-dir", required=True, type=Path,
@@ -479,7 +500,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     # --- phase2a-latency-sweep ---
     #
-    # Phase 2A-L entrypoint. Builds the offline corpus + FAISS index ONCE
+    # LEGACY V3 ONLY: Phase 2A-L entrypoint. Builds the offline corpus + FAISS index ONCE
     # and runs the retrieval-eval against it N times — once per
     # ``dense_top_n`` value — to populate the latency-breakdown topN
     # sweep + Pareto frontier + recommended-modes documents in a single
@@ -488,15 +509,18 @@ def _build_parser() -> argparse.ArgumentParser:
     # chunk corpus.
     lswp = subs.add_parser(
         "phase2a-latency-sweep",
-        help="Phase 2A-L: run a topN sweep over an offline corpus, "
-             "then compute the latency-breakdown / Pareto frontier / "
-             "recommended-modes documents.",
+        description="LEGACY V3 ONLY / Phase 2A-L historical reproduction.",
+        help="LEGACY V3 ONLY / Phase 2A-L historical reproduction: run a "
+             "topN sweep over an offline corpus, then compute the "
+             "latency-breakdown / Pareto frontier / recommended-modes "
+             "documents.",
     )
     lswp.add_argument("--dataset", required=True, type=Path,
                       help="Eval-queries JSONL.")
     lswp.add_argument("--corpus", required=True, type=Path,
-                      help="Offline corpus JSONL (B2 token-aware-v1 by "
-                           "default).")
+                      help="Offline corpus JSONL. LEGACY V3 ONLY: B2 "
+                           "token-aware-v1 examples are historical "
+                           "reproduction inputs, not Phase 7 defaults.")
     lswp.add_argument("--out-dir", type=Path, required=True,
                       help="Top-level directory; per-topN run dirs are "
                            "created underneath, plus the sweep / "
@@ -528,8 +552,9 @@ def _build_parser() -> argparse.ArgumentParser:
         "--candidate-recall-extra-hit-k",
         type=int, action="append", default=None,
         help="Extra hit@k cutoffs to compute on the dense-only "
-             "candidate-recall sibling run. Phase 2A-L convention is "
-             "10 / 20 / 50. Pass empty to skip the dense-only run.",
+             "candidate-recall sibling run. LEGACY V3 ONLY: Phase 2A-L "
+             "convention is 10 / 20 / 50. Pass empty to skip the "
+             "dense-only run.",
     )
     lswp.add_argument(
         "--skip-candidate-recall", action="store_true",
@@ -729,8 +754,9 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     al.add_argument(
         "--corpus", required=True, type=Path,
-        help="Path to corpus.jsonl (e.g. "
-             "eval/corpora/anime_namu_v3/corpus.jsonl).",
+        help="Path to corpus.jsonl. LEGACY V3 ONLY example: "
+             "eval/corpora/anime_namu_v3/corpus.jsonl. Phase 7 active "
+             "work should start from namu-v4-structured-combined.",
     )
     al.add_argument(
         "--tokenizer", type=str, default=DEFAULT_TOKENIZER_NAME,
@@ -777,8 +803,9 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     an.add_argument(
         "--corpus", required=True, type=Path,
-        help="Path to corpus.jsonl (e.g. "
-             "eval/corpora/anime_namu_v3/corpus.jsonl).",
+        help="Path to corpus.jsonl. LEGACY V3 ONLY example: "
+             "eval/corpora/anime_namu_v3/corpus.jsonl. Phase 7 active "
+             "work should start from namu-v4-structured-combined.",
     )
     an.add_argument(
         "--tokenizer", type=str, default=DEFAULT_TOKENIZER_NAME,
@@ -884,8 +911,10 @@ def _build_parser() -> argparse.ArgumentParser:
     # eval/corpora/<dir>/. Source corpus is never modified.
     ep = subs.add_parser(
         "emit-preprocessed-corpus",
-        help="Phase 1B: emit a preprocessed corpus.jsonl artifact "
-             "(plus manifest.json). Source corpus is never modified.",
+        description="LEGACY V3 ONLY / Phase 1B historical reproduction.",
+        help="LEGACY V3 ONLY / Phase 1B historical reproduction: emit a "
+             "preprocessed corpus.jsonl artifact (plus manifest.json). "
+             "Source corpus is never modified.",
     )
     ep.add_argument(
         "--corpus", required=True, type=Path,
@@ -903,7 +932,8 @@ def _build_parser() -> argparse.ArgumentParser:
         "--out-dir", type=Path,
         default=Path("eval/corpora/anime_namu_v3_preprocessed"),
         help="Directory to write the variant corpus + manifest "
-             "(default: eval/corpora/anime_namu_v3_preprocessed).",
+             "(LEGACY V3 ONLY default: "
+             "eval/corpora/anime_namu_v3_preprocessed).",
     )
     ep.add_argument(
         "--variant-name", type=str, default=None,

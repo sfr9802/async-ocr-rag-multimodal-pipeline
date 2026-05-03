@@ -1,4 +1,4 @@
-# async-ocr-rag-multimodal-pipeline
+# Async AI Document Pipeline with Domain RAG
 
 Spring Boot API 서버와 FastAPI Worker를 분리하여, RAG 검색 및 AI 처리 작업을 비동기 파이프라인으로 실행하는 포트폴리오 프로젝트입니다.
 
@@ -291,6 +291,10 @@ Redis BRPOP
 
 ## RAG evaluation results
 
+현재 active retrieval/eval 기준선은 **Phase 7 dataset v4**입니다.
+아래 Phase 0-2 표와 `legacy-baseline-final/` 수치는 historical v3/v2 계열
+재현 자료이며, 다음 Phase 7 튜닝의 source of truth 로 사용하지 않습니다.
+
 검색 성능은 `anime_silver_200` 데이터셋을 기준으로 평가했습니다.
 
 - Corpus: 1,764 documents
@@ -429,10 +433,13 @@ production retrieval 코드는 손대지 않았고 LLM rewriter도 사용하지 
 ## Reproduce evaluation
 
 모든 명령은 `ai-worker/` 디렉토리에서 실행합니다. (`cd ai-worker`)  
+Phase 7 이후 작업은 v4 코퍼스와 `eval/reports/phase7/` 산출물을 우선
+사용합니다. 아래 Phase 0-2 명령은 historical reproduction 용도이며,
+현재 tuning/eval 기본 경로로 사용하지 않습니다.
 phase별 절차는 아래 토글을 펼쳐 확인합니다.
 
 <details>
-<summary><b>Phase 0 — fixture baseline</b></summary>
+<summary><b>Historical Phase 0 — fixture baseline</b></summary>
 
 ```bash
 python -m eval.run_eval rag \
@@ -444,7 +451,7 @@ python -m eval.run_eval rag \
 </details>
 
 <details>
-<summary><b>Phase 2A — candidate recall</b></summary>
+<summary><b>Historical Phase 2A — candidate recall (legacy v3)</b></summary>
 
 ```bash
 python -m eval.run_eval retrieval \
@@ -460,7 +467,7 @@ python -m eval.run_eval retrieval \
 </details>
 
 <details>
-<summary><b>Phase 2A — rerank sweep (top-20 / top-50)</b></summary>
+<summary><b>Historical Phase 2A — rerank sweep (legacy v3)</b></summary>
 
 ```bash
 for N in 20 50; do
@@ -674,7 +681,7 @@ python scripts/demo.py --self-test
 - `ai-worker/eval/README.md` — eval harness overview, metric definitions, recommended sequence
 - `ai-worker/eval/datasets/README.md` — eval dataset catalog
 - `ai-worker/eval/corpora/README.md` — retrieval corpus directory convention
-- `ai-worker/eval/corpora/anime_namu_v3/README.md` — namu-wiki anime corpus schema
+- `ai-worker/eval/corpora/anime_namu_v3/README.md` — historical v3 namu-wiki anime corpus schema
 - `ai-worker/eval/eval_queries/README.md` — retrieval eval query sets
 
 ### Tuning

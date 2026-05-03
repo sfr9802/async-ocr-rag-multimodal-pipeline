@@ -6,12 +6,23 @@
 다시 가리킬 수 있도록 코퍼스는 eval query
 ([`../eval_queries/`](../eval_queries/) 참조) 와 분리되어 있습니다.
 
+현재 active Phase 7 기준선은 `namu-v4-structured-combined/` 입니다.
+`anime_namu_v3*` 디렉토리는 historical reproduction / migration
+provenance 용도로만 유지합니다.
+
 ## 디렉토리 구조
 
 ```
 corpora/
+├── namu-v4-structured-combined/
+│   ├── pages_v4.jsonl          canonical v4 pages (gitignored 가능)
+│   ├── chunks_v4.jsonl         structured v4 chunks (gitignored 가능)
+│   ├── rag_chunks.jsonl        production retrieval / answerability join 기준
+│   ├── split_manifest.json
+│   ├── split_manifest.report.json
+│   └── validation_report.json
 ├── anime_namu_v3/
-│   ├── README.md               source 경로, 스키마, re-stage 지침
+│   ├── README.md               legacy v3 source 경로, 스키마, re-stage 지침
 │   └── corpus.jsonl            (gitignore — 261 MB; 필요 시 stage)
 └── README.md                   이 파일
 ```

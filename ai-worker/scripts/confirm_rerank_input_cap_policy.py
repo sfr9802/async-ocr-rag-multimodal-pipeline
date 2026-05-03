@@ -1,4 +1,9 @@
-"""Confirm sweep — rerank-input cap policy comparison.
+"""LEGACY V3 ONLY - historical rerank-input cap policy confirmation.
+
+This script keeps v3 corpus/cache defaults only for archived reproduction. Do
+not use it as an active Phase 7 eval/tuning entrypoint.
+
+Confirm sweep — rerank-input cap policy comparison.
 
 Phase 2 follow-up to ``confirm_reranker_input_format``. The verdict
 from that run was ``ADOPT_RERANKER_TITLE_PREFIX`` on the

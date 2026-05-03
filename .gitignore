@@ -143,6 +143,21 @@ ai-worker/eval/reports/phase7/7.0_retrieval_title_ab/*
 # just the plan doc)
 !ai-worker/eval/reports/phase7/phase7_6_section_aware_reranking_plan.md
 !ai-worker/eval/reports/phase7/PHASE7_WRAP_UP.md
+!ai-worker/eval/reports/phase7/legacy_cleanup_candidates.md
+# Phase 7.7 answerability audit — commit the operator README and any
+# reviewer-labelled outputs / score reports. The raw `*_unlabeled_export`
+# CSV / JSONL drops are regenerable from a retrieval emit + chunk fixture
+# and carry zero labelling signal, so they stay local. Reviewer-filled
+# files MUST use the `*_human_labeled.{csv,jsonl}` naming convention to
+# survive this allowlist.
+!ai-worker/eval/reports/phase7/7.7_answerability_audit/
+ai-worker/eval/reports/phase7/7.7_answerability_audit/*
+!ai-worker/eval/reports/phase7/7.7_answerability_audit/README.md
+!ai-worker/eval/reports/phase7/7.7_answerability_audit/*_GUIDE.md
+!ai-worker/eval/reports/phase7/7.7_answerability_audit/*_human_labeled.csv
+!ai-worker/eval/reports/phase7/7.7_answerability_audit/*_human_labeled.jsonl
+!ai-worker/eval/reports/phase7/7.7_answerability_audit/*_score_report.md
+!ai-worker/eval/reports/phase7/7.7_answerability_audit/*_score_report.json
 # Phase 7.5 — human gold seed 50 tuning + MMR confirm sweep + production
 # promotion + latency smoke + Phase 7.6 section-rerank scaffold. Decision
 # artefacts only (small JSON / MD / digests) — the bulk

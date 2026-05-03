@@ -5,6 +5,11 @@
 ([`../corpora/`](../corpora/) 참조) 에 대해 점수 매겨짐 — 코퍼스가
 haystack, query 가 needle + 정답 키.
 
+> **Phase 7 기준선:** 현재 active retrieval/eval 은 dataset v4 기반입니다.
+> 이 문서의 `anime_namu_v3` 명령은 historical v3 reproduction 용도로만
+> 남아 있으며, 새 Phase 7 tuning/eval 기본 경로가 아닙니다.
+> v4 production retrieval join 은 `rag_chunks.jsonl` 을 기준으로 합니다.
+
 > ⚠️ **엄격한 코퍼스 / query 분리**: 코퍼스 문서를 여기 두지 마세요.
 > 코퍼스 행은 `eval/corpora/<name>/corpus.jsonl` 아래에 살고, query
 > 행의 `expected_doc_ids` 는 어느 코퍼스의 id 를 인용함.
@@ -61,6 +66,7 @@ haystack, query 가 needle + 정답 키.
 
 ## Silver 생성
 
+아래 명령은 v3 silver set historical reproduction 용도입니다.
 `ai-worker/` 에서 실행:
 
 ```bash
@@ -101,6 +107,10 @@ generator 는 절대 섹션 콘텐츠를 조작하지 않음.
 
 `anime_gold_20.jsonl` 은 수동 큐레이션이 진짜 시간이 걸리기 때문에
 의도적으로 작음 (20 행). gold-50 또는 gold-100 으로 확장하려면:
+
+> 이 절차는 v3 corpus 기준 legacy guide 입니다. Phase 7 v4 human-gold
+> seed 확장은 v4 page/chunk ids 와 `rag_chunks.jsonl` namespace 를 기준으로
+> 별도 검증하세요.
 
 1. 개인적 컨텍스트가 있는 코퍼스의 doc 을 선택. 다음으로 검증:
    ```bash

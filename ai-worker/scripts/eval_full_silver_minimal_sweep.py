@@ -1,4 +1,9 @@
-"""Phase 2 minimal full-silver sweep: dense / BM25 / hybrid retrievers.
+"""LEGACY V3 ONLY - Phase 2 historical full-silver sweep.
+
+This script keeps v3 corpus defaults only for archived reproduction. Do not use
+it as an active Phase 7 eval/tuning entrypoint; Phase 7 must use v4 artifacts.
+
+Phase 2 minimal full-silver sweep: dense / BM25 / hybrid retrievers.
 
 Eval-only driver. Encodes the full ``anime_namu_v3_token_chunked`` corpus
 *once* via ``build_offline_rag_stack``, then reuses the embedder + FAISS

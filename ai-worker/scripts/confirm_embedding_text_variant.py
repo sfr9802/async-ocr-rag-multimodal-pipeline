@@ -1,4 +1,10 @@
-"""Confirm sweep — embedding-text variant (raw / title / title_section).
+"""LEGACY V3 ONLY - historical embedding-text variant confirmation.
+
+This script keeps v3 corpus/cache defaults only for archived reproduction. Do
+not use it as an active Phase 7 eval/tuning entrypoint; Phase 7 uses dataset v4
+and the production embedding text builder guardrails.
+
+Confirm sweep — embedding-text variant (raw / title / title_section).
 
 Phase 2 follow-up to the wide-MMR confirm run. The verdict from
 ``confirm_wide_mmr_best_configs`` was ``INCONCLUSIVE_REPRESENTATION_

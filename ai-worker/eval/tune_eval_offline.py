@@ -1,4 +1,10 @@
-"""Offline ``evaluate(params)`` for the optuna-round-refinement skill.
+"""LEGACY V3 ONLY - historical offline tuning replay.
+
+This module intentionally preserves pre-Phase-7 v3 corpus/cache defaults for
+reproducing archived tuning runs. Do not use it for active Phase 7 eval/tuning;
+that workflow must start from dataset v4 guardrails and v4-specific harnesses.
+
+Offline ``evaluate(params)`` for the optuna-round-refinement skill.
 
 Sister to ``tune_eval.py`` — that module builds the production retriever
 bundle (psycopg2 + ragmeta + ingest pipeline) which is not available

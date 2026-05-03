@@ -394,6 +394,8 @@ def run_study(
 ) -> "optuna.Study":
     import optuna  # local import so `--help` works without optuna installed
 
+    assert_active_config_runnable(config)
+
     study_dir = studies_root / config.experiment_id
     study_dir.mkdir(parents=True, exist_ok=True)
     db_path = study_dir / "study.db"
@@ -472,6 +474,36 @@ def run_study(
         study.best_params if study.best_trial else {},
     )
     return study
+
+
+def active_config_fail_closed_reason(config: ActiveConfig) -> Optional[str]:
+    """Return a human-readable reason when ``active.yaml`` is disabled.
+
+    Phase 7 keeps ``eval/experiments/active.yaml`` as a schema-valid
+    placeholder so tests and docs can still load it, but the file must
+    not accidentally drive the older generic Optuna loop. The explicit
+    ``_meta.fail_closed`` switch is the guardrail: parsing is allowed;
+    starting a study is not.
+    """
+    if bool(config.meta.get("fail_closed")):
+        return str(
+            config.meta.get("reason")
+            or "active.yaml is marked _meta.fail_closed=true"
+        )
+    status = str(config.meta.get("status") or "").strip().lower()
+    if status in {"fail_closed", "fail-closed", "disabled"}:
+        return f"active.yaml _meta.status={status!r}"
+    return None
+
+
+def assert_active_config_runnable(config: ActiveConfig) -> None:
+    """Raise ``SystemExit`` if the active config is intentionally disabled."""
+    reason = active_config_fail_closed_reason(config)
+    if reason:
+        raise SystemExit(
+            "active.yaml is fail-closed and must not be used for a "
+            f"tune run: {reason}"
+        )
 
 
 def _build_sampler(name: str, seed: Optional[int]) -> "optuna.samplers.BaseSampler":

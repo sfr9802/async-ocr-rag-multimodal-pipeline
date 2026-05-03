@@ -1,4 +1,9 @@
-"""Wide retrieval + MMR + title-cap diagnostic sweep.
+"""LEGACY V3 ONLY - Phase 2 historical wide-MMR diagnostic sweep.
+
+This script keeps v3 corpus/cache defaults only for archived reproduction. Do
+not use it as an active Phase 7 eval/tuning entrypoint.
+
+Wide retrieval + MMR + title-cap diagnostic sweep.
 
 Phase 2 follow-up to ``eval_full_silver_minimal_sweep``. The minimal
 sweep compared dense / BM25 / hybrid at the *current* candidate_k=50
