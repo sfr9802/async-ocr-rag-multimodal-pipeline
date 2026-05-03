@@ -79,7 +79,8 @@ public class JobCommandService implements JobManagementUseCase {
                     staged.checksumSha256(),
                     now);
             inputs.add(artifact);
-            if (saved.getCapability() == JobCapability.OCR_EXTRACT
+            if ((saved.getCapability() == JobCapability.OCR_EXTRACT
+                    || saved.getCapability() == JobCapability.XLSX_EXTRACT)
                     && staged.type() == ArtifactType.INPUT_FILE) {
                 catalogService.registerProcessingSourceFile(
                         staged.originalFileName(),
@@ -91,6 +92,7 @@ public class JobCommandService implements JobManagementUseCase {
         if (!inputs.isEmpty()) {
             artifactRepository.saveAll(inputs);
         }
+        List<Artifact> dispatchInputs = List.copyOf(inputs);
 
         // dispatch fires after commit so we don't enqueue ghosts
         org.springframework.transaction.support.TransactionSynchronizationManager
@@ -98,7 +100,7 @@ public class JobCommandService implements JobManagementUseCase {
                     @Override
                     public void afterCommit() {
                         try {
-                            dispatchPort.dispatch(saved);
+                            dispatchPort.dispatch(saved, dispatchInputs);
                         } catch (JobDispatchPort.DispatchException ex) {
                             log.warn(
                                     "After-commit dispatch failed for job {}; "

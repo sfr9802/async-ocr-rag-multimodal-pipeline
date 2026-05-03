@@ -80,6 +80,13 @@ public final class JobSubmissionValidator {
     private static final Set<String> SUPPORTED_FILE_EXTENSIONS = Set.of(
             "png", "jpg", "jpeg", "pdf"
     );
+    private static final Set<String> SUPPORTED_XLSX_MIME_TYPES = Set.of(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "application/vnd.ms-excel.sheet.macroenabled.12"
+    );
+    private static final Set<String> SUPPORTED_XLSX_EXTENSIONS = Set.of(
+            "xlsx", "xlsm"
+    );
 
     private JobSubmissionValidator() {}
 
@@ -99,14 +106,14 @@ public final class JobSubmissionValidator {
         if (raw == null || raw.isBlank()) {
             throw new InvalidJobSubmissionException(
                     ErrorCodes.CAPABILITY_REQUIRED,
-                    "capability field is required. Accepted values: MOCK, RAG, OCR, OCR_EXTRACT, MULTIMODAL, AUTO, AGENT.");
+                    "capability field is required. Accepted values: MOCK, RAG, OCR, OCR_EXTRACT, XLSX_EXTRACT, MULTIMODAL, AUTO, AGENT.");
         }
         try {
             return JobCapability.fromString(raw);
         } catch (IllegalArgumentException ex) {
             throw new InvalidJobSubmissionException(
                     ErrorCodes.UNKNOWN_CAPABILITY,
-                    "Unknown capability: " + raw + ". Accepted values: MOCK, RAG, OCR, OCR_EXTRACT, MULTIMODAL, AUTO, AGENT.");
+                    "Unknown capability: " + raw + ". Accepted values: MOCK, RAG, OCR, OCR_EXTRACT, XLSX_EXTRACT, MULTIMODAL, AUTO, AGENT.");
         }
     }
 
@@ -147,6 +154,11 @@ public final class JobSubmissionValidator {
                             + "(POST /api/v1/jobs with Content-Type: multipart/form-data, "
                             + "fields: capability=" + capability
                             + ", file=@path/to/input.(png|jpg|jpeg|pdf)).");
+            case XLSX_EXTRACT -> throw new InvalidJobSubmissionException(
+                    ErrorCodes.FILE_REQUIRED,
+                    "XLSX_EXTRACT jobs require a file upload. Use the multipart endpoint "
+                            + "(POST /api/v1/jobs with Content-Type: multipart/form-data, "
+                            + "fields: capability=XLSX_EXTRACT, file=@path/to/input.(xlsx|xlsm)).");
             case MULTIMODAL -> throw new InvalidJobSubmissionException(
                     ErrorCodes.FILE_REQUIRED,
                     "MULTIMODAL jobs require a file upload. Use the multipart endpoint "
@@ -259,6 +271,7 @@ public final class JobSubmissionValidator {
 
         switch (capability) {
             case OCR, OCR_EXTRACT, MULTIMODAL -> requireSupportedFileType(capability, file);
+            case XLSX_EXTRACT -> requireSupportedXlsxFileType(file);
             case RAG -> {
                 if (text == null || text.isBlank()) {
                     throw new InvalidJobSubmissionException(
@@ -332,6 +345,32 @@ public final class JobSubmissionValidator {
                             + " filename=" + describe(file.getOriginalFilename())
                             + ". Supported types: PNG, JPEG, PDF "
                             + "(image/png, image/jpeg, application/pdf).");
+        }
+    }
+
+    private static void requireSupportedXlsxFileType(MultipartFile file) {
+        String mime = normalizeMime(file.getContentType());
+        String ext = extractExtension(file.getOriginalFilename());
+
+        if ("xls".equals(ext)) {
+            throw new InvalidJobSubmissionException(
+                    ErrorCodes.UNSUPPORTED_FILE_TYPE,
+                    "Unsupported file type for XLSX_EXTRACT. Legacy .xls is not supported; "
+                            + "upload .xlsx or read-only .xlsm instead.");
+        }
+
+        boolean mimeMatches = mime != null && SUPPORTED_XLSX_MIME_TYPES.contains(mime);
+        boolean extMatches = ext != null && SUPPORTED_XLSX_EXTENSIONS.contains(ext);
+
+        if (!mimeMatches && !extMatches) {
+            throw new InvalidJobSubmissionException(
+                    ErrorCodes.UNSUPPORTED_FILE_TYPE,
+                    "Unsupported file type for XLSX_EXTRACT. "
+                            + "Received contentType=" + describe(file.getContentType())
+                            + " filename=" + describe(file.getOriginalFilename())
+                            + ". Supported types: XLSX, XLSM "
+                            + "(application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, "
+                            + "application/vnd.ms-excel.sheet.macroenabled.12).");
         }
     }
 

@@ -12,6 +12,8 @@ import com.aipipeline.coreapi.job.application.port.in.JobManagementUseCase.Creat
 import com.aipipeline.coreapi.job.application.port.in.JobManagementUseCase.StagedInputArtifact;
 import com.aipipeline.coreapi.job.domain.JobCapability;
 import com.aipipeline.coreapi.job.domain.JobId;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -31,6 +33,8 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/v1/library")
 public class DocumentCatalogController {
+
+    private static final ObjectMapper CITATION_MAPPER = new ObjectMapper();
 
     private final DocumentCatalogService catalog;
     private final ArtifactStoragePort storage;
@@ -89,6 +93,36 @@ public class DocumentCatalogController {
 
         var result = jobManagement.createAndEnqueue(new CreateJobCommand(
                 JobCapability.OCR_EXTRACT,
+                List.of(new StagedInputArtifact(
+                        ArtifactType.INPUT_FILE,
+                        source.getStorageUri(),
+                        source.getMimeType(),
+                        null,
+                        null,
+                        source.getOriginalFileName()))));
+        return ResponseEntity.accepted()
+                .body(JobResponses.JobCreated.from(result.job(), result.inputArtifacts()));
+    }
+
+    @PostMapping("/source-files/{sourceFileId}/xlsx-extract")
+    public ResponseEntity<JobResponses.JobCreated> startXlsxExtract(
+            @PathVariable String sourceFileId
+    ) {
+        SourceFileJpaEntity source = catalog.findSourceFile(sourceFileId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "source file not found"));
+        if (!catalog.supportsXlsxExtract(source)) {
+            throw new ResponseStatusException(
+                    HttpStatus.UNSUPPORTED_MEDIA_TYPE,
+                    "XLSX_EXTRACT supports .xlsx and read-only .xlsm source files only.");
+        }
+        if (!catalog.canStartXlsxExtract(source)) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "XLSX_EXTRACT can start only when source_file.status is UPLOADED, FAILED, or EXTRACTION_FAILED.");
+        }
+
+        var result = jobManagement.createAndEnqueue(new CreateJobCommand(
+                JobCapability.XLSX_EXTRACT,
                 List.of(new StagedInputArtifact(
                         ArtifactType.INPUT_FILE,
                         source.getStorageUri(),
@@ -194,6 +228,13 @@ public class DocumentCatalogController {
             Integer pageStart,
             Integer pageEnd,
             String sectionPath,
+            String sheetName,
+            Integer sheetIndex,
+            String cellRange,
+            Integer rowStart,
+            Integer rowEnd,
+            Integer columnStart,
+            Integer columnEnd,
             String tableId,
             String imageId,
             Object bbox,
@@ -201,6 +242,7 @@ public class DocumentCatalogController {
             String artifactType
     ) {
         static Citation from(SourceFileJpaEntity source, SearchUnitJpaEntity unit) {
+            JsonNode metadata = readMetadata(unit.getMetadataJson());
             return new Citation(
                     source.getId(),
                     source.getOriginalFileName(),
@@ -212,7 +254,16 @@ public class DocumentCatalogController {
                     unit.getPageStart(),
                     unit.getPageEnd(),
                     unit.getSectionPath(),
-                    idSuffix(unit.getCanonicalUnitType(), unit.getUnitKey(), "table:"),
+                    textOrNull(metadata, "sheetName"),
+                    intOrNull(metadata, "sheetIndex"),
+                    firstText(metadata, "cellRange", "range", "usedRange"),
+                    intOrNull(metadata, "rowStart"),
+                    intOrNull(metadata, "rowEnd"),
+                    intOrNull(metadata, "columnStart"),
+                    intOrNull(metadata, "columnEnd"),
+                    firstNonBlank(
+                            firstText(metadata, "tableId", "tableName"),
+                            idSuffix(unit.getCanonicalUnitType(), unit.getUnitKey(), "table:")),
                     idSuffix(unit.getCanonicalUnitType(), unit.getUnitKey(), "image:"),
                     null,
                     unit.getExtractedArtifactId(),
@@ -247,5 +298,56 @@ public class DocumentCatalogController {
             return null;
         }
         return unitKey.substring(index + infix.length());
+    }
+
+    private static JsonNode readMetadata(String metadataJson) {
+        if (metadataJson == null || metadataJson.isBlank()) {
+            return CITATION_MAPPER.getNodeFactory().missingNode();
+        }
+        try {
+            return CITATION_MAPPER.readTree(metadataJson);
+        } catch (RuntimeException | IOException ex) {
+            return CITATION_MAPPER.getNodeFactory().missingNode();
+        }
+    }
+
+    private static String firstText(JsonNode node, String... fields) {
+        for (String field : fields) {
+            String value = textOrNull(node, field);
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private static String textOrNull(JsonNode node, String field) {
+        if (node == null || node.isMissingNode() || node.isNull()) {
+            return null;
+        }
+        JsonNode value = node.path(field);
+        return value.isMissingNode() || value.isNull() ? null : value.asText();
+    }
+
+    private static Integer intOrNull(JsonNode node, String field) {
+        if (node == null || node.isMissingNode() || node.isNull()) {
+            return null;
+        }
+        JsonNode value = node.path(field);
+        if (value.isIntegralNumber()) {
+            return value.asInt();
+        }
+        if (value.isTextual()) {
+            try {
+                return Integer.parseInt(value.asText().trim());
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    private static String firstNonBlank(String first, String second) {
+        return first != null && !first.isBlank() ? first : second;
     }
 }

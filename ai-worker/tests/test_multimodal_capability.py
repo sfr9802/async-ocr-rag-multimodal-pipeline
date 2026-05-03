@@ -1519,6 +1519,7 @@ def test_multimodal_disabled_leaves_others_untouched(monkeypatch):
         ocr_enabled=True,
         multimodal_enabled=False,
         ocr_extract_enabled=False,
+        xlsx_extract_enabled=False,
     )
     result = registry_module.build_default_registry(settings)
 

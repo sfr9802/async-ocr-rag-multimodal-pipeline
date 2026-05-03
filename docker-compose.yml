@@ -1,22 +1,12 @@
 # Infra-only local development stack.
 #
-# Two execution modes:
+# Default local infra starts both postgres and redis:
 #
-#   Mode A (default) — REUSE an existing postgres container on host :5432
-#                      (e.g. the RIA ria-postgres container). Only redis is
-#                      started by this compose file.
+#     docker compose up -d
 #
-#     docker compose up -d redis
-#
-#     Prerequisite: you've already created an isolated `aipipeline` database
-#     and user inside your existing postgres. See docs/local-run.md for the
-#     bootstrap SQL.
-#
-#   Mode B — INDEPENDENT infra. This compose owns both postgres and redis,
-#            and postgres listens on host :5433 to avoid colliding with any
-#            other postgres you already run on :5432.
-#
-#     docker compose --profile independent up -d
+# Postgres listens on host :5433 to avoid colliding with another local
+# postgres that may already own :5432. See docs/local-run.md if you want to
+# point the apps at an external postgres instead.
 #
 # Neither mode starts core-api or ai-worker — those stay as local processes
 # in phase 1 so debugging stays cheap.
@@ -45,7 +35,6 @@ services:
     image: postgres:18
     container_name: aipipeline-postgres
     restart: unless-stopped
-    profiles: ["independent"]          # opt-in: only Mode B uses this
     environment:
       POSTGRES_USER: aipipeline
       POSTGRES_PASSWORD: aipipeline_pw
@@ -53,7 +42,7 @@ services:
     ports:
       - "5433:5432"                    # host 5433 → container 5432
     volumes:
-      - aipipeline-postgres-data:/var/lib/postgresql/data
+      - aipipeline-postgres-data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U aipipeline -d aipipeline"]
       interval: 5s

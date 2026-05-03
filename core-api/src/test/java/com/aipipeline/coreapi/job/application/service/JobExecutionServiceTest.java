@@ -121,6 +121,12 @@ class JobExecutionServiceTest {
                 .isEqualTo(ArtifactType.OCR_RESULT_JSON);
         assertThat(ArtifactType.fromString("ocr_text_markdown"))
                 .isEqualTo(ArtifactType.OCR_TEXT_MARKDOWN);
+        assertThat(ArtifactType.fromString("XLSX_WORKBOOK_JSON"))
+                .isEqualTo(ArtifactType.XLSX_WORKBOOK_JSON);
+        assertThat(ArtifactType.fromString("xlsx_markdown"))
+                .isEqualTo(ArtifactType.XLSX_MARKDOWN);
+        assertThat(ArtifactType.fromString("XLSX_TABLE_JSON"))
+                .isEqualTo(ArtifactType.XLSX_TABLE_JSON);
     }
 
     @Test
@@ -146,6 +152,45 @@ class JobExecutionServiceTest {
         when(artifacts.findByJobIdAndRole(job.getId(), ArtifactRole.INPUT))
                 .thenReturn(List.of(inputArtifact));
         when(catalog.findSourceFileIdByStorageUri("local://source-file.png"))
+                .thenReturn(Optional.of("source-file-1"));
+
+        var service = new JobExecutionService(
+                jobs,
+                artifacts,
+                catalog,
+                fixedTimeProvider(),
+                properties());
+
+        var result = service.claim(new ClaimCommand(job.getId(), "worker-1", 1));
+
+        assertThat(result.granted()).isTrue();
+        assertThat(result.inputs()).hasSize(1);
+        assertThat(result.inputs().get(0).sourceFileId()).isEqualTo("source-file-1");
+    }
+
+    @Test
+    void claim_includes_source_file_id_for_xlsx_extract_inputs() {
+        JobRepository jobs = mock(JobRepository.class);
+        ArtifactRepository artifacts = mock(ArtifactRepository.class);
+        DocumentCatalogService catalog = mock(DocumentCatalogService.class);
+        Job job = queuedXlsxExtractJob();
+        when(jobs.findById(job.getId())).thenReturn(Optional.of(job));
+        when(jobs.tryAtomicClaim(job.getId(), "worker-1", Duration.ofSeconds(60), NOW))
+                .thenReturn(true);
+
+        Artifact inputArtifact = Artifact.rehydrate(
+                ArtifactId.of("input-artifact-1"),
+                job.getId(),
+                ArtifactRole.INPUT,
+                ArtifactType.INPUT_FILE,
+                "local://source-file.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                10L,
+                "sha-input",
+                NOW);
+        when(artifacts.findByJobIdAndRole(job.getId(), ArtifactRole.INPUT))
+                .thenReturn(List.of(inputArtifact));
+        when(catalog.findSourceFileIdByStorageUri("local://source-file.xlsx"))
                 .thenReturn(Optional.of("source-file-1"));
 
         var service = new JobExecutionService(
@@ -265,6 +310,108 @@ class JobExecutionServiceTest {
     }
 
     @Test
+    void successful_xlsx_extract_callback_imports_catalog_artifacts_and_search_units() {
+        JobRepository jobs = mock(JobRepository.class);
+        ArtifactRepository artifacts = mock(ArtifactRepository.class);
+        DocumentCatalogService catalog = mock(DocumentCatalogService.class);
+        Job job = runningXlsxExtractJob();
+        when(jobs.findById(job.getId())).thenReturn(Optional.of(job));
+
+        Artifact inputArtifact = Artifact.rehydrate(
+                ArtifactId.of("input-artifact-1"),
+                job.getId(),
+                ArtifactRole.INPUT,
+                ArtifactType.INPUT_FILE,
+                "local://source-file.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                10L,
+                "sha-input",
+                NOW);
+        when(artifacts.findByJobIdAndRole(job.getId(), ArtifactRole.INPUT))
+                .thenReturn(List.of(inputArtifact));
+        when(artifacts.saveAll(org.mockito.ArgumentMatchers.anyList()))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        var service = new JobExecutionService(
+                jobs,
+                artifacts,
+                catalog,
+                fixedTimeProvider(),
+                properties());
+
+        service.handleCallback(new CallbackCommand(
+                job.getId(),
+                "callback-xlsx-1",
+                "worker-1",
+                CallbackOutcome.SUCCEEDED,
+                null,
+                null,
+                List.of(
+                        new OutputArtifactRef(
+                                ArtifactType.XLSX_WORKBOOK_JSON,
+                                "local://job/xlsx-workbook.json",
+                                "application/json",
+                                128L,
+                                "sha-json"),
+                        new OutputArtifactRef(
+                                ArtifactType.XLSX_MARKDOWN,
+                                "local://job/xlsx.md",
+                                "text/markdown; charset=utf-8",
+                                64L,
+                                "sha-md"))));
+
+        ArgumentCaptor<List<Artifact>> savedOutputs = ArgumentCaptor.forClass(List.class);
+        verify(catalog).importXlsxSucceeded(
+                org.mockito.ArgumentMatchers.eq(job),
+                org.mockito.ArgumentMatchers.eq(List.of(inputArtifact)),
+                savedOutputs.capture(),
+                org.mockito.ArgumentMatchers.eq(NOW));
+        assertThat(savedOutputs.getValue())
+                .extracting(Artifact::getType)
+                .containsExactly(ArtifactType.XLSX_WORKBOOK_JSON, ArtifactType.XLSX_MARKDOWN);
+    }
+
+    @Test
+    void failed_xlsx_extract_callback_marks_catalog_source_failed() {
+        JobRepository jobs = mock(JobRepository.class);
+        ArtifactRepository artifacts = mock(ArtifactRepository.class);
+        DocumentCatalogService catalog = mock(DocumentCatalogService.class);
+        Job job = runningXlsxExtractJob();
+        when(jobs.findById(job.getId())).thenReturn(Optional.of(job));
+
+        Artifact inputArtifact = Artifact.rehydrate(
+                ArtifactId.of("input-artifact-1"),
+                job.getId(),
+                ArtifactRole.INPUT,
+                ArtifactType.INPUT_FILE,
+                "local://source-file.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                10L,
+                "sha-input",
+                NOW);
+        when(artifacts.findByJobIdAndRole(job.getId(), ArtifactRole.INPUT))
+                .thenReturn(List.of(inputArtifact));
+
+        var service = new JobExecutionService(
+                jobs,
+                artifacts,
+                catalog,
+                fixedTimeProvider(),
+                properties());
+
+        service.handleCallback(new CallbackCommand(
+                job.getId(),
+                "callback-xlsx-2",
+                "worker-1",
+                CallbackOutcome.FAILED,
+                "UNSUPPORTED_INPUT_TYPE",
+                "Legacy .xls is not supported",
+                List.of()));
+
+        verify(catalog).markXlsxFailed(job, List.of(inputArtifact), NOW);
+    }
+
+    @Test
     void stale_terminal_ocr_callback_is_ignored_without_duplicate_artifact_import() {
         JobRepository jobs = mock(JobRepository.class);
         ArtifactRepository artifacts = mock(ArtifactRepository.class);
@@ -325,6 +472,67 @@ class JobExecutionServiceTest {
                 org.mockito.ArgumentMatchers.eq(NOW));
     }
 
+    @Test
+    void stale_terminal_xlsx_callback_is_ignored_without_duplicate_artifact_import() {
+        JobRepository jobs = mock(JobRepository.class);
+        ArtifactRepository artifacts = mock(ArtifactRepository.class);
+        DocumentCatalogService catalog = mock(DocumentCatalogService.class);
+        Job job = runningXlsxExtractJob();
+        when(jobs.findById(job.getId())).thenReturn(Optional.of(job));
+        when(artifacts.saveAll(org.mockito.ArgumentMatchers.anyList()))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        Artifact inputArtifact = Artifact.rehydrate(
+                ArtifactId.of("input-artifact-1"),
+                job.getId(),
+                ArtifactRole.INPUT,
+                ArtifactType.INPUT_FILE,
+                "local://source-file.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                10L,
+                "sha-input",
+                NOW);
+        when(artifacts.findByJobIdAndRole(job.getId(), ArtifactRole.INPUT))
+                .thenReturn(List.of(inputArtifact));
+
+        var service = new JobExecutionService(
+                jobs,
+                artifacts,
+                catalog,
+                fixedTimeProvider(),
+                properties());
+        List<OutputArtifactRef> outputs = List.of(new OutputArtifactRef(
+                ArtifactType.XLSX_WORKBOOK_JSON,
+                "local://job/xlsx-workbook.json",
+                "application/json",
+                128L,
+                "sha-json"));
+
+        service.handleCallback(new CallbackCommand(
+                job.getId(),
+                "callback-first",
+                "worker-1",
+                CallbackOutcome.SUCCEEDED,
+                null,
+                null,
+                outputs));
+        var replay = service.handleCallback(new CallbackCommand(
+                job.getId(),
+                "callback-second",
+                "worker-1",
+                CallbackOutcome.SUCCEEDED,
+                null,
+                null,
+                outputs));
+
+        assertThat(replay.applied()).isFalse();
+        verify(artifacts, times(1)).saveAll(org.mockito.ArgumentMatchers.anyList());
+        verify(catalog, times(1)).importXlsxSucceeded(
+                org.mockito.ArgumentMatchers.eq(job),
+                org.mockito.ArgumentMatchers.eq(List.of(inputArtifact)),
+                org.mockito.ArgumentMatchers.anyList(),
+                org.mockito.ArgumentMatchers.eq(NOW));
+    }
+
     private static Job runningOcrExtractJob() {
         Job job = Job.createNew(JobCapability.OCR_EXTRACT, NOW);
         job.markQueued(NOW);
@@ -335,6 +543,20 @@ class JobExecutionServiceTest {
 
     private static Job queuedOcrExtractJob() {
         Job job = Job.createNew(JobCapability.OCR_EXTRACT, NOW);
+        job.markQueued(NOW);
+        return job;
+    }
+
+    private static Job runningXlsxExtractJob() {
+        Job job = Job.createNew(JobCapability.XLSX_EXTRACT, NOW);
+        job.markQueued(NOW);
+        boolean claimed = job.tryClaim("worker-1", Duration.ofSeconds(60), NOW);
+        assertThat(claimed).isTrue();
+        return job;
+    }
+
+    private static Job queuedXlsxExtractJob() {
+        Job job = Job.createNew(JobCapability.XLSX_EXTRACT, NOW);
         job.markQueued(NOW);
         return job;
     }

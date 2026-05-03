@@ -77,6 +77,7 @@ def build_default_registry(settings: WorkerSettings) -> CapabilityRegistry:
     rag_registered = False
     ocr_registered = False
     ocr_extract_registered = False
+    xlsx_extract_registered = False
 
     if settings.rag_enabled:
         log.info(
@@ -149,6 +150,24 @@ def build_default_registry(settings: WorkerSettings) -> CapabilityRegistry:
             log.warning(
                 "OCR_EXTRACT capability NOT registered (%s: %s). "
                 "Worker still serves the other registered capabilities.",
+                type(ex).__name__, ex,
+            )
+
+    if settings.xlsx_extract_enabled:
+        log.info(
+            "XLSX_EXTRACT init: pipeline_version=xlsx-extract-v1 include_hidden=%s",
+            settings.xlsx_extract_include_hidden,
+        )
+        try:
+            registry.register(_build_xlsx_extract_capability(settings))
+            xlsx_extract_registered = True
+            log.info("XLSX_EXTRACT capability registered.")
+        except Exception as ex:
+            log.warning(
+                "XLSX_EXTRACT capability NOT registered (%s: %s). "
+                "Worker still serves the other registered capabilities. "
+                "To enable XLSX extraction: pip install openpyxl defusedxml, "
+                "then restart the worker.",
                 type(ex).__name__, ex,
             )
 
@@ -244,9 +263,10 @@ def build_default_registry(settings: WorkerSettings) -> CapabilityRegistry:
         )
 
     log.info(
-        "Active capabilities: %s (ocr_extract=%s)",
+        "Active capabilities: %s (ocr_extract=%s xlsx_extract=%s)",
         registry.available(),
         ocr_extract_registered,
+        xlsx_extract_registered,
     )
     return registry
 
@@ -310,6 +330,16 @@ def _build_ocr_extract_capability(settings: WorkerSettings) -> Capability:
             "Supported: 'fixture', 'paddle'."
         )
     return OcrExtractCapability(service=OcrExtractService(provider=provider))
+
+
+def _build_xlsx_extract_capability(settings: WorkerSettings) -> Capability:
+    from app.capabilities.xlsx.service import XlsxExtractCapability, XlsxExtractService
+
+    return XlsxExtractCapability(
+        service=XlsxExtractService(
+            include_hidden=settings.xlsx_extract_include_hidden,
+        )
+    )
 
 
 def _build_multimodal_capability(settings: WorkerSettings) -> Capability:

@@ -1,0 +1,37 @@
+{
+  "dataset": "kovidore-v2-economic-beir",
+  "sources": [
+    {
+      "logicalSourceId": "2022_12_recent_economic_trends",
+      "fileName": "2022_12_recent_economic_trends",
+      "sourceFileName": "2022_12_recent_economic_trends",
+      "type": "pdf-page-fixture",
+      "expectedUnits": [
+        {
+          "unitType": "PAGE",
+          "unitKey": "page:52"
+        },
+        {
+          "unitType": "PAGE",
+          "unitKey": "page:53"
+        },
+        {
+          "unitType": "PAGE",
+          "unitKey": "page:54"
+        },
+        {
+          "unitType": "PAGE",
+          "unitKey": "page:55"
+        },
+        {
+          "unitType": "PAGE",
+          "unitKey": "page:56"
+        },
+        {
+          "unitType": "PAGE",
+          "unitKey": "page:57"
+        }
+      ]
+    }
+  ]
+}

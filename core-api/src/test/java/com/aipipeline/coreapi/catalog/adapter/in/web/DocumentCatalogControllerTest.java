@@ -1,6 +1,7 @@
 package com.aipipeline.coreapi.catalog.adapter.in.web;
 
 import com.aipipeline.coreapi.artifact.application.port.out.ArtifactStoragePort;
+import com.aipipeline.coreapi.catalog.adapter.out.persistence.SearchUnitJpaEntity;
 import com.aipipeline.coreapi.catalog.adapter.out.persistence.SourceFileJpaEntity;
 import com.aipipeline.coreapi.catalog.application.service.DocumentCatalogService;
 import com.aipipeline.coreapi.common.TimeProvider;
@@ -93,6 +94,91 @@ class DocumentCatalogControllerTest {
         verify(jobManagement).createAndEnqueue(command.capture());
         assertThat(command.getValue().capability()).isEqualTo(JobCapability.OCR_EXTRACT);
         assertThat(command.getValue().inputs()).hasSize(1);
+    }
+
+    @Test
+    void failed_source_file_xlsx_retry_is_allowed() throws Exception {
+        SourceFileJpaEntity source = new SourceFileJpaEntity(
+                "source-file-1",
+                "sales.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "SPREADSHEET",
+                "local://source.xlsx",
+                DocumentCatalogService.SOURCE_STATUS_FAILED,
+                NOW);
+        when(catalog.findSourceFile("source-file-1")).thenReturn(Optional.of(source));
+        when(catalog.supportsXlsxExtract(source)).thenReturn(true);
+        when(catalog.canStartXlsxExtract(source)).thenReturn(true);
+
+        mockMvc.perform(post("/api/v1/library/source-files/source-file-1/xlsx-extract"))
+                .andExpect(status().isAccepted());
+
+        ArgumentCaptor<CreateJobCommand> command = ArgumentCaptor.forClass(CreateJobCommand.class);
+        verify(jobManagement).createAndEnqueue(command.capture());
+        assertThat(command.getValue().capability()).isEqualTo(JobCapability.XLSX_EXTRACT);
+        assertThat(command.getValue().inputs()).hasSize(1);
+    }
+
+    @Test
+    void xlsx_extract_rejects_unsupported_source_type() throws Exception {
+        SourceFileJpaEntity source = sourceWithStatus(DocumentCatalogService.SOURCE_STATUS_FAILED);
+        when(catalog.findSourceFile("source-file-1")).thenReturn(Optional.of(source));
+        when(catalog.supportsXlsxExtract(source)).thenReturn(false);
+
+        mockMvc.perform(post("/api/v1/library/source-files/source-file-1/xlsx-extract"))
+                .andExpect(status().isUnsupportedMediaType());
+
+        verify(jobManagement, never()).createAndEnqueue(any(CreateJobCommand.class));
+    }
+
+    @Test
+    void xlsx_table_citation_includes_sheet_and_cell_range_fields() {
+        SourceFileJpaEntity source = new SourceFileJpaEntity(
+                "source-file-1",
+                "sales.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "SPREADSHEET",
+                "local://source.xlsx",
+                DocumentCatalogService.SOURCE_STATUS_READY,
+                NOW);
+        SearchUnitJpaEntity unit = new SearchUnitJpaEntity(
+                "unit-1",
+                "source-file-1",
+                "xlsx-json-1",
+                DocumentCatalogService.SEARCH_UNIT_TABLE,
+                "sheet:0:매출:table:SalesTable",
+                "SalesTable",
+                "workbook/매출",
+                null,
+                null,
+                "직원명: 홍길동",
+                """
+                        {
+                          "fileType": "xlsx",
+                          "sheetName": "매출",
+                          "sheetIndex": 0,
+                          "cellRange": "A1:D30",
+                          "rowStart": 1,
+                          "rowEnd": 30,
+                          "columnStart": 1,
+                          "columnEnd": 4,
+                          "tableId": "SalesTable"
+                        }
+                        """,
+                DocumentCatalogService.EMBEDDING_STATUS_PENDING,
+                "sha",
+                NOW,
+                NOW);
+
+        DocumentCatalogController.SearchUnitResponse response =
+                DocumentCatalogController.SearchUnitResponse.from(source, unit);
+
+        assertThat(response.citation().sheetName()).isEqualTo("매출");
+        assertThat(response.citation().sheetIndex()).isEqualTo(0);
+        assertThat(response.citation().cellRange()).isEqualTo("A1:D30");
+        assertThat(response.citation().tableId()).isEqualTo("SalesTable");
+        assertThat(response.citation().rowStart()).isEqualTo(1);
+        assertThat(response.citation().columnEnd()).isEqualTo(4);
     }
 
     private static SourceFileJpaEntity sourceWithStatus(String status) {

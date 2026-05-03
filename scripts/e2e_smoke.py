@@ -1,8 +1,7 @@
 """End-to-end smoke test for the AI processing platform.
 
 Preconditions:
-  - PostgreSQL running (docker compose up -d postgres)
-  - Redis running       (docker compose up -d redis)
+  - PostgreSQL + Redis running (docker compose up -d)
   - core-api running    (mvn -f core-api/pom.xml spring-boot:run)
   - ai-worker running   (python -m app.main  inside ai-worker/)
 

@@ -27,16 +27,30 @@
 - **Docker Desktop** 또는 `docker compose` v2 가 호환되는 엔진.
 - 첫 빌드 시 Maven 로컬 저장소용 약 1 GB 여유 디스크.
 
-## 두 가지 DB 실행 모드
+## 로컬 인프라
 
-정확히 하나만 선택 — 상호 배타적이며 둘 다 지원됩니다.
+기본 로컬 실행은 repo의 compose가 PostgreSQL과 Redis를 함께 소유합니다.
+PostgreSQL은 호스트 `5433`에 노출해서 이미 `5432`를 쓰는 다른 로컬 DB와
+충돌하지 않게 둡니다.
 
-### Mode A — 기존 postgres 컨테이너 재사용 (기본)
+```bash
+cd <repo-root>
+docker compose up -d
+docker compose ps
+# aipipeline-postgres 와 aipipeline-redis 가 healthy 로 표시되어야 함
+```
 
-호스트에 이미 다른 postgres 컨테이너 (예: RIA 의 `ria-postgres` 가 5432
-포트에) 가 있을 때 권장. 이 모드는 AI 플랫폼 데이터를 그 컨테이너 안의
-**별도 `aipipeline` 데이터베이스**에 두므로 호스트 프로젝트와 스키마/
-테이블 충돌이 0 — DB 들이 논리적 namespace 조차 공유하지 않습니다.
+기본 core-api/worker 설정도 이 compose PostgreSQL을 바라봅니다:
+
+- core-api: `jdbc:postgresql://localhost:5433/aipipeline`
+- ai-worker RAG DSN: `host=localhost port=5433 dbname=aipipeline user=aipipeline password=aipipeline_pw`
+
+### 기존 PostgreSQL 재사용이 필요한 경우
+
+호스트에 이미 다른 postgres 컨테이너(예: RIA 의 `ria-postgres`가 5432
+포트에)가 있고 그 컨테이너만 쓰고 싶다면, compose에서는 Redis만 띄우고
+앱 DB 설정을 외부 PostgreSQL로 override 합니다. 이 모드는 AI 플랫폼
+데이터를 그 컨테이너 안의 **별도 `aipipeline` 데이터베이스**에 둡니다.
 
 1회 부트스트랩 (격리된 유저 + 데이터베이스 생성):
 
@@ -62,40 +76,21 @@ docker exec ria-postgres psql -U aipipeline -d aipipeline \
 #   aipipeline       | aipipeline
 ```
 
-이후 우리 compose 에서 redis 만 시작 (이 모드에서 postgres 는 우리가 소유
-하지 않음):
+이후 우리 compose 에서 Redis만 시작:
 
 ```bash
 cd <repo-root>
 docker compose up -d redis
 ```
 
-### Mode B — 독립 인프라 compose (RIA 없음, 호스트 postgres 없음)
-
-깨끗한 머신 또는 다른 인프라와의 강한 격리를 원할 때 사용. 이는
-**호스트 포트 5433 의 postgres:18** 을 띄우므로 이미 사용 중인 5432 와
-충돌하지 않습니다.
+그리고 core-api/worker 시작 전에 다음처럼 외부 DB를 가리키도록 설정:
 
 ```bash
-cd <repo-root>
-docker compose --profile independent up -d
-docker compose ps
-# aipipeline-redis 와 aipipeline-postgres 둘 다 healthy 로 표시되어야 함
+SPRING_DATASOURCE_URL=jdbc:postgresql://localhost:5432/aipipeline
+AIPIPELINE_WORKER_RAG_DB_DSN="host=localhost port=5432 dbname=aipipeline user=aipipeline password=aipipeline_pw"
 ```
 
-Mode B 를 쓴다면 core-api 도 5433 포트를 보도록 알려야 함 — 가장 쉬운
-방법은 `independent` Spring 프로파일로 실행:
-
-```bash
-cd core-api
-mvn spring-boot:run -Dspring-boot.run.profiles=independent
-```
-
-또는 core-api 시작 전에 환경변수
-`SPRING_DATASOURCE_URL=jdbc:postgresql://localhost:5433/aipipeline` 설정.
-`.env.example` 참조.
-
-## 전체 스택 시작 (Mode A 표시)
+## 전체 스택 시작
 
 4개의 터미널 또는 4개의 tmux 페인. 처음만 순서가 중요합니다: redis 가
 core-api 가 publish 시도하기 전에 존재해야 하고, core-api 가 worker 가
@@ -105,9 +100,7 @@ claim 시도하기 전에 존재해야 합니다.
 
 ```bash
 cd <repo-root>
-docker compose up -d redis
-# Mode A: 기존 ria-postgres 의존 (이미 실행 중)
-# Mode B: docker compose --profile independent up -d
+docker compose up -d
 ```
 
 ### 터미널 2 — core-api
@@ -190,10 +183,10 @@ OK - pipeline survived the round trip.
 스모크 테스트 후:
 
 ```bash
-docker exec ria-postgres psql -U aipipeline -d aipipeline -c \
+docker exec aipipeline-postgres psql -U aipipeline -d aipipeline -c \
   "SELECT id, capability, status FROM job ORDER BY updated_at DESC LIMIT 5;"
 
-docker exec ria-postgres psql -U aipipeline -d aipipeline -c \
+docker exec aipipeline-postgres psql -U aipipeline -d aipipeline -c \
   "SELECT job_id, role, type, size_bytes FROM artifact ORDER BY created_at DESC LIMIT 10;"
 ```
 
@@ -203,10 +196,9 @@ job 당 OUTPUT 행 2개는 더블 쓰기 회귀 — 버그 등록.
 ## 종료
 
 - **터미널 2와 3**: `Ctrl+C`.
-- **Redis**: `docker compose down` (또는 그대로 두기 — 무해).
-- **Mode B postgres**: `docker compose --profile independent down`.
-  볼륨까지 깨끗하게 지우려면 `-v` 추가.
-- **RIA 를 건드리지 않고 aipipeline 데이터만 삭제** (Mode A):
+- **compose 인프라**: `docker compose down` (또는 그대로 두기 — 무해).
+  PostgreSQL 볼륨까지 깨끗하게 지우려면 `docker compose down -v`.
+- **외부 PostgreSQL을 재사용한 경우**, 그 DB 안의 aipipeline 데이터만 삭제:
   ```bash
   docker exec ria-postgres psql -U aipipeline -d aipipeline -c \
     "TRUNCATE TABLE artifact, job CASCADE;"
@@ -216,9 +208,9 @@ job 당 OUTPUT 행 2개는 더블 쓰기 회귀 — 버그 등록.
 
 ### core-api
 
-- **`connection refused` localhost:5432 에 대해** — Mode A 에서는 호스트
-  postgres 가 실행 중이 아님. 시작 (또는 Mode B 로 전환). Mode B 에서는
-  `--profile independent` 를 잊었고 5432 를 소유한 게 없음.
+- **`connection refused` localhost:5433 에 대해** — compose PostgreSQL이
+  실행 중이 아님. `docker compose up -d` 후 재시도. 외부 PostgreSQL을
+  재사용한다면 `SPRING_DATASOURCE_URL`이 의도한 포트를 가리키는지 확인.
 - **Flyway 에러 `Schema validation: missing table [artifact]`** —
   Hibernate 전에 Flyway 가 돌지 않았음. Spring Boot 4.0 에서는 POM 에
   `spring-boot-starter-flyway` 가 필요 (`flyway-core` 만으로는 부족).
@@ -236,7 +228,7 @@ job 당 OUTPUT 행 2개는 더블 쓰기 회귀 — 버그 등록.
 ### ai-worker
 
 - **시작 시 `Redis ping failed`** — Redis 가 실행 중이 아니거나 URL 이
-  잘못됨. `docker compose up -d redis` 후 재시도.
+  잘못됨. `docker compose up -d` 후 재시도.
 - **Worker 가 job 을 처리하지만 callback 이 500 + `ValidationError:
   UploadResponse missing field artifactId`** — 더 오래된 worker 를 더 새
   core-api 에 (또는 그 반대). pull 후 둘 다 재시작. 업로드 엔드포인트는
@@ -482,8 +474,8 @@ ragmeta.index_builds   (index_version, embedding_model, embedding_dim, chunk_cou
 내용 들여다보기:
 
 ```bash
-docker exec ria-postgres psql -U aipipeline -d aipipeline -c "\dt ragmeta.*"
-docker exec ria-postgres psql -U aipipeline -d aipipeline -c \
+docker exec aipipeline-postgres psql -U aipipeline -d aipipeline -c "\dt ragmeta.*"
+docker exec aipipeline-postgres psql -U aipipeline -d aipipeline -c \
   "SELECT index_version, embedding_model, chunk_count FROM ragmeta.index_builds ORDER BY built_at DESC;"
 ```
 
@@ -740,7 +732,7 @@ curl -X POST http://localhost:8080/api/v1/jobs \
 # 1. (1회만) 위 RAG 와 OCR 섹션에서 설명한 대로 RAG 인덱스 빌드 + Tesseract 설치.
 
 # 2. 세 터미널에서 인프라 + core-api + worker 시작.
-docker compose up -d redis
+docker compose up -d
 cd core-api && mvn spring-boot:run
 cd ai-worker && python -m app.main
 
@@ -995,8 +987,8 @@ python -m scripts.doctor
 
 | 실패 체크                  | 의미                                                                       |
 |----------------------------|----------------------------------------------------------------------------|
-| `redis` FAIL               | `docker compose up -d redis` 잊음, 또는 잘못된 `REDIS_URL` 환경변수        |
-| `postgres` FAIL            | Mode A: 호스트 postgres off; Mode B: `--profile independent` 잊음         |
+| `redis` FAIL               | `docker compose up -d` 잊음, 또는 잘못된 `REDIS_URL` 환경변수              |
+| `postgres` FAIL            | `docker compose up -d` 잊음, 또는 DB DSN 이 잘못된 포트를 가리킴          |
 | `schemas` FAIL             | core-api 가 아직 부팅 안 함 → Flyway V1/V2 가 돌지 않음                  |
 | `faiss_index` FAIL         | 인덱스가 아직 안 빌드됨 → `python -m scripts.build_rag_index --fixture`   |
 | `build_json` FAIL          | 인덱스 dir 가 수동 편집되거나 부분적으로 덮어써짐 → 재빌드                 |
@@ -1132,8 +1124,7 @@ cats", SMOKE TEST placeholder PNG) 은 plumbing 을 운동시키기 위해
 파이프라인 변경을 close out 하거나 fresh clone 을 검증할 때 이 시퀀스
 사용:
 
-1. `docker compose up -d redis` (Mode A) 또는
-   `docker compose --profile independent up -d` (Mode B)
+1. `docker compose up -d`
 2. `cd core-api && mvn spring-boot:run` — Tomcat 배너까지 대기
 3. `cd ai-worker && python -m scripts.build_rag_index --fixture` —
    1회 또는 모델/데이터셋 변경 후
@@ -1192,7 +1183,7 @@ sentence-transformers 와 함께 출시되므로 비정상적으로 깎아낸 ve
 
 | 환경변수                                   | 기본값                                      | 비고                                |
 |--------------------------------------------|---------------------------------------------|-------------------------------------|
-| `SPRING_DATASOURCE_URL`                    | jdbc:postgresql://localhost:5432/aipipeline | Mode A 기본; Mode B 는 :5433 사용   |
+| `SPRING_DATASOURCE_URL`                    | jdbc:postgresql://localhost:5433/aipipeline | compose PostgreSQL 기본             |
 | `SPRING_DATASOURCE_USERNAME` / `_PASSWORD` | aipipeline / aipipeline_pw                  |                                     |
 | `SPRING_DATA_REDIS_HOST` / `_PORT`         | localhost / 6379                            |                                     |
 | `SERVER_PORT`                              | 8080                                        | core-api listen 포트                |

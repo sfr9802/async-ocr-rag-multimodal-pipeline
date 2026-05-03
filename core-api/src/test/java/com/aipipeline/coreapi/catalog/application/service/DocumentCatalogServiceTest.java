@@ -290,6 +290,110 @@ class DocumentCatalogServiceTest {
     }
 
     @Test
+    void import_xlsx_success_creates_extracted_artifacts_and_search_units() {
+        Job job = Job.createNew(JobCapability.XLSX_EXTRACT, NOW);
+        SourceFileJpaEntity source = xlsxProcessingSource();
+        stubSourceAndUpserts("local://source.xlsx", source);
+        when(storage.openForRead("local://xlsx-workbook.json"))
+                .thenReturn(stream(validXlsxJson()));
+
+        Artifact input = artifact("input-artifact-1", job, ArtifactRole.INPUT, ArtifactType.INPUT_FILE,
+                "local://source.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        Artifact workbook = artifact("xlsx-json-1", job, ArtifactRole.OUTPUT, ArtifactType.XLSX_WORKBOOK_JSON,
+                "local://xlsx-workbook.json", "application/json");
+        Artifact markdown = artifact("xlsx-md-1", job, ArtifactRole.OUTPUT, ArtifactType.XLSX_MARKDOWN,
+                "local://xlsx.md", "text/markdown; charset=utf-8");
+        Artifact tables = artifact("xlsx-table-json-1", job, ArtifactRole.OUTPUT, ArtifactType.XLSX_TABLE_JSON,
+                "local://xlsx-tables.json", "application/json");
+
+        service().importXlsxSucceeded(job, List.of(input), List.of(workbook, markdown, tables), NOW);
+
+        ArgumentCaptor<ExtractedArtifactJpaEntity> extractedCaptor =
+                ArgumentCaptor.forClass(ExtractedArtifactJpaEntity.class);
+        verify(extractedArtifacts, times(3)).save(extractedCaptor.capture());
+        assertThat(extractedCaptor.getAllValues())
+                .extracting(ExtractedArtifactJpaEntity::getArtifactType)
+                .containsExactly("XLSX_WORKBOOK_JSON", "XLSX_MARKDOWN", "XLSX_TABLE_JSON");
+
+        ArgumentCaptor<SearchUnitJpaEntity> unitCaptor = ArgumentCaptor.forClass(SearchUnitJpaEntity.class);
+        verify(searchUnits, times(4)).save(unitCaptor.capture());
+        assertThat(unitCaptor.getAllValues())
+                .extracting(SearchUnitJpaEntity::getUnitType)
+                .containsExactly(
+                        DocumentCatalogService.SEARCH_UNIT_DOCUMENT,
+                        DocumentCatalogService.SEARCH_UNIT_SECTION,
+                        DocumentCatalogService.SEARCH_UNIT_TABLE,
+                        DocumentCatalogService.SEARCH_UNIT_CHUNK);
+
+        SearchUnitJpaEntity document = unitCaptor.getAllValues().get(0);
+        assertThat(document.getUnitKey()).isEqualTo("workbook");
+        assertThat(document.getTitle()).isEqualTo("sales.xlsx");
+        assertThat(document.getMetadataJson()).contains("\"fileType\":\"xlsx\"");
+        assertThat(document.getMetadataJson()).contains("\"role\":\"workbook\"");
+
+        SearchUnitJpaEntity section = unitCaptor.getAllValues().get(1);
+        assertThat(section.getUnitKey()).isEqualTo("sheet:0:매출");
+        assertThat(section.getSectionPath()).isEqualTo("workbook/매출");
+        assertThat(section.getTextContent()).contains("직원명: 홍길동");
+        assertThat(section.getMetadataJson()).contains("\"sheetName\":\"매출\"");
+        assertThat(section.getMetadataJson()).contains("\"role\":\"sheet\"");
+        assertThat(section.getMetadataJson()).contains("\"rowStart\":1");
+        assertThat(section.getMetadataJson()).contains("\"mergedCells\"");
+        assertThat(section.getMetadataJson()).contains("\"formulas\"");
+
+        SearchUnitJpaEntity table = unitCaptor.getAllValues().get(2);
+        assertThat(table.getUnitKey()).isEqualTo("sheet:0:table:0:A1:D3");
+        assertThat(table.getMetadataJson()).contains("\"cellRange\":\"A1:D3\"");
+        assertThat(table.getMetadataJson()).contains("\"role\":\"table\"");
+        assertThat(table.getMetadataJson()).contains("\"tableIndex\":0");
+        assertThat(table.getTextContent()).contains("홍길동");
+
+        SearchUnitJpaEntity chunk = unitCaptor.getAllValues().get(3);
+        assertThat(chunk.getUnitKey()).isEqualTo("sheet:0:chunk:0:A4:D53");
+        assertThat(chunk.getMetadataJson()).contains("\"role\":\"chunk\"");
+        assertThat(chunk.getMetadataJson()).contains("\"rowStart\":4");
+
+        assertThat(source.getStatus()).isEqualTo(DocumentCatalogService.SOURCE_STATUS_READY);
+    }
+
+    @Test
+    void malformed_xlsx_workbook_json_marks_source_file_failed_without_importing_units() {
+        Job job = Job.createNew(JobCapability.XLSX_EXTRACT, NOW);
+        SourceFileJpaEntity source = xlsxProcessingSource();
+        when(sourceFiles.findFirstByStorageUri("local://source.xlsx"))
+                .thenReturn(Optional.of(source));
+        when(storage.openForRead("local://xlsx-workbook.json"))
+                .thenReturn(stream("{not-json"));
+
+        service().importXlsxSucceeded(
+                job,
+                List.of(artifact("input-artifact-1", job, ArtifactRole.INPUT, ArtifactType.INPUT_FILE,
+                        "local://source.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")),
+                List.of(artifact("xlsx-json-1", job, ArtifactRole.OUTPUT, ArtifactType.XLSX_WORKBOOK_JSON,
+                        "local://xlsx-workbook.json", "application/json")),
+                NOW);
+
+        assertThat(source.getStatus()).isEqualTo(DocumentCatalogService.SOURCE_STATUS_FAILED);
+        assertThat(source.getStatusDetail()).contains("Failed to parse XLSX_WORKBOOK_JSON");
+        verify(extractedArtifacts, never()).save(any());
+        verify(searchUnits, never()).save(any());
+    }
+
+    @Test
+    void supports_xlsx_extract_rejects_legacy_xls_even_when_mime_looks_modern() {
+        SourceFileJpaEntity source = new SourceFileJpaEntity(
+                "source-file-1",
+                "legacy.xls",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "SPREADSHEET",
+                "local://legacy.xls",
+                DocumentCatalogService.SOURCE_STATUS_UPLOADED,
+                NOW);
+
+        assertThat(service().supportsXlsxExtract(source)).isFalse();
+    }
+
+    @Test
     void mark_ocr_failed_moves_source_file_to_failed() {
         Job job = Job.createNew(JobCapability.OCR_EXTRACT, NOW);
         job.markQueued(NOW);
@@ -348,7 +452,11 @@ class DocumentCatalogServiceTest {
     }
 
     private void stubSourceAndUpserts(SourceFileJpaEntity source) {
-        when(sourceFiles.findFirstByStorageUri("local://source.png"))
+        stubSourceAndUpserts("local://source.png", source);
+    }
+
+    private void stubSourceAndUpserts(String storageUri, SourceFileJpaEntity source) {
+        when(sourceFiles.findFirstByStorageUri(storageUri))
                 .thenReturn(Optional.of(source));
         when(extractedArtifacts.findBySourceFileIdAndArtifactTypeAndArtifactKey(anyString(), anyString(), anyString()))
                 .thenReturn(Optional.empty());
@@ -380,6 +488,17 @@ class DocumentCatalogServiceTest {
                 NOW);
     }
 
+    private static SourceFileJpaEntity xlsxProcessingSource() {
+        return new SourceFileJpaEntity(
+                "source-file-1",
+                "sales.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "SPREADSHEET",
+                "local://source.xlsx",
+                DocumentCatalogService.SOURCE_STATUS_PROCESSING,
+                NOW);
+    }
+
     private static String validOcrJson() {
         return """
                 {
@@ -396,6 +515,68 @@ class DocumentCatalogServiceTest {
                     }
                   ],
                   "plainText": "first line\\nsecond line"
+                }
+                """;
+    }
+
+    private static String validXlsxJson() {
+        return """
+                {
+                  "fileType": "xlsx",
+                  "sourceRecordId": "source-file-1",
+                  "pipelineVersion": "xlsx-extract-v1",
+                  "workbook": {
+                    "sheetCount": 2,
+                    "visibleSheetCount": 1,
+                    "sheets": [
+                      {
+                        "name": "매출",
+                        "index": 0,
+                        "hidden": false,
+                        "maxRow": 120,
+                        "maxColumn": 4,
+                        "usedRange": "A1:D120",
+                        "mergedCells": ["A1:D1"],
+                        "formulas": [{"cell": "D10", "formula": "=SUM(D2:D9)", "cachedValue": "12,000,000"}],
+                        "compactText": "[Sheet: 매출]\\n[Range: A1:D120]\\n직원명: 홍길동 | 연도: 2024 | 매출: 12,000,000 | 지역: 서울",
+                        "tables": [
+                          {
+                            "name": "SalesTable",
+                            "tableIndex": 0,
+                            "range": "A1:D3",
+                            "cellRange": "A1:D3",
+                            "rowStart": 1,
+                            "rowEnd": 3,
+                            "columnStart": 1,
+                            "columnEnd": 4,
+                            "rowCount": 3,
+                            "columnCount": 4,
+                            "markdown": "| 직원명 | 연도 | 지역 | 매출 |\\n| --- | --- | --- | --- |\\n| 홍길동 | 2024 | 서울 | 12,000,000 |"
+                          }
+                        ],
+                        "chunks": [
+                          {
+                            "range": "A4:D53",
+                            "cellRange": "A4:D53",
+                            "chunkIndex": 0,
+                            "rowStart": 4,
+                            "rowEnd": 53,
+                            "columnStart": 1,
+                            "columnEnd": 4,
+                            "text": "[Sheet: 매출]\\n[Range: A4:D53]\\n직원명: 김철수 | 연도: 2024 | 매출: 9,000,000 | 지역: 부산"
+                          }
+                        ]
+                      },
+                      {
+                        "name": "숨김",
+                        "index": 1,
+                        "hidden": true,
+                        "indexable": false,
+                        "usedRange": "A1:B2"
+                      }
+                    ]
+                  },
+                  "plainText": "workbook text"
                 }
                 """;
     }

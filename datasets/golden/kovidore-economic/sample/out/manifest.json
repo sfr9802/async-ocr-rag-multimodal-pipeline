@@ -1,0 +1,62 @@
+{
+  "datasetId": "kovidore-v2-economic-beir",
+  "source": "whybe-choi/kovidore-v2-economic-beir",
+  "language": "ko",
+  "domain": "economic",
+  "documentType": "periodic_reports",
+  "primarySearchUnitType": "PAGE",
+  "matchingIdentity": [
+    "sourceFileName",
+    "unitType",
+    "unitKey"
+  ],
+  "licenseNote": "Annotations/qrels/metadata are CC BY 4.0. Original source documents and parsed markdown inherit publisher-specific licenses from document_metadata.",
+  "licenseAndTerms": {
+    "basis": "Hugging Face dataset card License information section",
+    "annotationsQueriesQrelsAndRelatedMetadata": {
+      "license": "Creative Commons Attribution 4.0 International (CC BY 4.0)",
+      "appliesTo": [
+        "annotations",
+        "queries",
+        "query-document relevance judgments (qrels)",
+        "related metadata generated for this corpus"
+      ]
+    },
+    "sourceDocumentsAndParsedMarkdown": {
+      "license": "Inherited from each original publisher",
+      "appliesTo": [
+        "original source documents",
+        "parsed text in corpus.markdown"
+      ],
+      "perDocumentLicenseField": "document_metadata.license"
+    }
+  },
+  "fixtureKind": "dev-eval-search-unit",
+  "artifactTypes": [
+    "OCR_RESULT_JSON"
+  ],
+  "input": {
+    "corpus": "..\\datasets\\golden\\kovidore-economic\\sample\\raw\\corpus.jsonl",
+    "queries": "..\\datasets\\golden\\kovidore-economic\\sample\\raw\\queries.jsonl",
+    "qrels": "..\\datasets\\golden\\kovidore-economic\\sample\\raw\\qrels.jsonl",
+    "documentMetadata": "..\\datasets\\golden\\kovidore-economic\\sample\\raw\\document_metadata.jsonl"
+  },
+  "limits": {
+    "limitDocs": 1,
+    "limitQueries": 1
+  },
+  "outputs": {
+    "sourceFiles": "source_files.jsonl",
+    "extractedArtifacts": "extracted_artifacts.jsonl",
+    "searchUnits": "search_units.jsonl",
+    "sourceManifest": "source_manifest.json",
+    "goldenQueries": "golden_queries.jsonl",
+    "manifest": "manifest.json"
+  },
+  "counts": {
+    "sourceFiles": 1,
+    "extractedArtifacts": 1,
+    "searchUnits": 6,
+    "goldenQueries": 1
+  }
+}

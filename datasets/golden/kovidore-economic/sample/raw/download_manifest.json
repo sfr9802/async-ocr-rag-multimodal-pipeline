@@ -1,0 +1,11 @@
+{
+  "dataset": "whybe-choi/kovidore-v2-economic-beir",
+  "source": "Hugging Face Dataset Viewer API",
+  "samplePolicy": "query-0 qrels plus matching corpus pages only; image signed URLs stripped",
+  "counts": {
+    "corpus": 6,
+    "queries": 1,
+    "qrels": 6,
+    "document_metadata": 20
+  }
+}

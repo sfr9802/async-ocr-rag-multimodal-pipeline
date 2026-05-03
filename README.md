@@ -526,15 +526,15 @@ python -m scripts.run_phase7_4_controlled_recovery \
 
 ## Local run
 
-Mode A는 기존 PostgreSQL `:5432`를 재사용하는 기본 실행 방식입니다.  
-Mode B는 독립 `postgres:18`을 `:5433`에서 실행하는 방식이며, 자세한 내용은 `docs/local-run.md`를 참고합니다.
+기본 로컬 인프라는 `docker compose up -d`로 PostgreSQL과 Redis를 함께 띄웁니다.
+PostgreSQL은 호스트 `:5433`에 노출되며, 자세한 내용은 `docs/local-run.md`를 참고합니다.
 
 <details>
-<summary><b>실행 명령어 (Redis → core-api → ai-worker → smoke test)</b></summary>
+<summary><b>실행 명령어 (infra → core-api → ai-worker → smoke test)</b></summary>
 
 ```bash
-# 1. Start Redis
-docker compose up -d redis
+# 1. Start local infra
+docker compose up -d
 
 # 2. Start core-api
 cd core-api

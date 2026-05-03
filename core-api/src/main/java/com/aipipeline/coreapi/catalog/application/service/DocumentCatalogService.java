@@ -40,6 +40,7 @@ import java.util.UUID;
 public class DocumentCatalogService {
 
     public static final String OCR_LITE_PIPELINE_VERSION = "ocr-lite-v1";
+    public static final String XLSX_PIPELINE_VERSION = "xlsx-extract-v1";
     public static final String SOURCE_STATUS_UPLOADED = "UPLOADED";
     public static final String SOURCE_STATUS_PROCESSING = "PROCESSING";
     public static final String SOURCE_STATUS_READY = "READY";
@@ -133,6 +134,24 @@ public class DocumentCatalogService {
         return SOURCE_STATUS_UPLOADED.equals(status)
                 || SOURCE_STATUS_FAILED.equals(status)
                 || SOURCE_STATUS_EXTRACTION_FAILED.equals(status);
+    }
+
+    public boolean canStartXlsxExtract(SourceFileJpaEntity sourceFile) {
+        return canStartOcrExtract(sourceFile);
+    }
+
+    public boolean supportsXlsxExtract(SourceFileJpaEntity sourceFile) {
+        String fileName = sourceFile.getOriginalFileName() == null
+                ? ""
+                : sourceFile.getOriginalFileName().toLowerCase(Locale.ROOT);
+        String mimeType = normalizeMime(sourceFile.getMimeType());
+        if (fileName.endsWith(".xls")) {
+            return false;
+        }
+        return fileName.endsWith(".xlsx")
+                || fileName.endsWith(".xlsm")
+                || "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet".equals(mimeType)
+                || "application/vnd.ms-excel.sheet.macroenabled.12".equals(mimeType);
     }
 
     @Transactional(readOnly = true)
@@ -233,6 +252,98 @@ public class DocumentCatalogService {
         sourceFiles.save(source);
     }
 
+    @Transactional
+    public void importXlsxSucceeded(Job job,
+                                    List<Artifact> inputArtifacts,
+                                    List<Artifact> outputArtifacts,
+                                    Instant now) {
+        if (job.getCapability() != JobCapability.XLSX_EXTRACT) {
+            return;
+        }
+
+        SourceFileJpaEntity source = resolveOrCreateSourceFile(inputArtifacts, now)
+                .orElseGet(() -> {
+                    log.warn("Skipping XLSX catalog import: no source file for jobId={}", job.getId());
+                    return null;
+                });
+        if (source == null) {
+            return;
+        }
+        if (SOURCE_STATUS_READY.equals(source.getStatus())) {
+            log.info("Ignoring XLSX catalog import for already READY sourceFileId={}", source.getId());
+            return;
+        }
+
+        ImportPlan plan;
+        try {
+            plan = buildXlsxImportPlan(job, source, outputArtifacts);
+        } catch (XlsxCatalogImportException ex) {
+            log.warn(
+                    "XLSX catalog import failed sourceFileId={} jobId={} reason={}",
+                    source.getId(), job.getId(), ex.getMessage());
+            transitionSource(source, SOURCE_STATUS_FAILED, ex.getMessage(), now);
+            sourceFiles.save(source);
+            return;
+        }
+
+        if (!plan.valid()) {
+            log.warn(
+                    "XLSX catalog import failed sourceFileId={} jobId={} reason={}",
+                    source.getId(), job.getId(), plan.errorMessage());
+            transitionSource(source, SOURCE_STATUS_FAILED, plan.errorMessage(), now);
+            sourceFiles.save(source);
+            return;
+        }
+
+        try {
+            Map<String, ExtractedArtifactJpaEntity> extractedByArtifactId = upsertExtractedArtifacts(plan, now);
+            for (SearchUnitDraft draft : plan.searchUnits()) {
+                String resolvedArtifactId = draft.extractedArtifactId();
+                if (resolvedArtifactId != null && !extractedByArtifactId.containsKey(resolvedArtifactId)) {
+                    log.warn(
+                            "Skipping XLSX search unit import with missing extracted artifact sourceFileId={} unitType={} unitKey={}",
+                            source.getId(), draft.unitType(), draft.unitKey());
+                    continue;
+                }
+                upsertSearchUnit(draft, now);
+            }
+        } catch (RuntimeException ex) {
+            log.warn(
+                    "XLSX catalog import write failed sourceFileId={} jobId={}: {}",
+                    source.getId(), job.getId(), ex.toString());
+            transitionSource(source, SOURCE_STATUS_FAILED, "XLSX catalog write failed: " + ex.getMessage(), now);
+            sourceFiles.save(source);
+            return;
+        }
+
+        transitionSource(source, SOURCE_STATUS_READY, plan.warningMessage(), now);
+        sourceFiles.save(source);
+    }
+
+    @Transactional
+    public void markXlsxFailed(Job job,
+                               List<Artifact> inputArtifacts,
+                               Instant now) {
+        if (job.getCapability() != JobCapability.XLSX_EXTRACT) {
+            return;
+        }
+        Optional<SourceFileJpaEntity> maybeSource = resolveOrCreateSourceFile(inputArtifacts, now);
+        if (maybeSource.isEmpty()) {
+            log.warn("XLSX failure callback could not resolve source file jobId={}", job.getId());
+            return;
+        }
+        SourceFileJpaEntity source = maybeSource.get();
+        if (SOURCE_STATUS_READY.equals(source.getStatus())) {
+            log.info("Ignoring late XLSX failure for READY sourceFileId={}", source.getId());
+            return;
+        }
+        String detail = job.getErrorMessage() == null || job.getErrorMessage().isBlank()
+                ? job.getErrorCode()
+                : job.getErrorMessage();
+        transitionSource(source, SOURCE_STATUS_FAILED, detail, now);
+        sourceFiles.save(source);
+    }
+
     @Transactional(readOnly = true)
     public List<SearchResult> search(String query, int limit) {
         String normalized = query == null ? "" : query.trim();
@@ -308,6 +419,40 @@ public class DocumentCatalogService {
         return ImportPlan.valid(source.getId(), extracted, units, warning);
     }
 
+    private ImportPlan buildXlsxImportPlan(Job job,
+                                           SourceFileJpaEntity source,
+                                           List<Artifact> outputArtifacts) {
+        List<Artifact> xlsxArtifacts = outputArtifacts.stream()
+                .filter(this::isXlsxExtractArtifact)
+                .toList();
+        Optional<Artifact> workbookJson = xlsxArtifacts.stream()
+                .filter(artifact -> artifact.getType() == ArtifactType.XLSX_WORKBOOK_JSON)
+                .findFirst();
+        if (workbookJson.isEmpty()) {
+            return ImportPlan.invalid("XLSX_WORKBOOK_JSON output artifact is required.");
+        }
+
+        ParsedXlsxJson parsed = readXlsxWorkbookJson(workbookJson.get());
+        String pipelineVersion = textOrDefault(parsed.root().path("pipelineVersion"), XLSX_PIPELINE_VERSION);
+        String artifactKey = job.getId().value();
+        List<ArtifactPayload> extracted = xlsxArtifacts.stream()
+                .map(artifact -> new ArtifactPayload(
+                        artifact,
+                        artifactKey,
+                        artifact.getType() == ArtifactType.XLSX_WORKBOOK_JSON ? parsed.rawJson() : null,
+                        pipelineVersion))
+                .toList();
+
+        List<SearchUnitDraft> units = buildXlsxSearchUnitDrafts(
+                source,
+                workbookJson.get().getId().value(),
+                parsed.root());
+        String warning = units.stream().noneMatch(unit -> SEARCH_UNIT_SECTION.equals(unit.unitType()))
+                ? "XLSX_WORKBOOK_JSON contained no visible sheet SearchUnits; saved artifacts only."
+                : null;
+        return ImportPlan.valid(source.getId(), extracted, units, warning);
+    }
+
     private ParsedOcrJson readOcrResultJson(Artifact resultJsonArtifact) {
         try (InputStream stream = storage.openForRead(resultJsonArtifact.getStorageUri())) {
             String rawJson = new String(stream.readAllBytes(), StandardCharsets.UTF_8);
@@ -316,6 +461,17 @@ public class DocumentCatalogService {
             throw new OcrCatalogImportException(
                     "Failed to parse OCR_RESULT_JSON for artifact "
                             + resultJsonArtifact.getId().value());
+        }
+    }
+
+    private ParsedXlsxJson readXlsxWorkbookJson(Artifact workbookJsonArtifact) {
+        try (InputStream stream = storage.openForRead(workbookJsonArtifact.getStorageUri())) {
+            String rawJson = new String(stream.readAllBytes(), StandardCharsets.UTF_8);
+            return new ParsedXlsxJson(objectMapper.readTree(rawJson), rawJson);
+        } catch (IOException | RuntimeException ex) {
+            throw new XlsxCatalogImportException(
+                    "Failed to parse XLSX_WORKBOOK_JSON for artifact "
+                            + workbookJsonArtifact.getId().value());
         }
     }
 
@@ -622,14 +778,249 @@ public class DocumentCatalogService {
         return units;
     }
 
+    private List<SearchUnitDraft> buildXlsxSearchUnitDrafts(SourceFileJpaEntity source,
+                                                            String workbookJsonArtifactId,
+                                                            JsonNode root) {
+        String fileType = textOrDefault(root.path("fileType"), "xlsx");
+        String pipelineVersion = textOrDefault(root.path("pipelineVersion"), XLSX_PIPELINE_VERSION);
+        String sourceRecordId = textOrNull(root.path("sourceRecordId"));
+        JsonNode workbook = root.path("workbook");
+        JsonNode sheets = workbook.path("sheets");
+
+        List<SearchUnitDraft> units = new ArrayList<>();
+        List<String> visibleSheetTexts = new ArrayList<>();
+        int sheetCount = intOrNull(workbook, "sheetCount") == null
+                ? (sheets.isArray() ? sheets.size() : 0)
+                : intOrNull(workbook, "sheetCount");
+
+        if (sheets.isArray()) {
+            int fallbackIndex = 0;
+            for (JsonNode sheet : sheets) {
+                int sheetIndex = intOrNull(sheet, "index") == null
+                        ? fallbackIndex
+                        : intOrNull(sheet, "index");
+                fallbackIndex++;
+                boolean hidden = sheet.path("hidden").asBoolean(false);
+                boolean indexable = !sheet.path("indexable").isBoolean() || sheet.path("indexable").asBoolean();
+                if (hidden && !sheet.path("indexable").isBoolean()) {
+                    indexable = false;
+                }
+                if (!indexable) {
+                    continue;
+                }
+
+                String sheetName = textOrDefault(sheet.path("name"), "Sheet" + (sheetIndex + 1));
+                String sheetKey = xlsxSheetKey(sheetIndex, sheetName);
+                String usedRange = firstText(sheet, "usedRange", "range");
+                String sheetText = firstText(sheet, "compactText", "text");
+                if (sheetText != null && !sheetText.isBlank()) {
+                    visibleSheetTexts.add(sheetText.trim());
+                }
+
+                ObjectNode sheetMetadata = xlsxBaseMetadata(fileType, pipelineVersion, sourceRecordId);
+                sheetMetadata.put("role", "sheet");
+                sheetMetadata.put("sheetName", sheetName);
+                sheetMetadata.put("sheetIndex", sheetIndex);
+                sheetMetadata.put("hidden", hidden);
+                putIfPresent(sheetMetadata, "usedRange", usedRange);
+                putIfPresent(sheetMetadata, "cellRange", usedRange);
+                putIntIfPresent(sheetMetadata, "rowStart", firstText(sheet, "rowStart"));
+                putIntIfPresent(sheetMetadata, "rowEnd", firstText(sheet, "rowEnd"));
+                putIntIfPresent(sheetMetadata, "columnStart", firstText(sheet, "columnStart"));
+                putIntIfPresent(sheetMetadata, "columnEnd", firstText(sheet, "columnEnd"));
+                putIntIfPresent(sheetMetadata, "rowCount", firstText(sheet, "rowCount", "maxRow"));
+                putIntIfPresent(sheetMetadata, "columnCount", firstText(sheet, "columnCount", "maxColumn"));
+                putCellRangeMetadata(sheetMetadata, usedRange);
+                copyIfPresent(sheetMetadata, "mergedCells", sheet.path("mergedCells"));
+                copyIfPresent(sheetMetadata, "formulas", sheet.path("formulas"));
+                units.add(new SearchUnitDraft(
+                        source.getId(),
+                        workbookJsonArtifactId,
+                        SEARCH_UNIT_SECTION,
+                        "sheet:" + sheetKey,
+                        sheetName,
+                        "workbook/" + sheetName,
+                        null,
+                        null,
+                        blankToNull(sheetText),
+                        sheetMetadata.toString()));
+
+                units.addAll(xlsxTableUnits(
+                        source,
+                        workbookJsonArtifactId,
+                        sheet,
+                        sheetName,
+                        sheetIndex,
+                        sheetKey,
+                        fileType,
+                        pipelineVersion,
+                        sourceRecordId));
+                units.addAll(xlsxChunkUnits(
+                        source,
+                        workbookJsonArtifactId,
+                        sheet,
+                        sheetName,
+                        sheetIndex,
+                        sheetKey,
+                        fileType,
+                        pipelineVersion,
+                        sourceRecordId));
+            }
+        }
+
+        String documentText = firstText(root, "plainText", "text", "summary");
+        if (documentText == null || documentText.isBlank()) {
+            documentText = String.join("\n\n", visibleSheetTexts).trim();
+        }
+        ObjectNode documentMetadata = xlsxBaseMetadata(fileType, pipelineVersion, sourceRecordId);
+        documentMetadata.put("role", "workbook");
+        documentMetadata.put("sheetCount", sheetCount);
+        documentMetadata.put("visibleSheetCount", workbook.path("visibleSheetCount").asInt(visibleSheetTexts.size()));
+        documentMetadata.put("resultArtifactId", workbookJsonArtifactId);
+        units.add(0, new SearchUnitDraft(
+                source.getId(),
+                workbookJsonArtifactId,
+                SEARCH_UNIT_DOCUMENT,
+                "workbook",
+                source.getOriginalFileName(),
+                null,
+                null,
+                null,
+                blankToNull(documentText),
+                documentMetadata.toString()));
+        return units;
+    }
+
+    private List<SearchUnitDraft> xlsxTableUnits(SourceFileJpaEntity source,
+                                                 String workbookJsonArtifactId,
+                                                 JsonNode sheet,
+                                                 String sheetName,
+                                                 int sheetIndex,
+                                                 String sheetKey,
+                                                 String fileType,
+                                                 String pipelineVersion,
+                                                 String sourceRecordId) {
+        JsonNode tables = sheet.path("tables");
+        if (!tables.isArray()) {
+            return List.of();
+        }
+        List<SearchUnitDraft> units = new ArrayList<>();
+        int tableIndex = 1;
+        for (JsonNode table : tables) {
+            String tableName = firstText(table, "name", "tableId", "id");
+            String range = firstText(table, "range", "cellRange");
+            int currentTableIndex = intOrNull(table, "tableIndex") == null
+                    ? tableIndex - 1
+                    : intOrNull(table, "tableIndex");
+            String tableId = tableName == null || tableName.isBlank()
+                    ? "table-" + tableIndex
+                    : normalizeUnitKeyPart(tableName);
+            ObjectNode metadata = xlsxBaseMetadata(fileType, pipelineVersion, sourceRecordId);
+            metadata.put("role", "table");
+            metadata.put("sheetName", sheetName);
+            metadata.put("sheetIndex", sheetIndex);
+            metadata.put("tableIndex", currentTableIndex);
+            metadata.put("tableId", tableId);
+            putIfPresent(metadata, "tableName", tableName);
+            putIfPresent(metadata, "range", range);
+            putIfPresent(metadata, "cellRange", range);
+            putIntIfPresent(metadata, "rowStart", firstText(table, "rowStart"));
+            putIntIfPresent(metadata, "rowEnd", firstText(table, "rowEnd"));
+            putIntIfPresent(metadata, "columnStart", firstText(table, "columnStart"));
+            putIntIfPresent(metadata, "columnEnd", firstText(table, "columnEnd"));
+            putIntIfPresent(metadata, "rowCount", firstText(table, "rowCount"));
+            putIntIfPresent(metadata, "columnCount", firstText(table, "columnCount"));
+            putIfPresent(metadata, "tableType", firstText(table, "type"));
+            putCellRangeMetadata(metadata, range);
+            units.add(new SearchUnitDraft(
+                    source.getId(),
+                    workbookJsonArtifactId,
+                    SEARCH_UNIT_TABLE,
+                    "sheet:" + sheetIndex + ":table:" + currentTableIndex + ":" + normalizeRangeForKey(range),
+                    tableName == null || tableName.isBlank() ? tableId : tableName,
+                    "workbook/" + sheetName,
+                    null,
+                    null,
+                    blankToNull(firstText(table, "markdown", "text", "compactText")),
+                    metadata.toString()));
+            tableIndex++;
+        }
+        return units;
+    }
+
+    private List<SearchUnitDraft> xlsxChunkUnits(SourceFileJpaEntity source,
+                                                 String workbookJsonArtifactId,
+                                                 JsonNode sheet,
+                                                 String sheetName,
+                                                 int sheetIndex,
+                                                 String sheetKey,
+                                                 String fileType,
+                                                 String pipelineVersion,
+                                                 String sourceRecordId) {
+        JsonNode chunks = sheet.path("chunks");
+        if (!chunks.isArray()) {
+            return List.of();
+        }
+        List<SearchUnitDraft> units = new ArrayList<>();
+        int index = 1;
+        for (JsonNode chunk : chunks) {
+            String range = firstText(chunk, "range", "cellRange");
+            if (range == null || range.isBlank()) {
+                range = "chunk:" + index;
+            }
+            int chunkIndex = intOrNull(chunk, "chunkIndex") == null
+                    ? index - 1
+                    : intOrNull(chunk, "chunkIndex");
+            ObjectNode metadata = xlsxBaseMetadata(fileType, pipelineVersion, sourceRecordId);
+            metadata.put("role", "chunk");
+            metadata.put("sheetName", sheetName);
+            metadata.put("sheetIndex", sheetIndex);
+            metadata.put("chunkIndex", chunkIndex);
+            metadata.put("range", range);
+            metadata.put("cellRange", range);
+            putIntIfPresent(metadata, "rowStart", firstText(chunk, "rowStart"));
+            putIntIfPresent(metadata, "rowEnd", firstText(chunk, "rowEnd"));
+            putIntIfPresent(metadata, "columnStart", firstText(chunk, "columnStart"));
+            putIntIfPresent(metadata, "columnEnd", firstText(chunk, "columnEnd"));
+            putCellRangeMetadata(metadata, range);
+            units.add(new SearchUnitDraft(
+                    source.getId(),
+                    workbookJsonArtifactId,
+                    SEARCH_UNIT_CHUNK,
+                    "sheet:" + sheetIndex + ":chunk:" + chunkIndex + ":" + normalizeRangeForKey(range),
+                    sheetName + " " + range,
+                    "workbook/" + sheetName,
+                    null,
+                    null,
+                    blankToNull(firstText(chunk, "text", "compactText")),
+                    metadata.toString()));
+            index++;
+        }
+        return units;
+    }
+
     private boolean isOcrExtractArtifact(Artifact artifact) {
         return artifact.getType() == ArtifactType.OCR_RESULT_JSON
                 || artifact.getType() == ArtifactType.OCR_TEXT_MARKDOWN;
     }
 
+    private boolean isXlsxExtractArtifact(Artifact artifact) {
+        return artifact.getType() == ArtifactType.XLSX_WORKBOOK_JSON
+                || artifact.getType() == ArtifactType.XLSX_MARKDOWN
+                || artifact.getType() == ArtifactType.XLSX_TABLE_JSON;
+    }
+
     private ObjectNode baseMetadata(String engine, String pipelineVersion, String sourceRecordId) {
         ObjectNode metadata = objectMapper.createObjectNode();
         putIfPresent(metadata, "engine", engine);
+        putIfPresent(metadata, "pipelineVersion", pipelineVersion);
+        putIfPresent(metadata, "sourceRecordId", sourceRecordId);
+        return metadata;
+    }
+
+    private ObjectNode xlsxBaseMetadata(String fileType, String pipelineVersion, String sourceRecordId) {
+        ObjectNode metadata = objectMapper.createObjectNode();
+        putIfPresent(metadata, "fileType", fileType);
         putIfPresent(metadata, "pipelineVersion", pipelineVersion);
         putIfPresent(metadata, "sourceRecordId", sourceRecordId);
         return metadata;
@@ -752,6 +1143,42 @@ public class DocumentCatalogService {
         }
     }
 
+    private static void putIntIfPresent(ObjectNode node, String field, String value) {
+        if (value == null || value.isBlank()) {
+            return;
+        }
+        try {
+            node.put(field, Integer.parseInt(value.trim()));
+        } catch (NumberFormatException ex) {
+            node.put(field, value);
+        }
+    }
+
+    private static void copyIfPresent(ObjectNode node, String field, JsonNode value) {
+        if (value != null && !value.isMissingNode() && !value.isNull()) {
+            node.set(field, value.deepCopy());
+        }
+    }
+
+    private static void putCellRangeMetadata(ObjectNode metadata, String range) {
+        CellRangeParts parts = parseCellRange(range);
+        if (parts == null) {
+            return;
+        }
+        if (!metadata.has("rowStart")) {
+            metadata.put("rowStart", parts.rowStart());
+        }
+        if (!metadata.has("rowEnd")) {
+            metadata.put("rowEnd", parts.rowEnd());
+        }
+        if (!metadata.has("columnStart")) {
+            metadata.put("columnStart", parts.columnStart());
+        }
+        if (!metadata.has("columnEnd")) {
+            metadata.put("columnEnd", parts.columnEnd());
+        }
+    }
+
     private static String firstText(JsonNode node, String... names) {
         if (node == null || node.isMissingNode() || node.isNull()) {
             return null;
@@ -784,6 +1211,70 @@ public class DocumentCatalogService {
         };
     }
 
+    private static String xlsxSheetKey(int sheetIndex, String sheetName) {
+        return sheetIndex + ":" + normalizeUnitKeyPart(sheetName);
+    }
+
+    private static String normalizeUnitKeyPart(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return "unnamed";
+        }
+        String normalized = raw.trim()
+                .replace('/', '_')
+                .replace('\\', '_')
+                .replace(':', '_')
+                .replaceAll("\\s+", " ");
+        if (normalized.length() <= 96) {
+            return normalized;
+        }
+        return normalized.substring(0, 80) + "-" + stableHash(normalized);
+    }
+
+    private static String normalizeRangeForKey(String range) {
+        if (range == null || range.isBlank()) {
+            return "unknown";
+        }
+        return range.trim().replace("$", "").replaceAll("\\s+", "").toUpperCase(Locale.ROOT);
+    }
+
+    private static CellRangeParts parseCellRange(String range) {
+        if (range == null || range.isBlank()) {
+            return null;
+        }
+        String normalized = range.replace("$", "").trim().toUpperCase(Locale.ROOT);
+        String[] parts = normalized.split(":", 2);
+        CellRef start = parseCellRef(parts[0]);
+        CellRef end = parseCellRef(parts.length == 2 ? parts[1] : parts[0]);
+        if (start == null || end == null) {
+            return null;
+        }
+        return new CellRangeParts(
+                Math.min(start.row(), end.row()),
+                Math.max(start.row(), end.row()),
+                Math.min(start.column(), end.column()),
+                Math.max(start.column(), end.column()));
+    }
+
+    private static CellRef parseCellRef(String ref) {
+        if (ref == null || ref.isBlank()) {
+            return null;
+        }
+        String letters = ref.replaceAll("[^A-Z]", "");
+        String digits = ref.replaceAll("[^0-9]", "");
+        if (letters.isBlank() || digits.isBlank()) {
+            return null;
+        }
+        int column = 0;
+        for (int i = 0; i < letters.length(); i++) {
+            column = column * 26 + (letters.charAt(i) - 'A' + 1);
+        }
+        try {
+            return new CellRef(Integer.parseInt(digits), column);
+        } catch (NumberFormatException ex) {
+            return null;
+        }
+    }
+
     private static void transitionSource(SourceFileJpaEntity source,
                                          String status,
                                          String detail,
@@ -806,7 +1297,7 @@ public class DocumentCatalogService {
         if (mime != null && (mime.contains("spreadsheet") || mime.contains("excel") || mime.contains("csv"))) {
             return "SPREADSHEET";
         }
-        if (lowerName.endsWith(".xlsx") || lowerName.endsWith(".xls") || lowerName.endsWith(".csv")) {
+        if (lowerName.endsWith(".xlsx") || lowerName.endsWith(".xlsm") || lowerName.endsWith(".xls") || lowerName.endsWith(".csv")) {
             return "SPREADSHEET";
         }
         if (mime != null && mime.startsWith("text/")) {
@@ -880,6 +1371,8 @@ public class DocumentCatalogService {
 
     private record ParsedOcrJson(JsonNode root, String rawJson) {}
 
+    private record ParsedXlsxJson(JsonNode root, String rawJson) {}
+
     private record ArtifactPayload(
             Artifact artifact,
             String artifactKey,
@@ -925,6 +1418,16 @@ public class DocumentCatalogService {
             super(message);
         }
     }
+
+    private static class XlsxCatalogImportException extends RuntimeException {
+        XlsxCatalogImportException(String message) {
+            super(message);
+        }
+    }
+
+    private record CellRef(int row, int column) {}
+
+    private record CellRangeParts(int rowStart, int rowEnd, int columnStart, int columnEnd) {}
 
     public record SearchResult(
             SourceFileJpaEntity sourceFile,

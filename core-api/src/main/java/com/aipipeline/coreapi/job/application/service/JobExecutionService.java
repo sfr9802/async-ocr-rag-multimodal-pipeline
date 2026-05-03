@@ -183,6 +183,13 @@ public class JobExecutionService implements JobExecutionUseCase {
             } else {
                 catalogService.markOcrFailed(job, inputArtifacts, now);
             }
+        } else if (catalogService != null && job.getCapability() == JobCapability.XLSX_EXTRACT) {
+            List<Artifact> inputArtifacts = artifactRepository.findByJobIdAndRole(job.getId(), ArtifactRole.INPUT);
+            if (command.outcome() == CallbackOutcome.SUCCEEDED) {
+                catalogService.importXlsxSucceeded(job, inputArtifacts, savedOutputs, now);
+            } else {
+                catalogService.markXlsxFailed(job, inputArtifacts, now);
+            }
         }
 
         log.info("Callback applied jobId={} outcome={} status={}",
@@ -192,7 +199,8 @@ public class JobExecutionService implements JobExecutionUseCase {
 
     private Optional<String> sourceFileIdForClaim(Job job, Artifact artifact) {
         if (catalogService == null
-                || job.getCapability() != JobCapability.OCR_EXTRACT
+                || (job.getCapability() != JobCapability.OCR_EXTRACT
+                && job.getCapability() != JobCapability.XLSX_EXTRACT)
                 || artifact.getType() != ArtifactType.INPUT_FILE) {
             return Optional.empty();
         }

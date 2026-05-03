@@ -271,6 +271,7 @@ def test_rag_disabled_leaves_mock_only(monkeypatch):
         ocr_enabled=False,
         multimodal_enabled=False,
         ocr_extract_enabled=False,
+        xlsx_extract_enabled=False,
     )
     result = registry_module.build_default_registry(settings)
 

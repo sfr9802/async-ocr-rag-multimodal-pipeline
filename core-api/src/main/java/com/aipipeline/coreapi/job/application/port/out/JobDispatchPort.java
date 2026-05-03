@@ -1,6 +1,9 @@
 package com.aipipeline.coreapi.job.application.port.out;
 
+import com.aipipeline.coreapi.artifact.domain.Artifact;
 import com.aipipeline.coreapi.job.domain.Job;
+
+import java.util.List;
 
 /**
  * Outbound port for dispatching a job onto the work queue.
@@ -22,6 +25,16 @@ public interface JobDispatchPort {
      * @throws DispatchException if the queue backend rejects the message
      */
     void dispatch(Job job);
+
+    /**
+     * Enqueue the given job with already-persisted input artifact metadata.
+     * Workers still claim the durable inputs from core-api before execution;
+     * the dispatch payload is a wake-up signal with enough context for
+     * observability and queue-level contract tests.
+     */
+    default void dispatch(Job job, List<Artifact> inputArtifacts) {
+        dispatch(job);
+    }
 
     class DispatchException extends RuntimeException {
         public DispatchException(String message, Throwable cause) {

@@ -1,0 +1,80 @@
+{
+  "datasetId": "kovidore-v2-economic-beir",
+  "name": "KoViDoRe v2 Economic BEIR",
+  "purpose": "Small public golden dataset for SearchUnit indexing, retrieval, citation, audit, and eval validation.",
+  "source": {
+    "type": "huggingface_dataset",
+    "repo": "whybe-choi/kovidore-v2-economic-beir",
+    "url": "https://huggingface.co/datasets/whybe-choi/kovidore-v2-economic-beir",
+    "revision": "8400656ad1e90e7662d7cda44628eaa2d29ea8d8",
+    "lastVerified": "2026-05-03"
+  },
+  "splits": {
+    "corpus": "test",
+    "queries": "test",
+    "qrels": "test",
+    "document_metadata": "test"
+  },
+  "primarySearchUnitType": "PAGE",
+  "operatingIngestion": false,
+  "downloadPolicy": {
+    "mode": "local_dev_fixture_only",
+    "fullCorpusAutomation": "forbidden",
+    "sampleMode": "Use adapter --limit-docs and --limit-queries for small local samples."
+  },
+  "schemaMapping": {
+    "sourceFileName": "corpus.doc_id",
+    "unitType": "PAGE",
+    "unitKey": "page:{corpus.page_number_in_doc}",
+    "textContent": "corpus.markdown",
+    "metadataJson.elements": "corpus.elements",
+    "metadataJson.dataset": "kovidore-v2-economic-beir",
+    "qrels.expected": "qrels.corpus_id -> corpus.page SearchUnit"
+  },
+  "licenseAndTerms": {
+    "basis": "Hugging Face dataset card License information section",
+    "annotationsQueriesQrelsAndRelatedMetadata": {
+      "license": "Creative Commons Attribution 4.0 International (CC BY 4.0)",
+      "appliesTo": [
+        "annotations",
+        "queries",
+        "query-document relevance judgments (qrels)",
+        "related metadata generated for this corpus"
+      ]
+    },
+    "sourceDocumentsAndParsedMarkdown": {
+      "license": "Inherited from each original publisher",
+      "appliesTo": [
+        "original source documents",
+        "parsed text in corpus.markdown"
+      ],
+      "perDocumentLicenseField": "document_metadata.license"
+    },
+    "observedDocumentMetadataLicenseInDownloadedSnapshot": "No Restriction",
+    "termsNote": "Keep generated fixtures traceable to this manifest and the original dataset source."
+  },
+  "adapter": {
+    "module": "ai_worker.evals.golden_retrieval.adapters.kovidore",
+    "outputs": [
+      "source_files.jsonl",
+      "search_units.jsonl",
+      "source_manifest.json",
+      "golden_queries.jsonl",
+      "conversion_manifest.json"
+    ]
+  },
+  "futureAdapters": [
+    {
+      "datasetId": "funsd",
+      "status": "skeleton_only",
+      "primarySearchUnitType": "PAGE",
+      "purpose": "OCR/layout import smoke test for noisy scanned forms."
+    },
+    {
+      "datasetId": "pubtables-1m-or-tablebank-sample",
+      "status": "skeleton_only",
+      "primarySearchUnitType": "TABLE",
+      "purpose": "Small table SearchUnit fixture validation."
+    }
+  ]
+}

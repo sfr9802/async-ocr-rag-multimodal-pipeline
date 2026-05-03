@@ -71,6 +71,76 @@ class SearchUnitIndexingServiceTest {
     }
 
     @Test
+    void xlsx_search_unit_claim_includes_sheet_range_and_table_index_metadata() {
+        SearchUnitJpaEntity unit = new SearchUnitJpaEntity(
+                "unit-xlsx-table",
+                "source-file-1",
+                "artifact-1",
+                DocumentCatalogService.SEARCH_UNIT_TABLE,
+                "sheet:0:매출:table:SalesTable",
+                "SalesTable",
+                "workbook/매출",
+                null,
+                null,
+                "직원명: 홍길동",
+                """
+                        {
+                          "fileType": "xlsx",
+                          "sheetName": "매출",
+                          "sheetIndex": 0,
+                          "cellRange": "A1:D30",
+                          "rowStart": 1,
+                          "rowEnd": 30,
+                          "columnStart": 1,
+                          "columnEnd": 4,
+                          "tableId": "SalesTable"
+                        }
+                        """,
+                SearchUnitIndexingService.EMBEDDING_STATUS_PENDING,
+                "hash-xlsx",
+                NOW,
+                NOW);
+        SourceFileJpaEntity source = new SourceFileJpaEntity(
+                "source-file-1",
+                "sales.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "SPREADSHEET",
+                "local://source.xlsx",
+                DocumentCatalogService.SOURCE_STATUS_READY,
+                NOW);
+        ExtractedArtifactJpaEntity artifact = new ExtractedArtifactJpaEntity(
+                "artifact-1",
+                "source-file-1",
+                "XLSX_WORKBOOK_JSON",
+                "job-1",
+                "local://xlsx-workbook.json",
+                DocumentCatalogService.XLSX_PIPELINE_VERSION,
+                "checksum",
+                "{}",
+                NOW,
+                NOW);
+        stubCandidates(List.of(unit), List.of());
+        when(searchUnits.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(sourceFiles.findAllById(any())).thenReturn(List.of(source));
+        when(extractedArtifacts.findAllById(any())).thenReturn(List.of(artifact));
+
+        List<SearchUnitIndexingService.ClaimedSearchUnit> claimed = service()
+                .claimPending("worker-1", 10, Duration.ofMinutes(10), NOW);
+
+        assertThat(claimed).hasSize(1);
+        assertThat(claimed.getFirst().indexMetadata())
+                .containsEntry("fileType", "xlsx")
+                .containsEntry("sheetName", "매출")
+                .containsEntry("sheetIndex", 0)
+                .containsEntry("cellRange", "A1:D30")
+                .containsEntry("tableId", "SalesTable")
+                .containsEntry("rowStart", 1)
+                .containsEntry("columnEnd", 4)
+                .containsEntry("content_sha256", "hash-xlsx")
+                .containsEntry("index_id", "source_file:source-file-1:unit:TABLE:sheet:0:매출:table:SalesTable");
+    }
+
+    @Test
     void pending_blank_text_is_marked_skipped_instead_of_retried_forever() {
         SearchUnitJpaEntity unit = unit(
                 "unit-blank",

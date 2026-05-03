@@ -233,6 +233,7 @@ def test_registry_registers_ocr_extract_without_heavy_ocr_provider():
         multimodal_enabled=False,
         ocr_extract_enabled=True,
         ocr_extract_provider="fixture",
+        xlsx_extract_enabled=False,
     )
 
     result = registry_module.build_default_registry(settings)

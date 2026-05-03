@@ -2,12 +2,11 @@ spring:
   application:
     name: core-api
 
-  # Default = Mode A: reuse an existing postgres container on :5432 with a
-  # dedicated aipipeline database and user. If you run the bundled postgres
-  # (Mode B) instead, override SPRING_DATASOURCE_URL or use the
-  # `independent` profile below.
+  # Default local infra is the compose-managed postgres on host :5433.
+  # Override SPRING_DATASOURCE_URL if you intentionally reuse an external
+  # postgres cluster instead.
   datasource:
-    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/aipipeline}
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5433/aipipeline}
     username: ${SPRING_DATASOURCE_USERNAME:aipipeline}
     password: ${SPRING_DATASOURCE_PASSWORD:aipipeline_pw}
     driver-class-name: org.postgresql.Driver
@@ -69,7 +68,7 @@ aipipeline:
     secret: ${AIPIPELINE_INTERNAL_SECRET:}
 
 ---
-# Mode B activation profile: connects to the bundled postgres on host port 5433.
+# Compatibility profile for older docs/scripts that still pass `independent`.
 #   mvn spring-boot:run -Dspring-boot.run.profiles=independent
 spring:
   config:

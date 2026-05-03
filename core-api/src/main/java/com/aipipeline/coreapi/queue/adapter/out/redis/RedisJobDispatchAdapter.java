@@ -1,5 +1,7 @@
 package com.aipipeline.coreapi.queue.adapter.out.redis;
 
+import com.aipipeline.coreapi.artifact.domain.Artifact;
+import com.aipipeline.coreapi.artifact.domain.ArtifactRole;
 import com.aipipeline.coreapi.common.AipipelineProperties;
 import com.aipipeline.coreapi.job.application.port.out.JobDispatchPort;
 import com.aipipeline.coreapi.job.domain.Job;
@@ -10,6 +12,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
+
+import java.util.List;
 
 /**
  * Redis list-based dispatch adapter. Uses LPUSH so the worker's BRPOP /
@@ -24,6 +28,7 @@ public class RedisJobDispatchAdapter implements JobDispatchPort {
 
     private static final Logger log = LoggerFactory.getLogger(RedisJobDispatchAdapter.class);
     private static final String OCR_LITE_PIPELINE_VERSION = "ocr-lite-v1";
+    private static final String XLSX_PIPELINE_VERSION = "xlsx-extract-v1";
 
     private final StringRedisTemplate redis;
     private final ObjectMapper objectMapper;
@@ -41,6 +46,11 @@ public class RedisJobDispatchAdapter implements JobDispatchPort {
 
     @Override
     public void dispatch(Job job) {
+        dispatch(job, List.of());
+    }
+
+    @Override
+    public void dispatch(Job job, List<Artifact> inputArtifacts) {
         QueueMessage message = new QueueMessage(
                 job.getId().value(),
                 job.getCapability().name(),
@@ -48,7 +58,11 @@ public class RedisJobDispatchAdapter implements JobDispatchPort {
                 pipelineVersionFor(job.getCapability()),
                 job.getAttemptNo(),
                 System.currentTimeMillis(),
-                callbackBaseUrl);
+                callbackBaseUrl,
+                inputArtifacts.stream()
+                        .filter(artifact -> artifact.getRole() == ArtifactRole.INPUT)
+                        .map(RedisJobDispatchAdapter::inputArtifactMessage)
+                        .toList());
         String json;
         try {
             json = objectMapper.writeValueAsString(message);
@@ -64,8 +78,21 @@ public class RedisJobDispatchAdapter implements JobDispatchPort {
     }
 
     private static String pipelineVersionFor(JobCapability capability) {
-        return capability == JobCapability.OCR_EXTRACT
-                ? OCR_LITE_PIPELINE_VERSION
-                : null;
+        return switch (capability) {
+            case OCR_EXTRACT -> OCR_LITE_PIPELINE_VERSION;
+            case XLSX_EXTRACT -> XLSX_PIPELINE_VERSION;
+            default -> null;
+        };
+    }
+
+    private static QueueMessage.InputArtifactMessage inputArtifactMessage(Artifact artifact) {
+        return new QueueMessage.InputArtifactMessage(
+                artifact.getId().value(),
+                artifact.getRole().name(),
+                artifact.getType().name(),
+                artifact.getStorageUri(),
+                artifact.getContentType(),
+                artifact.getSizeBytes(),
+                artifact.getChecksumSha256());
     }
 }

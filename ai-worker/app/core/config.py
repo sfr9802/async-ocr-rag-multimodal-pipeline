@@ -247,7 +247,7 @@ class WorkerSettings(BaseSettings):
         ),
     )
     rag_db_dsn: str = Field(
-        default="host=localhost port=5432 dbname=aipipeline user=aipipeline password=aipipeline_pw",
+        default="host=localhost port=5433 dbname=aipipeline user=aipipeline password=aipipeline_pw",
         description="libpq connection string for the ragmeta schema. Uses the same cluster as core-api.",
     )
     rag_generator: str = Field(
@@ -380,6 +380,23 @@ class WorkerSettings(BaseSettings):
     ocr_extract_paddle_lang: str = Field(
         default="en",
         description="PaddleOCR language code used when ocr_extract_provider='paddle'.",
+    )
+    xlsx_extract_enabled: bool = Field(
+        default=True,
+        description=(
+            "Enable the XLSX_EXTRACT spreadsheet task kind. It reads .xlsx "
+            "and .xlsm files with openpyxl, emits XLSX_* artifacts, and "
+            "lets core-api import them into SearchUnit rows. Legacy .xls "
+            "is intentionally unsupported."
+        ),
+    )
+    xlsx_extract_include_hidden: bool = Field(
+        default=False,
+        description=(
+            "When false (default), hidden worksheets are kept in workbook "
+            "metadata but not made indexable. Hidden rows/columns are also "
+            "excluded from extracted text when metadata can be collected."
+        ),
     )
 
     # --- anthropic api (shared by claude vision + claude generation) ---

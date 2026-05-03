@@ -215,7 +215,20 @@ public class SearchUnitIndexingService {
         put(metadata, "section_path", unit.getSectionPath());
         put(metadata, "title", unit.getTitle());
         put(metadata, "content_hash", unit.getContentSha256());
+        put(metadata, "content_sha256", unit.getContentSha256());
         put(metadata, "artifact_type", artifactType);
+        put(metadata, "index_id", stableIndexId(unit));
+        JsonNode unitMetadata = parseMetadata(unit.getMetadataJson());
+        put(metadata, "fileType", textOrNull(unitMetadata, "fileType"));
+        put(metadata, "sheetName", textOrNull(unitMetadata, "sheetName"));
+        put(metadata, "sheetIndex", intOrNull(unitMetadata, "sheetIndex"));
+        put(metadata, "cellRange", firstText(unitMetadata, "cellRange", "range", "usedRange"));
+        put(metadata, "range", firstText(unitMetadata, "range", "cellRange", "usedRange"));
+        put(metadata, "tableId", firstText(unitMetadata, "tableId", "tableName"));
+        put(metadata, "rowStart", intOrNull(unitMetadata, "rowStart"));
+        put(metadata, "rowEnd", intOrNull(unitMetadata, "rowEnd"));
+        put(metadata, "columnStart", intOrNull(unitMetadata, "columnStart"));
+        put(metadata, "columnEnd", intOrNull(unitMetadata, "columnEnd"));
         if (source != null) {
             put(metadata, "source_file_name", source.getOriginalFileName());
             put(metadata, "original_filename", source.getOriginalFileName());
@@ -241,16 +254,23 @@ public class SearchUnitIndexingService {
     }
 
     private boolean metadataAllowsIndexing(String metadataJson) {
-        if (metadataJson == null || metadataJson.isBlank()) {
+        JsonNode root = parseMetadata(metadataJson);
+        if (root.isMissingNode()) {
             return true;
         }
+        JsonNode indexable = root.path("indexable");
+        return !indexable.isBoolean() || indexable.asBoolean();
+    }
+
+    private JsonNode parseMetadata(String metadataJson) {
+        if (metadataJson == null || metadataJson.isBlank()) {
+            return objectMapper.getNodeFactory().missingNode();
+        }
         try {
-            JsonNode root = objectMapper.readTree(metadataJson);
-            JsonNode indexable = root.path("indexable");
-            return !indexable.isBoolean() || indexable.asBoolean();
+            return objectMapper.readTree(metadataJson);
         } catch (IOException | RuntimeException ex) {
-            log.warn("SearchUnit metadata_json could not be parsed for indexable flag: {}", ex.toString());
-            return true;
+            log.warn("SearchUnit metadata_json could not be parsed: {}", ex.toString());
+            return objectMapper.getNodeFactory().missingNode();
         }
     }
 
@@ -290,6 +310,42 @@ public class SearchUnitIndexingService {
         if (value != null) {
             metadata.put(key, value);
         }
+    }
+
+    private static String firstText(JsonNode node, String... fields) {
+        for (String field : fields) {
+            String value = textOrNull(node, field);
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private static String textOrNull(JsonNode node, String field) {
+        if (node == null || node.isMissingNode() || node.isNull()) {
+            return null;
+        }
+        JsonNode value = node.path(field);
+        return value.isMissingNode() || value.isNull() ? null : value.asText();
+    }
+
+    private static Integer intOrNull(JsonNode node, String field) {
+        if (node == null || node.isMissingNode() || node.isNull()) {
+            return null;
+        }
+        JsonNode value = node.path(field);
+        if (value.isIntegralNumber()) {
+            return value.asInt();
+        }
+        if (value.isTextual()) {
+            try {
+                return Integer.parseInt(value.asText().trim());
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+        return null;
     }
 
     private static String claimToken(String workerId, String searchUnitId) {

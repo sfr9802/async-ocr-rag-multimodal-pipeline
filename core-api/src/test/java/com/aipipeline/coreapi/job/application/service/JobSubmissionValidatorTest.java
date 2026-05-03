@@ -40,6 +40,8 @@ class JobSubmissionValidatorTest {
                     .isEqualTo(JobCapability.OCR);
             assertThat(JobSubmissionValidator.parseCapability("OCR_EXTRACT"))
                     .isEqualTo(JobCapability.OCR_EXTRACT);
+            assertThat(JobSubmissionValidator.parseCapability("XLSX_EXTRACT"))
+                    .isEqualTo(JobCapability.XLSX_EXTRACT);
             assertThat(JobSubmissionValidator.parseCapability("MULTIMODAL"))
                     .isEqualTo(JobCapability.MULTIMODAL);
             assertThat(JobSubmissionValidator.parseCapability("AUTO"))
@@ -160,6 +162,14 @@ class JobSubmissionValidatorTest {
         void multimodal_on_text_endpoint_rejected_FILE_REQUIRED() {
             assertThatThrownBy(() ->
                     JobSubmissionValidator.validateTextSubmission(JobCapability.MULTIMODAL, "caption it"))
+                    .isInstanceOf(InvalidJobSubmissionException.class)
+                    .extracting("errorCode").isEqualTo(ErrorCodes.FILE_REQUIRED);
+        }
+
+        @Test
+        void xlsx_extract_on_text_endpoint_rejected_FILE_REQUIRED() {
+            assertThatThrownBy(() ->
+                    JobSubmissionValidator.validateTextSubmission(JobCapability.XLSX_EXTRACT, "extract workbook"))
                     .isInstanceOf(InvalidJobSubmissionException.class)
                     .extracting("errorCode").isEqualTo(ErrorCodes.FILE_REQUIRED);
         }
@@ -310,6 +320,59 @@ class JobSubmissionValidatorTest {
                     "file", "report.pdf", "application/pdf", "%PDF-1.4 fake".getBytes());
             JobSubmissionValidator.validateFileSubmission(
                     JobCapability.MULTIMODAL, pdf, "summarize this report");
+        }
+
+        @Test
+        void xlsx_extract_with_xlsx_accepted() {
+            MultipartFile xlsx = new MockMultipartFile(
+                    "file",
+                    "sales.xlsx",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    "PK".getBytes());
+            JobSubmissionValidator.validateFileSubmission(JobCapability.XLSX_EXTRACT, xlsx, null);
+        }
+
+        @Test
+        void xlsx_extract_with_xlsm_accepted() {
+            MultipartFile xlsm = new MockMultipartFile(
+                    "file",
+                    "macro.xlsm",
+                    "application/vnd.ms-excel.sheet.macroenabled.12",
+                    "PK".getBytes());
+            JobSubmissionValidator.validateFileSubmission(JobCapability.XLSX_EXTRACT, xlsm, null);
+        }
+
+        @Test
+        void xlsx_extract_accepts_xlsx_extension_with_octet_stream() {
+            MultipartFile xlsx = new MockMultipartFile(
+                    "file",
+                    "sales.xlsx",
+                    "application/octet-stream",
+                    "PK".getBytes());
+            JobSubmissionValidator.validateFileSubmission(JobCapability.XLSX_EXTRACT, xlsx, null);
+        }
+
+        @Test
+        void xlsx_extract_with_legacy_xls_rejected_UNSUPPORTED_FILE_TYPE() {
+            MultipartFile xls = new MockMultipartFile(
+                    "file", "legacy.xls", "application/vnd.ms-excel", "BIFF".getBytes());
+            assertThatThrownBy(() ->
+                    JobSubmissionValidator.validateFileSubmission(JobCapability.XLSX_EXTRACT, xls, null))
+                    .isInstanceOf(InvalidJobSubmissionException.class)
+                    .extracting("errorCode").isEqualTo(ErrorCodes.UNSUPPORTED_FILE_TYPE);
+        }
+
+        @Test
+        void xlsx_extract_with_legacy_xls_rejected_even_when_mime_is_xlsx() {
+            MultipartFile xls = new MockMultipartFile(
+                    "file",
+                    "legacy.xls",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    "BIFF".getBytes());
+            assertThatThrownBy(() ->
+                    JobSubmissionValidator.validateFileSubmission(JobCapability.XLSX_EXTRACT, xls, null))
+                    .isInstanceOf(InvalidJobSubmissionException.class)
+                    .extracting("errorCode").isEqualTo(ErrorCodes.UNSUPPORTED_FILE_TYPE);
         }
 
         @Test

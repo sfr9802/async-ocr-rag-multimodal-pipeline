@@ -26,6 +26,10 @@ pytesseract==0.3.13
 pymupdf==1.24.10
 Pillow>=10,<12
 
+# XLSX extraction capability (SearchUnit import path).
+openpyxl==3.1.5
+defusedxml>=0.7.1
+
 # Claude Vision + Claude Generation providers (phase 2 tier 1).
 # Optional: only needed when AIPIPELINE_WORKER_MULTIMODAL_VISION_PROVIDER=claude
 # or AIPIPELINE_WORKER_RAG_GENERATOR=claude.

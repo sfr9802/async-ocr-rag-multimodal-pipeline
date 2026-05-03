@@ -15,6 +15,7 @@ public enum JobCapability {
     MOCK,
     OCR,
     OCR_EXTRACT,
+    XLSX_EXTRACT,
     RAG,
     MULTIMODAL,
     AUTO,
