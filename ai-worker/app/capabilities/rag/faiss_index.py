@@ -231,3 +231,14 @@ class FaissIndex:
                 row.append((int(row_id), float(score)))
             results.append(row)
         return results
+
+    def vectors(self) -> np.ndarray:
+        """Return all vectors in row-id order from the loaded flat index."""
+        if self._index is None:
+            raise RuntimeError("FAISS index is not loaded")
+        n = int(self._index.ntotal)
+        d = int(self.info.dimension)
+        out = np.empty((n, d), dtype=np.float32)
+        for row_id in range(n):
+            out[row_id] = self._index.reconstruct(row_id)
+        return out

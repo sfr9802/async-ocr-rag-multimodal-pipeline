@@ -42,10 +42,12 @@ def test_search_unit_claim_maps_to_stable_chunk_metadata():
     assert chunk_row.doc_id == "source-file-1"
     assert chunk_row.faiss_row_id == 7
     assert chunk_row.extra["searchUnitId"] == "unit-1"
+    assert chunk_row.extra["indexId"] == payload["indexId"]
     assert chunk_row.extra["unitType"] == "TABLE"
     assert chunk_row.extra["unitKey"] == "page:2:table:1"
     assert chunk_row.extra["artifactType"] == "OCR_RESULT_JSON"
     assert chunk_row.extra["pageStart"] == 2
+    assert chunk_row.extra["contentSha256"] == "hash-1"
 
 
 def test_index_metadata_drops_none_values_and_keeps_search_unit_keys():
@@ -69,6 +71,8 @@ def test_index_metadata_drops_none_values_and_keeps_search_unit_keys():
     assert metadata["unit_type"] == "IMAGE"
     assert metadata["unitKey"] == "page:3:image:1"
     assert metadata["content_hash"] == "hash-image"
+    assert metadata["contentSha256"] == "hash-image"
+    assert metadata["indexId"] == "source_file:source-file-1:unit:IMAGE:page:3:image:1"
     assert "source_file_name" not in metadata
 
 

@@ -1,0 +1,23 @@
+{
+  "sources": [
+    {
+      "logicalSourceId": "maintenance_contract_2024",
+      "fileName": "maintenance_contract.pdf",
+      "type": "pdf",
+      "expectedUnits": [
+        {"unitType": "DOCUMENT", "unitKey": "document"},
+        {"unitType": "PAGE", "unitKey": "page:5"},
+        {"unitType": "TABLE", "unitKey": "page:5:table:1"}
+      ]
+    },
+    {
+      "logicalSourceId": "operations_policy_2024",
+      "fileName": "operations_policy.pdf",
+      "type": "pdf",
+      "expectedUnits": [
+        {"unitType": "DOCUMENT", "unitKey": "document"},
+        {"unitType": "PAGE", "unitKey": "page:3"}
+      ]
+    }
+  ]
+}

@@ -293,6 +293,47 @@ class RagMetadataStore:
             len(chunks),
         )
 
+    def record_index_build(
+        self,
+        *,
+        index_version: str,
+        embedding_model: str,
+        embedding_dim: int,
+        chunk_count: int,
+        document_count: int,
+        faiss_index_path: str,
+        notes: Optional[str] = None,
+    ) -> None:
+        """Upsert the latest build metadata for a live index rewrite."""
+        now = datetime.now(tz=timezone.utc).replace(tzinfo=None)
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO ragmeta.index_builds
+                  (index_version, embedding_model, embedding_dim,
+                   chunk_count, document_count, faiss_index_path, notes, built_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (index_version) DO UPDATE SET
+                  embedding_model = EXCLUDED.embedding_model,
+                  embedding_dim = EXCLUDED.embedding_dim,
+                  chunk_count = EXCLUDED.chunk_count,
+                  document_count = EXCLUDED.document_count,
+                  faiss_index_path = EXCLUDED.faiss_index_path,
+                  notes = EXCLUDED.notes,
+                  built_at = EXCLUDED.built_at
+                """,
+                (
+                    index_version,
+                    embedding_model,
+                    embedding_dim,
+                    int(chunk_count),
+                    int(document_count),
+                    faiss_index_path,
+                    notes,
+                    now,
+                ),
+            )
+
     # ------------------------------------------------------------------
     # reads
     # ------------------------------------------------------------------
@@ -320,6 +361,35 @@ class RagMetadataStore:
         ) for r in rows}
         # Preserve the FAISS ranking order of the input ids.
         return [by_row[i] for i in ids if i in by_row]
+
+    def list_chunks(self, index_version: str) -> List[ChunkRow]:
+        """Return chunks for an index version ordered by FAISS row id."""
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT chunk_id, doc_id, section, chunk_order, text,
+                       token_count, faiss_row_id, index_version, extra_json
+                  FROM ragmeta.chunks
+                 WHERE index_version = %s
+                 ORDER BY faiss_row_id ASC
+                """,
+                (index_version,),
+            )
+            rows = cur.fetchall()
+        return [
+            ChunkRow(
+                chunk_id=row[0],
+                doc_id=row[1],
+                section=row[2],
+                chunk_order=int(row[3]),
+                text=row[4],
+                token_count=int(row[5]) if row[5] is not None else None,
+                faiss_row_id=int(row[6]),
+                index_version=row[7],
+                extra=_json_dict_or_none(row[8]),
+            )
+            for row in rows
+        ]
 
     def doc_ids_matching(self, filters: dict) -> List[str]:
         """Return doc_ids whose metadata matches every key in ``filters``.
